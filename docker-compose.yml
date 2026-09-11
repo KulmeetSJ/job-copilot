@@ -13,15 +13,38 @@ services:
       - LOG_FORMAT=json
       - API_HOST=0.0.0.0
       - API_PORT=8000
+      - DATABASE_URL=postgresql+psycopg://copilot_user:copilot_password@postgres:5432/job_copilot
+    depends_on:
+      postgres:
+        condition: service_healthy
     volumes:
       # Optional: bind mount local runtime data directory for local persistence
       - ./data:/app/data
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      test: ["CMD", "python", "-c", "import urllib.request, os; port=os.environ.get('PORT', '8000'); urllib.request.urlopen(f'http://localhost:{port}/health')"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 10s
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: job-copilot-postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=job_copilot
+      - POSTGRES_USER=copilot_user
+      - POSTGRES_PASSWORD=copilot_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U copilot_user -d job_copilot"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
 
   copilot-cron:
     build:
@@ -34,6 +57,12 @@ services:
     environment:
       - APP_ENV=production
       - LOG_LEVEL=INFO
+      - DATABASE_URL=postgresql+psycopg://copilot_user:copilot_password@postgres:5432/job_copilot
     volumes:
       - ./data:/app/data
     command: ["python", "-m", "job_copilot", "copilot-discover"]
+
+volumes:
+  postgres_data:
+    driver: local
+

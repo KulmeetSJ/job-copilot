@@ -1,4 +1,4 @@
-.PHONY: help install dev test test-security run-api run-copilot run-mcp check init-db docker-build docker-run clean
+.PHONY: help install dev test test-security run-api run-copilot run-mcp check init-db db-migrate db-status db-sync docker-build docker-run clean
 
 PYTHON ?= python3
 VENV ?= .venv
@@ -6,7 +6,10 @@ VENV ?= .venv
 help:
 	@echo "Job Copilot Development Commands:"
 	@echo "  make install         Create venv and install dependencies"
-	@echo "  make init-db         Initialize the local SQLite database"
+	@echo "  make init-db         Initialize the database tables"
+	@echo "  make db-migrate      Apply versioned database migrations to head"
+	@echo "  make db-status       Check database connectivity and dialect"
+	@echo "  make db-sync         Sync local runtime state to database"
 	@echo "  make test            Run all tests with pytest"
 	@echo "  make test-security   Run repository secret scanner"
 	@echo "  make run-api         Start the FastAPI web server"
@@ -25,6 +28,15 @@ install:
 
 init-db:
 	$(VENV)/bin/python -m job_copilot --init-db
+
+db-migrate:
+	$(VENV)/bin/python -m job_copilot db-migrate
+
+db-status:
+	$(VENV)/bin/python -m job_copilot db-status
+
+db-sync:
+	$(VENV)/bin/python -m job_copilot db-sync-runtime
 
 test:
 	$(VENV)/bin/pytest -v

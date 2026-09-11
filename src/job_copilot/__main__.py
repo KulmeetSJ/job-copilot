@@ -973,6 +973,57 @@ def handle_copilot_cli(subcommand: str, args: argparse.Namespace):
             print("=" * 80 + "\n")
 
 
+def handle_db_cli(subcommand: str, args: argparse.Namespace):
+    """Handle database CLI commands (Phase 9.5)."""
+    from job_copilot.config import settings
+    from job_copilot.db.database import check_db_connection, get_db, init_db, sanitize_database_url
+    from job_copilot.db.migrations_runner import run_migrations
+    from job_copilot.db.migrator import migrate_runtime_state_to_db
+
+    if subcommand == "db-status":
+        print("\n" + "=" * 60)
+        print("  Job Copilot - Database Status (Phase 9.5)")
+        print("=" * 60)
+        print(f"Database URL      : {sanitize_database_url(settings.database_url)}")
+        print(f"Dialect           : {'SQLite' if settings.is_sqlite else 'PostgreSQL'}")
+        is_ok = check_db_connection()
+        print(f"Connection Health : {'[✓] CONNECTED' if is_ok else '[✗] UNREACHABLE'}")
+        print("=" * 60 + "\n")
+
+    elif subcommand == "db-migrate":
+        print(f"[+] Applying migrations to {sanitize_database_url(settings.database_url)}...")
+        try:
+            if settings.is_sqlite:
+                p = settings.database_url.replace("sqlite:///", "")
+                if p and p != ":memory:":
+                    Path(p).parent.mkdir(parents=True, exist_ok=True)
+            run_migrations()
+            print("✅ Database migrations applied successfully to head.")
+        except Exception as e:
+            print(f"❌ Migration failed: {e}")
+            sys.exit(1)
+
+    elif subcommand == "db-sync-runtime":
+        print("[+] Migrating local runtime state (Jobs, Tracking, Queue) to database...")
+        try:
+            if settings.is_sqlite:
+                p = settings.database_url.replace("sqlite:///", "")
+                if p and p != ":memory:":
+                    Path(p).parent.mkdir(parents=True, exist_ok=True)
+            run_migrations()
+            session = next(get_db())
+            try:
+                stats = migrate_runtime_state_to_db(session)
+                print("✅ Runtime state migration completed successfully:")
+                for k, v in stats.items():
+                    print(f"    - {k:25}: {v}")
+            finally:
+                session.close()
+        except Exception as e:
+            print(f"❌ Runtime sync failed: {e}")
+            sys.exit(1)
+
+
 def main():
     """Main CLI entrypoint."""
     parser = argparse.ArgumentParser(
@@ -1141,6 +1192,11 @@ def main():
     t_parser.add_argument("--job", required=True, help="Path to job description file")
     t_parser.add_argument("--strategy", help="Optional strategy name (auto-recommended if omitted)")
 
+    # Database Subcommands (Phase 9.5)
+    subparsers.add_parser("db-status", help="Check database connectivity and status")
+    subparsers.add_parser("db-migrate", help="Apply versioned schema migrations to head")
+    subparsers.add_parser("db-sync-runtime", help="Explicitly migrate local runtime state to database")
+
     # Top-level standalone flags
     parser.add_argument("--init-db", action="store_true", help="Initialize database tables")
     parser.add_argument("--start-api", action="store_true", help="Start the FastAPI web server")
@@ -1197,6 +1253,18 @@ def main():
 
     if args.subcommand == "resume":
         handle_resume_cli(args)
+        return
+
+    if args.subcommand in ("db-status", "db-migrate", "db-sync-runtime"):
+        handle_db_cli(args.subcommand, args)
+        return
+
+    if args.init_db:
+        from job_copilot.db.database import init_db
+        from job_copilot.db.migrations_runner import run_migrations
+        init_db()
+        run_migrations()
+        print("✅ Database initialized and migrations applied successfully.")
         return
 
     if args.start_api:

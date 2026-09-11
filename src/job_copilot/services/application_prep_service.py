@@ -2,7 +2,7 @@
 
 import json
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, List, Optional
 import yaml
 
 from job_copilot.application.classifier import QuestionClassifier
@@ -66,10 +66,12 @@ class ApplicationPrepService:
         jobs_data_dir: Optional[Path] = None,
         intelligence_service: Optional[JobIntelligenceService] = None,
         resume_service: Optional[ResumeService] = None,
+        artifact_service: Optional[Any] = None,
     ):
         self.master_profile_path = master_profile_path or Path("data/candidate/master_profile.yaml")
         self.applications_data_dir = applications_data_dir or Path("data/applications")
         self.jobs_data_dir = jobs_data_dir or Path("data/jobs")
+        self.artifact_service = artifact_service
 
         self.intelligence_service = intelligence_service or JobIntelligenceService(
             master_profile_path=self.master_profile_path,
@@ -238,3 +240,34 @@ class ApplicationPrepService:
             "cover_letter_validation": package.cover_letter.validation.model_dump(),
         }
         (job_dir / "validation.json").write_text(json.dumps(validation_payload, indent=2), encoding="utf-8")
+
+        # 5. Phase 10A Object Storage Integration
+        if self.artifact_service:
+            try:
+                from job_copilot.domain.artifact_enums import ArtifactType
+                # Store package.json
+                self.artifact_service.store_artifact(
+                    data=package.model_dump_json(indent=2).encode("utf-8"),
+                    artifact_type=ArtifactType.APPLICATION_PACKAGE,
+                    job_id=package.job_id,
+                    original_filename="package.json",
+                    content_type="application/json",
+                )
+                # Store cover_letter.md
+                self.artifact_service.store_artifact(
+                    data=package.cover_letter.letter_text.encode("utf-8"),
+                    artifact_type=ArtifactType.COVER_LETTER,
+                    job_id=package.job_id,
+                    original_filename="cover_letter.md",
+                    content_type="text/markdown",
+                )
+                # Store validation.json
+                self.artifact_service.store_artifact(
+                    data=json.dumps(validation_payload, indent=2).encode("utf-8"),
+                    artifact_type=ArtifactType.VALIDATION_REPORT,
+                    job_id=package.job_id,
+                    original_filename="validation.json",
+                    content_type="application/json",
+                )
+            except Exception as ae:
+                logger.debug(f"ArtifactService storage notice: {ae}")

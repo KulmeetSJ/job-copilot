@@ -1,7 +1,29 @@
 """Model registry for database metadata."""
 
-from job_copilot.models.base import Base
-from job_copilot.models.job import Job
-from job_copilot.models.application import Application
+from job_copilot.models import (
+    Base,
+    TimestampMixin,
+    utc_now,
+    Job,
+    JobProvenance,
+    RecommendationRecord,
+    Application,
+    ApplicationEventModel,
+    ApplicationSnapshotModel,
+    CopilotQueueRecord,
+    SourceHealthRecord,
+)
 
-__all__ = ["Base", "Job", "Application"]
+__all__ = [
+    "Base",
+    "TimestampMixin",
+    "utc_now",
+    "Job",
+    "JobProvenance",
+    "RecommendationRecord",
+    "Application",
+    "ApplicationEventModel",
+    "ApplicationSnapshotModel",
+    "CopilotQueueRecord",
+    "SourceHealthRecord",
+]

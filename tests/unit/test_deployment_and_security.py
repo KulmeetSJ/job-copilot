@@ -100,8 +100,80 @@ def test_deployment_configuration_files_exist():
     assert "job-copilot-api" in render_content
     assert "healthCheckPath: /health" in render_content
     assert "dockerCommand:" in render_content
+    assert "job-copilot-postgres" in render_content
 
     ci = root / ".github" / "workflows" / "ci.yml"
     assert ci.exists(), "CI workflow must exist"
     ci_content = ci.read_text(encoding="utf-8")
     assert "pytest -v" in ci_content
+
+
+def test_read_only_smoke_test_endpoints(client):
+    """Verify Phase 9.4/9.5 required read-only smoke test endpoints."""
+    # 1. /health
+    r_health = client.get("/health")
+    assert r_health.status_code == 200
+    assert r_health.json() == {"status": "ok"}
+
+    # 2. /ready
+    r_ready = client.get("/ready")
+    assert r_ready.status_code == 200
+    assert r_ready.json() == {"status": "ready", "database": "connected"}
+
+    # 3. /
+    r_root = client.get("/")
+    assert r_root.status_code == 200
+    root_data = r_root.json()
+    assert root_data["status"] == "online"
+    assert root_data["service"] == "Job Copilot API"
+
+    # 3. /api/copilot/targets
+    r_targets = client.get("/api/copilot/targets")
+    assert r_targets.status_code == 200
+    targets_data = r_targets.json()
+    assert "tier_1" in targets_data
+    assert "job_families" in targets_data
+    assert "skills" in targets_data
+
+    # 4. /api/copilot/sources
+    r_sources = client.get("/api/copilot/sources")
+    assert r_sources.status_code == 200
+    sources_data = r_sources.json()
+    assert isinstance(sources_data, list)
+    assert len(sources_data) >= 5
+
+    # 5. /api/copilot/sources/health
+    r_sources_health = client.get("/api/copilot/sources/health")
+    assert r_sources_health.status_code == 200
+    health_data = r_sources_health.json()
+    assert isinstance(health_data, list)
+    # Ensure authenticated sources remain in LOGIN_REQUIRED state
+    states = {item["source_id"]: item["state"] for item in health_data}
+    assert states.get("linkedin_pune") == "LOGIN_REQUIRED"
+    assert states.get("naukri") == "LOGIN_REQUIRED"
+    assert states.get("instahyre") == "LOGIN_REQUIRED"
+
+
+def test_dynamic_port_configuration():
+    """Verify that Settings resolves PORT and API_PORT dynamically."""
+    from job_copilot.config import Settings
+    s_port = Settings(PORT=10000)
+    assert s_port.api_port == 10000
+
+    s_api_port = Settings(API_PORT=9000)
+    assert s_api_port.api_port == 9000
+
+
+def test_dockerignore_candidate_data_isolation():
+    """Verify that .dockerignore excludes sensitive candidate data and runtime artifacts."""
+    root = Path.cwd()
+    dockerignore = root / ".dockerignore"
+    assert dockerignore.exists(), ".dockerignore must exist"
+    di_content = dockerignore.read_text(encoding="utf-8")
+    assert "data/candidate/" in di_content
+    assert "data/applications/" in di_content
+    assert "data/jobs/" in di_content
+    assert "data/tracking/" in di_content
+    assert "data/copilot/" in di_content
+    assert ".env" in di_content
+

@@ -2,7 +2,7 @@
 
 from pathlib import Path
 from typing import Optional
-from pydantic import Field
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -38,9 +38,16 @@ class Settings(BaseSettings):
         alias="MCP_SERVER_NAME",
     )
 
-    # API Server
-    api_host: str = Field(default="0.0.0.0", alias="API_HOST")
-    api_port: int = Field(default=8000, alias="API_PORT")
+    # API Server (supports standard PORT from Render/cloud providers and API_PORT)
+    api_host: str = Field(
+        default="0.0.0.0",
+        validation_alias=AliasChoices("API_HOST", "HOST", "api_host", "host"),
+    )
+    
+    api_port: int = Field(
+        default=8000,
+        validation_alias=AliasChoices("PORT", "API_PORT", "api_port", "port"),
+    )
 
     # Future LLM Integrations (Optional)
     llm_provider: Optional[str] = Field(default="anthropic", alias="LLM_PROVIDER")

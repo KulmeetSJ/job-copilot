@@ -70,7 +70,7 @@ EXPOSE 8000
 
 # Container Healthcheck against /health endpoint
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" || exit 1
+    CMD python -c "import urllib.request, os; port = os.environ.get('PORT', '8000'); urllib.request.urlopen(f'http://localhost:{port}/health')" || exit 1
 
-# Default execution: run the FastAPI web server
-CMD ["uvicorn", "job_copilot.api.app:app", "--host", "0.0.0.0", "--port", "8000"]
+# Default execution: run the FastAPI web server respecting cloud PORT environment variable
+CMD ["sh", "-c", "uvicorn job_copilot.api.app:app --host 0.0.0.0 --port ${PORT:-8000}"]

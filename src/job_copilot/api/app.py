@@ -15,7 +15,7 @@ from job_copilot.api.routes.job_intelligence import router as job_intelligence_r
 from job_copilot.api.routes.resume import router as resume_router
 from job_copilot.api.routes.tracking import router as tracking_router
 from job_copilot.config import settings
-from job_copilot.db.database import init_db
+from job_copilot.db.database import check_db_connection, init_db
 from job_copilot.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -49,8 +49,25 @@ app.include_router(tracking_router)
 
 @app.get("/health", summary="Health Check")
 def health_check() -> Dict[str, str]:
-    """Health status endpoint."""
+    """Health status endpoint (lightweight for liveness probes)."""
     return {"status": "ok"}
+
+
+@app.get("/ready", summary="Readiness Check")
+def readiness_check() -> Dict[str, str]:
+    """Readiness probe checking database connectivity without leaking credentials."""
+    from fastapi import HTTPException, status
+
+    db_healthy = check_db_connection()
+    if not db_healthy:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database connectivity unavailable",
+        )
+    return {
+        "status": "ready",
+        "database": "connected",
+    }
 
 
 @app.get("/", summary="Root Status")
