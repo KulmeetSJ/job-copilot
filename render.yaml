@@ -32,8 +32,8 @@ services:
     name: job-copilot-periodic-discovery
     runtime: docker
     dockerfilePath: Dockerfile
-    schedule: "0 */3 * * *"   # Runs every 3 hours
-    command: "python -m job_copilot copilot-discover && python -m job_copilot copilot-process"
+    schedule: "0 */3 * * *" # Runs every 3 hours
+    dockerCommand: "python -m job_copilot copilot-discover && python -m job_copilot copilot-process"
     envVars:
       - key: APP_ENV
         value: production

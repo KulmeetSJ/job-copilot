@@ -99,6 +99,7 @@ def test_deployment_configuration_files_exist():
     render_content = render.read_text(encoding="utf-8")
     assert "job-copilot-api" in render_content
     assert "healthCheckPath: /health" in render_content
+    assert "dockerCommand:" in render_content
 
     ci = root / ".github" / "workflows" / "ci.yml"
     assert ci.exists(), "CI workflow must exist"
