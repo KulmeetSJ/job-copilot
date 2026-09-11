@@ -1,0 +1,39 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: job-copilot-api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - APP_ENV=production
+      - LOG_LEVEL=INFO
+      - LOG_FORMAT=json
+      - API_HOST=0.0.0.0
+      - API_PORT=8000
+    volumes:
+      # Optional: bind mount local runtime data directory for local persistence
+      - ./data:/app/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  copilot-cron:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: job-copilot-cron
+    profiles:
+      - cron
+    restart: "no"
+    environment:
+      - APP_ENV=production
+      - LOG_LEVEL=INFO
+    volumes:
+      - ./data:/app/data
+    command: ["python", "-m", "job_copilot", "copilot-discover"]

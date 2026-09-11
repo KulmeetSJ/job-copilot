@@ -1,10 +1,19 @@
-# Python
+# ==============================================================================
+# Job Copilot .gitignore
+# ==============================================================================
+
+# Python bytecode & environments
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
 env/
+venv/
+.venv/
+ENV/
+env.bak/
+venv.bak/
 build/
 develop-eggs/
 dist/
@@ -21,21 +30,16 @@ wheels/
 .installed.cfg
 *.egg
 
-# Virtual Environments
-.venv/
-venv/
-ENV/
-env.bak/
-venv.bak/
-
-# Environment variables & secrets
+# Secrets & Environment variables
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
 *.pem
 *.key
+*.cert
+*.crt
 
-# Database
+# Local Databases
 *.sqlite
 *.sqlite3
 *.db
@@ -43,14 +47,16 @@ data/*.sqlite
 data/*.db
 data/job_copilot.db
 
-# Testing & Coverage
+# Testing, Coverage & Linters
 .pytest_cache/
 .coverage
 htmlcov/
 .tox/
 .nox/
+.mypy_cache/
+.ruff_cache/
 
-# IDE & OS
+# OS & IDE files
 .vscode/
 .idea/
 *.swp
@@ -60,7 +66,14 @@ htmlcov/
 */.DS_Store
 Thumbs.db
 
-# Candidate Data & Dynamic Application / Tracking Storage
+# Browser Automation Artifacts & Playwright
+.playwright/
+playwright-report/
+test-results/
+data/downloads/
+data/test_screenshots/
+
+# Sensitive Candidate Truth & Dynamic Runtime Stores
 data/candidate/
 data/jobs/
 data/applications/
@@ -68,10 +81,12 @@ data/tracking/
 data/copilot/
 data/generated/
 data/resumes/
-data/test_screenshots/
 data/extracted_raw_resumes.json
 
-# Playwright & Browser sessions
-.playwright/
-playwright-report/
-test-results/
+# Explicitly track safe repository configurations and strategies
+!data/config/
+!data/config/*.yaml
+!data/resume_strategies/
+!data/resume_strategies/*.yaml
+!data/sample_jds/
+!data/sample_jds/*

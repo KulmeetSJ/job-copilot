@@ -1,0 +1,45 @@
+# ==============================================================================
+# Render Blueprint Specification for Job Copilot
+# ==============================================================================
+
+services:
+  # ----------------------------------------------------------------------------
+  # 1. API Web Service
+  # ----------------------------------------------------------------------------
+  - type: web
+    name: job-copilot-api
+    runtime: docker
+    dockerfilePath: Dockerfile
+    plan: starter
+    region: oregon
+    healthCheckPath: /health
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: LOG_LEVEL
+        value: INFO
+      - key: LOG_FORMAT
+        value: json
+      - key: HUMAN_CONFIRMATION_REQUIRED
+        value: "true"
+      - key: PORT
+        value: "8000"
+
+  # ----------------------------------------------------------------------------
+  # 2. Scheduled Periodic Copilot Execution (Cron Job)
+  # ----------------------------------------------------------------------------
+  - type: cron
+    name: job-copilot-periodic-discovery
+    runtime: docker
+    dockerfilePath: Dockerfile
+    schedule: "0 */3 * * *"   # Runs every 3 hours
+    command: "python -m job_copilot copilot-discover && python -m job_copilot copilot-process"
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: LOG_LEVEL
+        value: INFO
+      - key: LOG_FORMAT
+        value: json
+      - key: HUMAN_CONFIRMATION_REQUIRED
+        value: "true"

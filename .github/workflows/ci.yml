@@ -1,0 +1,49 @@
+name: Continuous Integration
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  test-and-security:
+    name: Test & Security Audit
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Install Playwright Browsers
+        run: |
+          playwright install --with-deps chromium
+
+      - name: Run Repository Secret Scanner
+        run: |
+          python -c "
+          from job_copilot.utils.security import scan_repository_for_secrets
+          findings = scan_repository_for_secrets()
+          if findings:
+              print('❌ Security check failed: Potential secrets detected:')
+              for fpath, items in findings.items():
+                  for pat_name, lnum, snip in items:
+                      print(f'  - {fpath}:{lnum} [{pat_name}]')
+              exit(1)
+          print('✅ No exposed secrets found.')
+          "
+
+      - name: Run Full Regression Test Suite
+        run: |
+          pytest -v

@@ -1,0 +1,43 @@
+# Git and IDE
+.git/
+.github/
+.vscode/
+.idea/
+.DS_Store
+*/.DS_Store
+
+# Python virtual environment and caches
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Local secrets & environment files
+.env
+.env.*
+!.env.example
+
+# Sensitive Candidate Truth & Dynamic Runtime Stores
+data/candidate/
+data/jobs/
+data/applications/
+data/tracking/
+data/copilot/
+data/generated/
+data/resumes/
+data/downloads/
+data/test_screenshots/
+data/*.sqlite
+data/*.db
+data/extracted_raw_resumes.json
+
+# Test directories and local fixtures
+tests/
+
+# Documentation (kept in git, excluded from production image)
+docs/
