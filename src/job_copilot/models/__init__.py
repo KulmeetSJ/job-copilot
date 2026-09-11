@@ -13,6 +13,7 @@ from job_copilot.models.copilot import (
     SourceHealthRecord,
 )
 from job_copilot.models.artifact import ArtifactModel
+from job_copilot.models.browser_task import BrowserTaskModel
 
 __all__ = [
     "Base",
@@ -27,5 +28,6 @@ __all__ = [
     "CopilotQueueRecord",
     "SourceHealthRecord",
     "ArtifactModel",
+    "BrowserTaskModel",
 ]
 

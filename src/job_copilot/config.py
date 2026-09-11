@@ -57,6 +57,40 @@ class Settings(BaseSettings):
         default="http://localhost:11434", alias="OLLAMA_BASE_URL"
     )
 
+    # Artifact Storage (Phase 10A)
+    artifact_storage_provider: str = Field(
+        default="local",
+        alias="ARTIFACT_STORAGE_PROVIDER",
+    )
+    artifact_storage_dir: Path = Field(
+        default=Path("./data/artifacts"),
+        alias="ARTIFACT_STORAGE_DIR",
+    )
+    artifact_storage_bucket: Optional[str] = Field(
+        default=None,
+        alias="ARTIFACT_STORAGE_BUCKET",
+    )
+    artifact_storage_region: str = Field(
+        default="us-east-1",
+        alias="ARTIFACT_STORAGE_REGION",
+    )
+    artifact_storage_endpoint: Optional[str] = Field(
+        default=None,
+        alias="ARTIFACT_STORAGE_ENDPOINT",
+    )
+    artifact_storage_access_key: Optional[str] = Field(
+        default=None,
+        alias="ARTIFACT_STORAGE_ACCESS_KEY",
+    )
+    artifact_storage_secret_key: Optional[str] = Field(
+        default=None,
+        alias="ARTIFACT_STORAGE_SECRET_KEY",
+    )
+    artifact_max_size_bytes: int = Field(
+        default=50 * 1024 * 1024,  # 50MB
+        alias="ARTIFACT_MAX_SIZE_BYTES",
+    )
+
     @property
     def is_sqlite(self) -> bool:
         """Check if current database is SQLite."""
