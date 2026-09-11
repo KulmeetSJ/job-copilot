@@ -1,0 +1,17 @@
+Job Title: Senior Backend Java Engineer
+Company: Stripe
+Location: Remote
+
+About the Role:
+We are looking for a Software Engineer with 3+ years of experience in Java and Spring Boot to join our Payments Infrastructure team.
+
+Required Qualifications:
+- Strong experience in Java and Spring Boot.
+- Experience with PostgreSQL, Redis, and distributed systems.
+- Experience building REST APIs and microservices.
+- Experience with Cloud technologies (GCP or AWS) and Docker.
+
+Preferred Qualifications:
+- Experience with streaming pipelines (Apache Beam or Kafka).
+- Experience with Terraform Infrastructure as Code.
+- Bachelor's degree in Computer Science.

@@ -1,0 +1,61 @@
+# ==============================================================================
+# Resume Strategy: Backend Java & Distributed Systems
+# ==============================================================================
+
+name: "backend_java"
+display_title: "Software Engineer | Backend & Distributed Systems"
+
+summary_template: >-
+  Software Engineer with 2+ years of experience engineering high-throughput backend services
+  and real-time streaming data pipelines in Java (Spring Boot) and Python at HSBC. Proven work
+  across distributed data ingestion, PostgreSQL, Redis caching, REST APIs, and GCP cloud infrastructure.
+
+prioritized_skills:
+  - "Java"
+  - "Spring Boot"
+  - "PostgreSQL"
+  - "Redis"
+  - "REST APIs"
+  - "Python"
+  - "SQL"
+  - "Apache Beam"
+  - "GCP Dataflow"
+  - "Docker"
+  - "FastAPI"
+
+deprioritized_skills:
+  - "Next.js"
+  - "React"
+  - "Tailwind CSS"
+
+preferred_projects:
+  - "Distributed Rate Limiter Service"
+  - "MCP Diagnostic Tools for Data Pipelines"
+  - "Smart Data Storage Pipeline"
+
+deprioritized_projects:
+  - "GuruGranthi – Services Marketplace"
+
+preferred_experience_keywords:
+  - "Apache Beam"
+  - "Spring Boot"
+  - "Java"
+  - "10M+"
+  - "BigQuery"
+  - "Dataflow"
+  - "PostgreSQL"
+  - "Terraform"
+  - "Jenkins"
+
+section_order:
+  - "summary"
+  - "skills"
+  - "experience"
+  - "projects"
+  - "certifications"
+  - "awards"
+  - "education"
+
+max_bullets_per_experience: 5
+max_projects: 3
+max_bullets_per_project: 2

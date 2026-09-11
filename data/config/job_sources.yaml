@@ -1,0 +1,133 @@
+# Phase 9.2 Job Sources Registry Configuration
+# Defines career platforms, job boards, discovery modes, check intervals, and authentication requirements.
+# The Copilot executes in Scheduled/Periodic mode; does not run unmanaged continuous daemons.
+
+schedules:
+  critical:
+    interval_minutes: 60
+    description: "Every 1 hour (e.g., active high-priority searches like LinkedIn Pune)"
+  high:
+    interval_minutes: 180
+    description: "Every 3 hours (e.g., Naukri, Instahyre, Wellfound, Welcome to the Jungle)"
+  medium:
+    interval_minutes: 360
+    description: "Every 6 hours (e.g., We Work Remotely, Company Careers)"
+  low:
+    interval_minutes: 720
+    description: "Every 12 hours (e.g., secondary / niche boards)"
+
+sources:
+  - id: "linkedin_pune"
+    name: "LinkedIn Jobs - Pune"
+    type: "authenticated_job_board"
+    enabled: true
+    priority: "critical"
+    discovery_mode: "authenticated_browser"
+    requires_login: true
+    supports_public_discovery: false
+    check_interval_minutes: 60
+    urls:
+      - "https://www.linkedin.com/jobs/"
+    reference_url: "https://www.linkedin.com/jobs/search-results/?keywords=Jobs%20in%20pune"
+    search:
+      keywords:
+        - "Java"
+        - "Backend"
+        - "Software Engineer"
+        - "Data Engineer"
+        - "Cloud Engineer"
+        - "DevOps"
+      locations:
+        - "Pune"
+    notes: "Normalized stable search definition for Pune tech jobs. Transient tracking/session parameters stripped."
+
+  - id: "naukri"
+    name: "Naukri"
+    type: "candidate_portal"
+    enabled: true
+    priority: "high"
+    discovery_mode: "authenticated_browser"
+    requires_login: true
+    supports_public_discovery: false
+    check_interval_minutes: 180
+    urls:
+      - "https://www.naukri.com/mnjuser/homepage"
+    notes: "Personalized candidate portal. Requires authenticated browser session. Strictly respect CAPTCHA and rate limits."
+
+  - id: "instahyre"
+    name: "Instahyre"
+    type: "candidate_portal"
+    enabled: true
+    priority: "high"
+    discovery_mode: "authenticated_browser"
+    requires_login: true
+    supports_public_discovery: false
+    check_interval_minutes: 180
+    urls:
+      - "https://www.instahyre.com/candidate/opportunities/?matching=true"
+    notes: "Personalized candidate portal. Do NOT scrape as public job board. Requires authenticated browser session."
+
+  - id: "wellfound"
+    name: "Wellfound"
+    type: "job_board"
+    enabled: true
+    priority: "high"
+    discovery_mode: "public"
+    requires_login: false
+    supports_public_discovery: true
+    check_interval_minutes: 180
+    urls:
+      - "https://wellfound.com/jobs"
+    search_categories:
+      - "Engineering"
+      - "Backend Software Engineering"
+      - "Infrastructure"
+      - "Data"
+      - "Cloud"
+      - "AI/ML infrastructure"
+    notes: "Tech and startup job searches with role and location filters. Pause for login if specific query requires auth."
+
+  - id: "welcome_to_the_jungle"
+    name: "Welcome to the Jungle"
+    type: "job_board"
+    enabled: true
+    priority: "high"
+    discovery_mode: "public"
+    requires_login: false
+    supports_public_discovery: true
+    check_interval_minutes: 180
+    urls:
+      - "https://us.welcometothejungle.com/"
+    notes: "Company discovery and curated job board. Supports public browsing and authenticated discovery."
+
+  - id: "we_work_remotely"
+    name: "We Work Remotely"
+    type: "remote_job_board"
+    enabled: true
+    priority: "high"
+    discovery_mode: "public"
+    requires_login: false
+    supports_public_discovery: true
+    check_interval_minutes: 360
+    urls:
+      - "https://weworkremotely.com/top-trending-remote-jobs"
+    search_categories:
+      - "Back-End Programming"
+      - "Software Development"
+      - "DevOps and Sysadmin"
+      - "Full-Stack Programming"
+      - "Data / Infrastructure"
+    notes: "Public remote jobs board with dedicated programming and DevOps categories."
+
+  - id: "example_source"
+    name: "Example Source Template"
+    type: "job_board"
+    enabled: false
+    priority: "medium"
+    discovery_mode: "public"
+    requires_login: false
+    supports_public_discovery: true
+    check_interval_minutes: 360
+    urls:
+      - "https://example.com/jobs"
+    notes: "Template for extensible custom sources without code changes."

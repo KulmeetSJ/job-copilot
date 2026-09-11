@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Senior Backend Java Engineer - Application</title>
+</head>
+<body>
+    <h1>Application: Senior Software Engineer — Backend</h1>
+    <h2>HSBC / Enterprise FinTech</h2>
+
+    <form id="app-form" action="#" method="POST">
+        <section id="personal-info">
+            <h3>Personal Information</h3>
+            <label for="first_name">First Name</label>
+            <input type="text" id="first_name" name="first_name" required autocomplete="given-name">
+
+            <label for="last_name">Last Name</label>
+            <input type="text" id="last_name" name="last_name" required autocomplete="family-name">
+
+            <label for="email">Email</label>
+            <input type="email" id="email" name="email" required autocomplete="email">
+
+            <label for="phone">Phone Number</label>
+            <input type="tel" id="phone" name="phone" autocomplete="tel">
+        </section>
+
+        <section id="documents">
+            <h3>Documents</h3>
+            <label for="resume">Upload Resume</label>
+            <input type="file" id="resume" name="resume" required>
+
+            <label for="cover_letter">Cover Letter</label>
+            <textarea id="cover_letter" name="cover_letter" rows="5"></textarea>
+        </section>
+
+        <section id="questions">
+            <h3>Application Questions</h3>
+            <label for="q_interest">Why are you interested in this role?</label>
+            <textarea id="q_interest" name="q_interest" rows="4"></textarea>
+
+            <label for="q_java">Describe your Java experience.</label>
+            <textarea id="q_java" name="q_java" rows="4"></textarea>
+
+            <label for="k8s_years">How many years of production Kubernetes experience do you have?</label>
+            <input type="number" id="k8s_years" name="k8s_years">
+
+            <label for="sponsorship">Will you now or in the future require visa sponsorship?</label>
+            <select id="sponsorship" name="sponsorship">
+                <option value="">Select an option</option>
+                <option value="Yes">Yes</option>
+                <option value="No">No</option>
+            </select>
+
+            <label for="salary">What are your salary expectations for this position?</label>
+            <input type="text" id="salary" name="salary">
+        </section>
+
+        <div style="margin-top: 20px;">
+            <button type="submit" id="submit-btn">Submit Application</button>
+        </div>
+    </form>
+</body>
+</html>

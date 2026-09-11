@@ -1,0 +1,60 @@
+# ==============================================================================
+# Resume Strategy: Data Engineering & Analytics Platform
+# ==============================================================================
+
+name: "data_engineering"
+display_title: "Software Engineer | Data Platform"
+
+summary_template: >-
+  Software Engineer with 2+ years of experience building scalable real-time and batch data pipelines
+  at HSBC. Extensive hands-on work with Apache Beam (Java), GCP Dataflow, BigQuery data warehousing,
+  Cloud Composer (Airflow) workflow orchestration, and Parquet ETL processing.
+
+prioritized_skills:
+  - "Apache Beam"
+  - "GCP BigQuery"
+  - "GCP Dataflow"
+  - "Apache Airflow / Cloud Composer"
+  - "Google Cloud Pub/Sub"
+  - "Python"
+  - "SQL"
+  - "Java"
+  - "Spring Boot"
+  - "Google Cloud Platform (GCP)"
+  - "PostgreSQL"
+
+deprioritized_skills:
+  - "React"
+  - "Next.js"
+  - "Tailwind CSS"
+
+preferred_projects:
+  - "Smart Data Storage Pipeline"
+  - "MCP Diagnostic Tools for Data Pipelines"
+  - "Terraform Log Summarizer & Shift-Left Compliance Checker"
+
+deprioritized_projects:
+  - "GuruGranthi – Services Marketplace"
+
+preferred_experience_keywords:
+  - "Apache Beam"
+  - "BigQuery"
+  - "10M+"
+  - "Dataflow"
+  - "Cloud Composer"
+  - "Pub/Sub"
+  - "Parquet"
+  - "ETL"
+
+section_order:
+  - "summary"
+  - "skills"
+  - "experience"
+  - "projects"
+  - "certifications"
+  - "awards"
+  - "education"
+
+max_bullets_per_experience: 5
+max_projects: 3
+max_bullets_per_project: 2

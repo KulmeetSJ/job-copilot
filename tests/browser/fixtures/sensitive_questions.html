@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Application - Sensitive Questions</title>
+</head>
+<body>
+    <form id="sensitive-form">
+        <label for="first_name">First Name</label>
+        <input type="text" id="first_name" name="first_name" required>
+
+        <label for="email">Email</label>
+        <input type="email" id="email" name="email" required>
+
+        <label for="sponsorship">Will you now or in the future require visa sponsorship?</label>
+        <select id="sponsorship" name="sponsorship" required>
+            <option value="">Please Select</option>
+            <option value="Yes">Yes</option>
+            <option value="No">No</option>
+        </select>
+
+        <label for="expected_salary">What is your expected annual salary?</label>
+        <input type="text" id="expected_salary" name="expected_salary" required>
+
+        <label for="notice_period">What is your notice period (in days/weeks)?</label>
+        <input type="text" id="notice_period" name="notice_period" required>
+
+        <label for="k8s_years">How many years of production Kubernetes experience do you have?</label>
+        <input type="number" id="k8s_years" name="k8s_years">
+
+        <button type="submit">Submit</button>
+    </form>
+</body>
+</html>

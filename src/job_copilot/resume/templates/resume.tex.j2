@@ -1,0 +1,155 @@
+\documentclass[letterpaper,10pt]{article}
+
+\usepackage{latexsym}
+\usepackage[empty]{fullpage}
+\usepackage{titlesec}
+\usepackage{marvosym}
+\usepackage[usenames,dvipsnames]{color}
+\usepackage{verbatim}
+\usepackage{enumitem}
+\usepackage[hidelinks]{hyperref}
+\usepackage[english]{babel}
+\usepackage{tabularx}
+\ifdefined\pdfgentounicode
+  \input{glyphtounicode}
+  \pdfgentounicode=1
+\fi
+
+\addtolength{\oddsidemargin}{-0.6in}
+\addtolength{\evensidemargin}{-0.5in}
+\addtolength{\textwidth}{1.19in}
+\addtolength{\topmargin}{-.7in}
+\addtolength{\textheight}{1.4in}
+
+\urlstyle{same}
+\raggedbottom
+\raggedright
+\setlength{\tabcolsep}{0in}
+
+\titleformat{\section}{
+  \vspace{-8pt}\scshape\raggedright\large\bfseries
+}{}{0em}{}[\color{black}\titlerule \vspace{-3pt}]
+
+\newcommand{\resumeItem}[1]{\item\small{{#1 \vspace{-1.5pt}}}}
+\newcommand{\resumeSubheading}[4]{
+  \vspace{-1pt}\item
+    \begin{tabular*}{1.0\textwidth}[t]{l@{\extracolsep{\fill}}r}
+      \textbf{\large #1} & #2 \\
+      \textit{\small#3} & \textit{\small #4}
+    \end{tabular*}\vspace{-4pt}
+}
+\newcommand{\resumeProjectHeading}[2]{
+    \vspace{-1pt}\item
+    \begin{tabular*}{1.0\textwidth}{l@{\extracolsep{\fill}}r}
+      \textbf{\large #1} & \small #2 \\
+    \end{tabular*}\vspace{-4pt}
+}
+
+\newcommand{\resumeSubHeadingListStart}{\begin{itemize}[leftmargin=0.0in, label={}]}
+\newcommand{\resumeSubHeadingListEnd}{\end{itemize}}
+\newcommand{\resumeItemListStart}{\begin{itemize}[leftmargin=0.15in]}
+\newcommand{\resumeItemListEnd}{\end{itemize}\vspace{-3pt}}
+
+\begin{document}
+
+%----------HEADER----------
+\begin{center}
+    {\Huge \scshape \VAR{personal_info.full_name | latex_escape}} \\ \vspace{2pt}
+    \small \textbf{\VAR{display_title | latex_escape}} \\ \vspace{2pt}
+    \small \VAR{personal_info.phone | latex_escape} $|$ \href{mailto:\VAR{personal_info.email}}{\VAR{personal_info.email | latex_escape}} $|$ \VAR{personal_info.location | latex_escape} \\
+    \BLOCK{set active_links = personal_info.links | selectattr('url') | list}
+    \small \BLOCK{for link in active_links}\href{\VAR{link.url}}{\VAR{link.label | latex_escape}}\BLOCK{if not loop.last} $|$ \BLOCK{endif}\BLOCK{endfor}
+\end{center}
+
+\BLOCK{for section in section_order}
+
+\BLOCK{if section == "summary" and summary}
+%-----------SUMMARY-----------
+\section{Professional Summary}
+\small{\VAR{summary | latex_escape}}
+\BLOCK{endif}
+
+\BLOCK{if section == "skills" and skill_groups}
+%-----------TECHNICAL SKILLS-----------
+\section{Technical Skills}
+ \begin{itemize}[leftmargin=0.15in, label={}, itemsep=0pt]
+    \small{\item{
+      \BLOCK{for grp in skill_groups}
+      \textbf{\VAR{grp.category | latex_escape}:}{ \VAR{grp.skills | join(', ') | latex_escape}}\BLOCK{if not loop.last} \\ \BLOCK{endif}
+      \BLOCK{endfor}
+    }}
+ \end{itemize}
+\BLOCK{endif}
+
+\BLOCK{if section == "experience" and experience}
+%-----------WORK EXPERIENCE-----------
+\section{Work Experience}
+  \resumeSubHeadingListStart
+    \BLOCK{for exp in experience}
+    \resumeSubheading
+      {\VAR{exp.company | latex_escape}}{\VAR{exp.location | latex_escape}}
+      {\VAR{exp.role | latex_escape}\BLOCK{if exp.team} -- \VAR{exp.team | latex_escape}\BLOCK{endif}}{\VAR{exp.start_date | format_date} -- \BLOCK{if exp.current}Present\BLOCK{else}\VAR{exp.end_date | format_date}\BLOCK{endif}}
+      \resumeItemListStart
+        \BLOCK{for bullet in exp.bullets}
+        \resumeItem{\VAR{bullet.text | latex_escape}}
+        \BLOCK{endfor}
+      \resumeItemListEnd
+    \BLOCK{endfor}
+  \resumeSubHeadingListEnd
+\BLOCK{endif}
+
+\BLOCK{if section == "projects" and projects}
+%-----------PROJECTS-----------
+\section{Projects}
+    \resumeSubHeadingListStart
+      \BLOCK{for prj in projects}
+      \resumeProjectHeading
+          {\textbf{\VAR{prj.name | latex_escape}}\BLOCK{if prj.technologies} $|$ \emph{\VAR{prj.technologies | join(', ') | latex_escape}}\BLOCK{endif}}{}
+          \resumeItemListStart
+            \BLOCK{for bullet in prj.bullets}
+            \resumeItem{\VAR{bullet.text | latex_escape}}
+            \BLOCK{endfor}
+          \resumeItemListEnd
+      \BLOCK{endfor}
+    \resumeSubHeadingListEnd
+\BLOCK{endif}
+
+\BLOCK{if section == "certifications" and certifications}
+%-----------CERTIFICATIONS-----------
+\section{Certifications}
+\begin{itemize}[leftmargin=0.15in, label={}, itemsep=0pt]
+    \small{\item{
+      \BLOCK{for cert in certifications}
+      \textbf{\VAR{cert.name | latex_escape}}\BLOCK{if cert.issuer} (\VAR{cert.issuer | latex_escape})\BLOCK{endif}\BLOCK{if not loop.last} $|$ \BLOCK{endif}
+      \BLOCK{endfor}
+    }}
+\end{itemize}
+\BLOCK{endif}
+
+\BLOCK{if section == "awards" and awards}
+%-----------AWARDS-----------
+\section{Awards \& Honors}
+\begin{itemize}[leftmargin=0.15in, label={}, itemsep=0pt]
+    \small{\item{
+      \BLOCK{for awd in awards}
+      \textbf{\VAR{awd.title | latex_escape}}\BLOCK{if awd.issuer} -- \emph{\VAR{awd.issuer | latex_escape}}\BLOCK{endif}\BLOCK{if not loop.last} \\ \BLOCK{endif}
+      \BLOCK{endfor}
+    }}
+\end{itemize}
+\BLOCK{endif}
+
+\BLOCK{if section == "education" and education}
+%-----------EDUCATION-----------
+\section{Education}
+  \resumeSubHeadingListStart
+    \BLOCK{for edu in education}
+    \resumeSubheading
+      {\VAR{edu.institution | latex_escape}}{\VAR{edu.start_date | format_date} -- \VAR{edu.end_date | format_date}}
+      {\VAR{edu.degree | latex_escape} in \VAR{edu.field_of_study | latex_escape}\BLOCK{if edu.gpa} $|$ \textbf{CGPA: \VAR{edu.gpa | latex_escape}}\BLOCK{endif}}{\VAR{edu.location | latex_escape}}
+    \BLOCK{endfor}
+  \resumeSubHeadingListEnd
+\BLOCK{endif}
+
+\BLOCK{endfor}
+
+\end{document}

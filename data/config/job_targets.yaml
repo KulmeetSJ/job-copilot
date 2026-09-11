@@ -1,0 +1,202 @@
+# Phase 9.2 Job Targets & Preferences Configuration
+# Defines candidate targeting preferences for companies, job families, skills, locations, and search profiles.
+# Candidate truth remains authoritative in data/candidate/master_profile.yaml and evidence.yaml.
+
+target_companies:
+  tier_1:
+    priority_tier: 1
+    domain_group: "financial_services"
+    reason: "Strong domain adjacency to candidate's HSBC Payments/Data Platform experience"
+    bonus_points: 5.0
+    companies:
+      - name: "Mastercard"
+        domain: "payments"
+      - name: "Deutsche Bank"
+        domain: "banking"
+      - name: "Morgan Stanley"
+        domain: "banking_wealth"
+      - name: "JPMorgan Chase"
+        domain: "banking_payments"
+      - name: "Goldman Sachs"
+        domain: "banking"
+      - name: "Citi"
+        domain: "banking"
+      - name: "UBS"
+        domain: "banking_wealth"
+      - name: "Barclays"
+        domain: "banking"
+      - name: "Bajaj Finance"
+        domain: "fintech_payments"
+      - name: "Stripe"
+        domain: "payments"
+      - name: "Finastra"
+        domain: "fintech"
+      - name: "American Express"
+        domain: "payments"
+
+  tier_2:
+    priority_tier: 2
+    domain_group: "technology_product"
+    reason: "High-scale product and technology engineering domain"
+    bonus_points: 2.0
+    companies:
+      - name: "Zomato"
+        domain: "consumer_tech"
+      - name: "Blinkit"
+        domain: "quick_commerce"
+      - name: "Myntra"
+        domain: "e_commerce"
+      - name: "Microsoft"
+        domain: "enterprise_tech"
+      - name: "Google"
+        domain: "platform_cloud"
+      - name: "Uber"
+        domain: "distributed_systems"
+      - name: "Ola"
+        domain: "mobility_tech"
+      - name: "Siemens"
+        domain: "industrial_tech"
+      - name: "Meta"
+        domain: "scale_infrastructure"
+      - name: "Optum"
+        domain: "healthcare_tech"
+
+  other_companies:
+    allow_non_target_companies: true
+    default_bonus_points: 0.0
+    notes: "Non-target companies remain fully discoverable and can rank highly if Phase 4 match score is high."
+
+job_families:
+  primary:
+    - "Backend Software Engineer"
+    - "Software Engineer - Java"
+    - "Java Backend Engineer"
+    - "Backend Engineer"
+    - "Software Engineer - Distributed Systems"
+    - "Platform Engineer"
+    - "Data Platform Engineer"
+    - "Data Engineer"
+    - "Cloud Engineer"
+    - "Cloud Platform Engineer"
+    - "DevOps Engineer"
+    - "Site Reliability Engineer"
+    - "SRE"
+  secondary:
+    - "Full Stack Engineer"
+    - "Software Engineer - GCP"
+    - "Software Engineer - Data"
+    - "Infrastructure Engineer"
+    - "Production Engineer"
+    - "Payments Engineer"
+    - "Payment Systems Engineer"
+
+skills:
+  high_priority:
+    - "Java"
+    - "Spring Boot"
+    - "GCP"
+    - "BigQuery"
+    - "Pub/Sub"
+    - "Dataflow"
+    - "Apache Beam"
+    - "Terraform"
+    - "Jenkins"
+    - "Python"
+    - "SQL"
+    - "Distributed Systems"
+    - "Data Platform"
+    - "Payments"
+  secondary:
+    - "Docker"
+    - "Kubernetes"
+    - "GKE"
+    - "Helm"
+    - "Kafka"
+    - "Airflow"
+    - "Cloud Composer"
+    - "React"
+    - "TypeScript"
+    - "Next.js"
+
+locations:
+  primary:
+    - "Pune"
+    - "Bangalore"
+    - "Bengaluru"
+    - "Hyderabad"
+    - "Delhi NCR"
+    - "Gurgaon"
+    - "Gurugram"
+    - "Mumbai"
+  secondary:
+    - "Chennai"
+    - "Noida"
+    - "Remote - India"
+  international:
+    enabled: true
+    locations:
+      - "Singapore"
+      - "Tokyo"
+
+remote_policies:
+  supported_modes:
+    - "REMOTE_WORLDWIDE"
+    - "REMOTE_INDIA"
+    - "REMOTE_REGION_RESTRICTED"
+    - "HYBRID"
+    - "ONSITE"
+    - "UNKNOWN"
+  notes: "Work authorization remains UNKNOWN unless explicitly supported by candidate data."
+
+search_profiles:
+  backend_java:
+    name: "Backend Java & Spring Boot"
+    keywords:
+      - "Java"
+      - "Spring Boot"
+      - "Backend"
+      - "Software Engineer"
+    locations:
+      - "Pune"
+      - "Bangalore"
+      - "Hyderabad"
+      - "Delhi NCR"
+  data_platform:
+    name: "Data Platform & Engineering"
+    keywords:
+      - "Data Platform"
+      - "Data Engineer"
+      - "BigQuery"
+      - "Dataflow"
+      - "Apache Beam"
+    locations:
+      - "Pune"
+      - "Bangalore"
+      - "Hyderabad"
+      - "Remote - India"
+  cloud_devops:
+    name: "Cloud & DevOps / SRE"
+    keywords:
+      - "GCP"
+      - "Cloud Engineer"
+      - "DevOps"
+      - "Platform Engineer"
+      - "SRE"
+    locations:
+      - "Pune"
+      - "Bangalore"
+      - "Hyderabad"
+      - "Remote - India"
+  payments:
+    name: "Payments & Transaction Infrastructure"
+    keywords:
+      - "Payments"
+      - "Payment Platform"
+      - "Payment Systems"
+      - "Transaction Processing"
+      - "Payments Infrastructure"
+    locations:
+      - "Pune"
+      - "Bangalore"
+      - "Hyderabad"
+      - "Remote - India"

@@ -1,0 +1,52 @@
+# Phase 9 Continuous Job Copilot Configuration
+
+priority:
+  # Base anchor is Phase 4 continuous fit_score (0-100).
+  # recommendation_tier_adjustments provides policy modifiers to avoid double-counting.
+  recommendation_tier_adjustments:
+    STRONG_APPLY: 5.0
+    APPLY: 0.0
+    CONSIDER: -5.0
+    REVIEW: -5.0
+    LOW_PRIORITY: -15.0
+    SKIP: -40.0
+    HIGH_RISK: -50.0
+
+  targeting:
+    enabled: true
+    tier_1_bonus: 5.0
+    tier_2_bonus: 2.0
+
+  freshness_bonus:
+    very_recent_days: 3
+    very_recent_points: 10.0
+    recent_days: 7
+    recent_points: 5.0
+    old_points: 0.0
+
+  historical:
+    enabled: true
+    minimum_sample_size: 10
+    high_performing_bonus: 10.0
+    low_performing_penalty: -10.0
+
+  risk_penalties:
+    hard_conflict: -50.0
+    missing_critical_skill: -20.0
+    unsupported_seniority: -25.0
+    unknown_sponsorship: -5.0
+
+queue:
+  max_active_review: 50
+  auto_skip_below_priority: 20.0
+  default_sort: "priority_score_desc"
+
+human_approval_required:
+  - sensitive_application_questions
+  - salary_expectations
+  - sponsorship_and_work_authorization
+  - notice_period_and_start_date
+  - legal_declarations
+  - unverified_experience_claims
+  - final_application_review
+  - external_portal_submission

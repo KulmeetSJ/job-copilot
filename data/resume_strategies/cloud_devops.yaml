@@ -1,0 +1,62 @@
+# ==============================================================================
+# Resume Strategy: Cloud & DevOps
+# ==============================================================================
+
+name: "cloud_devops"
+display_title: "Software Engineer | Cloud & DevOps"
+
+summary_template: >-
+  Software Engineer with 2+ years of experience managing enterprise Google Cloud Platform (GCP)
+  infrastructure, Infrastructure as Code (Terraform), and CI/CD automation at HSBC. Google Cloud
+  Certified Professional Cloud Architect with hands-on experience provisioning 2,000+ cloud resources
+  and automating Cloud Composer (Airflow) workflows.
+
+prioritized_skills:
+  - "Google Cloud Platform (GCP)"
+  - "Terraform"
+  - "Jenkins"
+  - "Apache Airflow / Cloud Composer"
+  - "Docker"
+  - "Python"
+  - "Groovy"
+  - "GCP Dataflow"
+  - "GCP BigQuery"
+  - "Google Cloud Pub/Sub"
+  - "GCP Cloud Monitoring"
+
+deprioritized_skills:
+  - "React"
+  - "Next.js"
+  - "Tailwind CSS"
+
+preferred_projects:
+  - "Terraform Log Summarizer & Shift-Left Compliance Checker"
+  - "MCP Diagnostic Tools for Data Pipelines"
+  - "Smart Data Storage Pipeline"
+
+deprioritized_projects:
+  - "GuruGranthi – Services Marketplace"
+  - "Distributed Rate Limiter Service"
+
+preferred_experience_keywords:
+  - "Terraform"
+  - "2,000+"
+  - "Cloud Composer"
+  - "Jenkins"
+  - "cost reduction"
+  - "Dataflow"
+  - "Cloud Monitoring"
+  - "shift-left"
+
+section_order:
+  - "summary"
+  - "skills"
+  - "experience"
+  - "projects"
+  - "certifications"
+  - "awards"
+  - "education"
+
+max_bullets_per_experience: 5
+max_projects: 3
+max_bullets_per_project: 2

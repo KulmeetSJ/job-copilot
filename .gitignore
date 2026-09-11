@@ -1,0 +1,77 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environments
+.venv/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Environment variables & secrets
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# Database
+*.sqlite
+*.sqlite3
+*.db
+data/*.sqlite
+data/*.db
+data/job_copilot.db
+
+# Testing & Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# IDE & OS
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+*/.DS_Store
+Thumbs.db
+
+# Candidate Data & Dynamic Application / Tracking Storage
+data/candidate/
+data/jobs/
+data/applications/
+data/tracking/
+data/copilot/
+data/generated/
+data/resumes/
+data/test_screenshots/
+data/extracted_raw_resumes.json
+
+# Playwright & Browser sessions
+.playwright/
+playwright-report/
+test-results/

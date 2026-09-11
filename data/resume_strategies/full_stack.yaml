@@ -1,0 +1,59 @@
+# ==============================================================================
+# Resume Strategy: Full Stack Software Engineering
+# ==============================================================================
+
+name: "full_stack"
+display_title: "Full Stack Software Engineer"
+
+summary_template: >-
+  Full Stack Software Engineer with 2+ years of experience engineering high-throughput Java
+  (Spring Boot) backend services at HSBC, combined with building responsive web applications
+  in React, Next.js, and TypeScript. Experience spanning PostgreSQL, Supabase RLS, and GCP.
+
+prioritized_skills:
+  - "React"
+  - "Next.js"
+  - "TypeScript"
+  - "Java"
+  - "Spring Boot"
+  - "PostgreSQL"
+  - "Supabase"
+  - "Tailwind CSS"
+  - "Python"
+  - "FastAPI"
+  - "REST APIs"
+  - "Docker"
+
+deprioritized_skills:
+  - "SonarQube"
+  - "Checkmarx"
+
+preferred_projects:
+  - "GuruGranthi – Services Marketplace"
+  - "AI-Powered RFP Management System"
+  - "Distributed Rate Limiter Service"
+
+deprioritized_projects:
+  - "Terraform Log Summarizer & Shift-Left Compliance Checker"
+
+preferred_experience_keywords:
+  - "Java"
+  - "Spring Boot"
+  - "REST APIs"
+  - "PostgreSQL"
+  - "10M+"
+  - "Beam"
+  - "GCP"
+
+section_order:
+  - "summary"
+  - "skills"
+  - "experience"
+  - "projects"
+  - "certifications"
+  - "awards"
+  - "education"
+
+max_bullets_per_experience: 5
+max_projects: 3
+max_bullets_per_project: 2

@@ -1,0 +1,62 @@
+# ==============================================================================
+# Resume Strategy: SRE & DevSecOps
+# ==============================================================================
+
+name: "sre_devops"
+display_title: "Site Reliability Engineer (DevOps)"
+
+summary_template: >-
+  Site Reliability Engineer with 2+ years of experience designing automated CI/CD pipelines,
+  DevSecOps security gates, and observability infrastructure at HSBC. Google Cloud Certified
+  Professional Cloud Architect experienced in Terraform IaC, Jenkins, static security analysis
+  (SonarQube, Checkmarx), and Cloud Monitoring alerting.
+
+prioritized_skills:
+  - "Jenkins"
+  - "Terraform"
+  - "GCP Cloud Monitoring"
+  - "SonarQube"
+  - "Checkmarx"
+  - "Nexus"
+  - "Docker"
+  - "Python"
+  - "Groovy"
+  - "Google Cloud Platform (GCP)"
+  - "Model Context Protocol (MCP)"
+
+deprioritized_skills:
+  - "React"
+  - "Next.js"
+  - "Tailwind CSS"
+
+preferred_projects:
+  - "Terraform Log Summarizer & Shift-Left Compliance Checker"
+  - "MCP Diagnostic Tools for Data Pipelines"
+  - "Smart Data Storage Pipeline"
+
+deprioritized_projects:
+  - "GuruGranthi – Services Marketplace"
+  - "AI-Powered RFP Management System"
+
+preferred_experience_keywords:
+  - "Jenkins"
+  - "SonarQube"
+  - "Checkmarx"
+  - "Cloud Monitoring"
+  - "Terraform"
+  - "MTTR"
+  - "shift-left"
+  - "IAM"
+
+section_order:
+  - "summary"
+  - "skills"
+  - "experience"
+  - "projects"
+  - "certifications"
+  - "awards"
+  - "education"
+
+max_bullets_per_experience: 5
+max_projects: 3
+max_bullets_per_project: 2
