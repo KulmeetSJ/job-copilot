@@ -9,6 +9,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     APP_ENV=production \
     PORT=8000 \
+    PYTHONPATH=/app/src \
     PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 
 # Install required system dependencies for Playwright Chromium and networking
@@ -42,23 +43,21 @@ RUN groupadd -g 1000 appgroup && \
 # Set working directory
 WORKDIR /app
 
-# Copy dependency definition
+# Copy dependency definition and source code
 COPY pyproject.toml README.md ./
+COPY src/ ./src/
+COPY data/config/ ./data/config/
+COPY data/resume_strategies/ ./data/resume_strategies/
+COPY data/sample_jds/ ./data/sample_jds/
 
-# Install application dependencies
+# Install application and dependencies
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir .
+    pip install --no-cache-dir -e .
 
 # Install Playwright Chromium browser binaries
 RUN mkdir -p /ms-playwright && \
     playwright install chromium && \
     chown -R appuser:appgroup /ms-playwright
-
-# Copy application source code and safe repository configs
-COPY src/ ./src/
-COPY data/config/ ./data/config/
-COPY data/resume_strategies/ ./data/resume_strategies/
-COPY data/sample_jds/ ./data/sample_jds/
 
 # Create runtime directories with appropriate permissions
 RUN mkdir -p /app/data/candidate /app/data/jobs /app/data/applications /app/data/tracking /app/data/copilot /app/data/downloads && \
