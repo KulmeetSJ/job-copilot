@@ -83,9 +83,15 @@ if static_dir.exists():
     from fastapi.staticfiles import StaticFiles
     from fastapi.responses import FileResponse
 
+    assets_dir = static_dir / "assets"
+    if assets_dir.exists():
+        app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="assets")
+        app.mount("/dashboard/assets", StaticFiles(directory=str(assets_dir)), name="dashboard_assets")
+
     app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
     @app.get("/dashboard", summary="Dashboard Control Center UI")
+    @app.get("/dashboard/", summary="Dashboard Control Center UI")
     @app.get("/dashboard/{full_path:path}", summary="Dashboard Single Page App")
     def serve_dashboard(full_path: str = ""):
         index_file = static_dir / "index.html"
