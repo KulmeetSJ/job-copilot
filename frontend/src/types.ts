@@ -192,6 +192,10 @@ export interface BrowserReviewSummary {
   pause_reason?: string;
   failure_reason?: string;
   warnings: string[];
+  blocker_type?: string;
+  blocker_instruction?: string;
+  can_resume?: boolean;
+  is_external_unverified?: boolean;
 }
 
 export interface ApplicationTimelineEvent {
@@ -228,6 +232,10 @@ export interface ApplicationDetailResponse {
   discovered_at?: string;
   prepared_at?: string;
   submitted_at?: string;
+  blocker_type?: string;
+  blocker_instruction?: string;
+  can_resume?: boolean;
+  is_external_unverified?: boolean;
 }
 
 export interface SourceMonitoringItem {

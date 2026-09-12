@@ -315,3 +315,96 @@ def test_register_submission_never_calls_prepare_application():
 
     # Invariant: prepare_application must NOT be called
     assert mock_prep.prepare_application.call_count == 0
+
+
+def test_browser_worker_atomic_claiming_and_crash_recovery(db_session):
+    """
+    Assert that BrowserTaskRepository.claim_task provides atomic compare-and-swap
+    and recover_stale_running_tasks resets crashed tasks without data loss.
+    """
+    session, _ = db_session
+    task_repo = BrowserTaskRepository(session)
+
+    task = BrowserTaskModel(
+        task_id="task-atomic-01",
+        application_id="app-atomic-01",
+        job_id="job-atomic-01",
+        source="greenhouse",
+        target_url="https://boards.greenhouse.io/corp/jobs/1",
+        status=BrowserTaskStatus.SUBMISSION_AUTHORIZED,
+    )
+    task_repo.create(task)
+
+    # 1. Worker 1 claims task
+    claimed_1 = task_repo.claim_task(
+        task_id="task-atomic-01",
+        expected_status=BrowserTaskStatus.SUBMISSION_AUTHORIZED,
+        new_status=BrowserTaskStatus.SUBMISSION_RUNNING,
+        worker_id="worker-001",
+    )
+    assert claimed_1 is True
+
+    # 2. Worker 2 attempts to claim the same task -> fails (atomic compare-and-swap)
+    claimed_2 = task_repo.claim_task(
+        task_id="task-atomic-01",
+        expected_status=BrowserTaskStatus.SUBMISSION_AUTHORIZED,
+        new_status=BrowserTaskStatus.SUBMISSION_RUNNING,
+        worker_id="worker-002",
+    )
+    assert claimed_2 is False
+
+    # 3. Crash recovery simulation (stale task reset)
+    task.updated_at = datetime.now(timezone.utc) - timedelta(minutes=30)
+    session.commit()
+
+    recovered_count = task_repo.recover_stale_running_tasks(timeout_minutes=15)
+    assert recovered_count == 1
+    reloaded_task = task_repo.get_by_task_id("task-atomic-01")
+    assert reloaded_task.status == BrowserTaskStatus.SUBMISSION_AUTHORIZED
+    assert "Recovered after worker restart" in reloaded_task.pause_reason
+
+
+def test_dashboard_service_blocker_and_mastercard_historical_unverified(db_session):
+    """
+    Assert that DashboardService computes blocker instructions for CAPTCHA/Login/MFA
+    and honors Mastercard application app-usr-2a43a63d as external unverified.
+    """
+    from job_copilot.services.dashboard_service import DashboardService
+    session, _ = db_session
+    task_repo = BrowserTaskRepository(session)
+
+    # 1. CAPTCHA blocker task
+    job = Job(job_id="job-dash-01", title="Engineer", company="Payment Inc", description="Payment eng", source="greenhouse", url="https://boards.greenhouse.io/pay/1")
+    session.add(job)
+    session.flush()
+
+    app = Application(
+        application_id="app-usr-2a43a63d",  # Historical Mastercard application
+        job_id_str="job-dash-01",
+        job_id=job.id,
+        company="Mastercard",
+        role="Engineer",
+        status=ApplicationStatus.APPLIED,
+    )
+    session.add(app)
+    session.commit()
+
+    task = BrowserTaskModel(
+        task_id="task-dash-01",
+        application_id="app-usr-2a43a63d",
+        job_id="job-dash-01",
+        source="greenhouse",
+        target_url="https://boards.greenhouse.io/pay/1",
+        status=BrowserTaskStatus.CAPTCHA_REQUIRED,
+    )
+    task_repo.create(task)
+
+    dash_svc = DashboardService(db=session)
+    detail = dash_svc.get_application_detail("app-usr-2a43a63d")
+
+    assert detail.blocker_type == "CAPTCHA"
+    assert "CAPTCHA verification detected" in detail.blocker_instruction
+    assert detail.can_resume is True
+    # Historical Mastercard record must be flagged as unverified
+    assert detail.is_external_unverified is True
+

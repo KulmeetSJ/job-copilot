@@ -232,6 +232,10 @@ class BrowserReviewSummary(BaseModel):
     pause_reason: Optional[str] = None
     failure_reason: Optional[str] = None
     warnings: List[str] = Field(default_factory=list)
+    blocker_type: Optional[str] = None
+    blocker_instruction: Optional[str] = None
+    can_resume: bool = False
+    is_external_unverified: bool = False
 
 
 class ApplicationTimelineEvent(BaseModel):
@@ -270,6 +274,11 @@ class ApplicationDetailResponse(BaseModel):
     discovered_at: Optional[datetime] = None
     prepared_at: Optional[datetime] = None
     submitted_at: Optional[datetime] = None
+    blocker_type: Optional[str] = None
+    blocker_instruction: Optional[str] = None
+    can_resume: bool = False
+    is_external_unverified: bool = False
+
 
 
 # ==============================================================================

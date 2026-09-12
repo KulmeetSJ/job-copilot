@@ -18,7 +18,8 @@ import {
   FileCode,
   ExternalLink,
   ChevronDown,
-  Loader2
+  Loader2,
+  Play,
 } from 'lucide-react';
 import { api } from '../api';
 import { ApplicationDetailResponse } from '../types';
@@ -47,6 +48,7 @@ export const ApplicationReviewView: React.FC<ApplicationReviewViewProps> = ({
   const [humanAnswers, setHumanAnswers] = useState<Record<string, string>>({});
   const [savingInputs, setSavingInputs] = useState(false);
   const [inputSavedMsg, setInputSavedMsg] = useState(false);
+  const [resuming, setResuming] = useState(false);
 
   // Submission Modal state
   const [showSubmissionModal, setShowSubmissionModal] = useState(false);
@@ -237,6 +239,31 @@ export const ApplicationReviewView: React.FC<ApplicationReviewViewProps> = ({
     }
   };
 
+  const handleResume = async () => {
+    if (!detail) return;
+    setResuming(true);
+    try {
+      const updated = await api.resumeApplication(detail.application_id);
+      setDetail(updated);
+    } catch (err) {
+      console.error('Failed to resume automation:', err);
+    } finally {
+      setResuming(false);
+    }
+  };
+
+  // Compute canonical status
+  const taskStatus = detail?.browser_review?.status || detail?.status || 'DISCOVERED';
+  const isBlockerActive = Boolean(
+    detail?.blocker_type || 
+    ['CAPTCHA_REQUIRED', 'LOGIN_REQUIRED', 'MFA_REQUIRED', 'HUMAN_ACTION_REQUIRED', 'USER_INPUT_REQUIRED'].includes(taskStatus)
+  );
+  const isReadyToConfirm = taskStatus === 'READY_FOR_REVIEW' || detail?.status === 'READY_TO_APPLY';
+  const isSubmissionAuthorized = taskStatus === 'SUBMISSION_AUTHORIZED';
+  const isSubmissionRunning = taskStatus === 'SUBMISSION_RUNNING' || taskStatus === 'RUNNING';
+  const isSubmitted = detail?.status === 'APPLIED' || taskStatus === 'COMPLETED';
+  const isUnverified = detail?.is_external_unverified || taskStatus === 'SUBMISSION_UNVERIFIED';
+
   return (
     <div className="space-y-4 sm:space-y-6">
       
@@ -249,13 +276,23 @@ export const ApplicationReviewView: React.FC<ApplicationReviewViewProps> = ({
             </h2>
             {detail?.status && (
               <span className={`px-2.5 py-0.5 rounded-full text-[10px] sm:text-xs font-semibold uppercase ${
-                detail.status === 'READY_FOR_REVIEW' 
+                isBlockerActive
                   ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse'
-                  : detail.status === 'SUBMITTED'
+                  : isReadyToConfirm
+                  ? 'bg-purple-500/20 text-purple-300 border border-purple-500/40 animate-pulse'
+                  : isSubmissionAuthorized || isSubmissionRunning
+                  ? 'bg-blue-500/20 text-blue-300 border border-blue-500/40 animate-pulse'
+                  : isSubmitted && !isUnverified
                   ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                  : 'bg-blue-500/20 text-blue-300 border border-blue-500/40'
+                  : isUnverified
+                  ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                  : 'bg-slate-700/50 text-slate-300 border border-slate-600'
               }`}>
-                {detail.status}
+                {isBlockerActive ? (detail.blocker_type ? `${detail.blocker_type} REQUIRED` : 'ACTION REQUIRED')
+                  : isSubmissionAuthorized ? 'SUBMISSION AUTHORIZED'
+                  : isSubmissionRunning ? 'SUBMITTING...'
+                  : isUnverified ? 'EXTERNAL UNVERIFIED'
+                  : detail.status}
               </span>
             )}
           </div>
@@ -285,7 +322,7 @@ export const ApplicationReviewView: React.FC<ApplicationReviewViewProps> = ({
 
           <button
             onClick={handlePrepareAgain}
-            disabled={applications.length === 0}
+            disabled={applications.length === 0 || isSubmitted}
             title="Reprepare application materials"
             className="px-3 py-2 text-xs font-semibold bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/30 rounded-lg transition-colors flex items-center space-x-1.5 shrink-0 disabled:opacity-40"
           >
@@ -349,18 +386,104 @@ export const ApplicationReviewView: React.FC<ApplicationReviewViewProps> = ({
                 </div>
               </div>
 
-              {/* Consequential Action Confirmation Button */}
+              {/* Dynamic State-Driven Action Controls */}
               <div className="w-full md:w-auto pt-1 md:pt-0">
-                <button
-                  onClick={() => setShowSubmissionModal(true)}
-                  className="w-full md:w-auto px-5 py-2.5 text-xs sm:text-sm font-bold bg-rose-600 hover:bg-rose-500 active:bg-rose-700 text-white rounded-lg shadow-lg shadow-rose-600/20 transition-all flex items-center justify-center space-x-2"
-                >
-                  <Send className="w-4 h-4" />
-                  <span>Authorize & Submit Application</span>
-                </button>
+                {isBlockerActive ? (
+                  <button
+                    onClick={handleResume}
+                    disabled={resuming}
+                    className="w-full md:w-auto px-5 py-2.5 text-xs sm:text-sm font-bold bg-amber-500 hover:bg-amber-400 active:bg-amber-600 text-slate-950 rounded-lg shadow-lg shadow-amber-500/20 transition-all flex items-center justify-center space-x-2"
+                  >
+                    {resuming ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+                    <span>Resume Automation</span>
+                  </button>
+                ) : isSubmissionAuthorized ? (
+                  <div className="w-full md:w-auto px-4 py-2.5 text-xs font-semibold bg-blue-900/30 text-blue-300 border border-blue-500/40 rounded-lg flex items-center justify-center space-x-2">
+                    <Loader2 className="w-4 h-4 animate-spin text-blue-400" />
+                    <span>Submission authorized — waiting for browser worker</span>
+                  </div>
+                ) : isSubmissionRunning ? (
+                  <div className="w-full md:w-auto px-4 py-2.5 text-xs font-semibold bg-blue-900/40 text-blue-200 border border-blue-400/50 rounded-lg flex items-center justify-center space-x-2">
+                    <Loader2 className="w-4 h-4 animate-spin text-blue-300" />
+                    <span>Submitting application...</span>
+                  </div>
+                ) : isReadyToConfirm ? (
+                  <button
+                    onClick={() => setShowSubmissionModal(true)}
+                    className="w-full md:w-auto px-5 py-2.5 text-xs sm:text-sm font-bold bg-rose-600 hover:bg-rose-500 active:bg-rose-700 text-white rounded-lg shadow-lg shadow-rose-600/20 transition-all flex items-center justify-center space-x-2"
+                  >
+                    <Send className="w-4 h-4" />
+                    <span>Authorize & Submit Application</span>
+                  </button>
+                ) : isSubmitted && !isUnverified ? (
+                  <div className="w-full md:w-auto px-4 py-2.5 text-xs font-semibold bg-emerald-950/40 text-emerald-300 border border-emerald-500/40 rounded-lg flex items-center justify-center space-x-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                    <span>✓ Application submitted (Employer Verified)</span>
+                  </div>
+                ) : isUnverified ? (
+                  <div className="w-full md:w-auto px-4 py-2.5 text-xs font-semibold bg-amber-950/30 text-amber-300 border border-amber-500/40 rounded-lg flex items-center justify-center space-x-2">
+                    <AlertTriangle className="w-4 h-4 text-amber-400" />
+                    <span>Submission attempted — confirmation unverified</span>
+                  </div>
+                ) : (
+                  <button
+                    onClick={handlePrepareAgain}
+                    disabled={loading}
+                    className="w-full md:w-auto px-5 py-2.5 text-xs sm:text-sm font-bold bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white rounded-lg shadow-lg shadow-blue-600/20 transition-all flex items-center justify-center space-x-2"
+                  >
+                    <Sparkles className="w-4 h-4" />
+                    <span>Prepare Application Materials</span>
+                  </button>
+                )}
               </div>
             </div>
           </div>
+
+          {/* Prominent Blocker / Human Action Required Card */}
+          {isBlockerActive && (
+            <div className="glass-panel p-4 sm:p-5 rounded-xl border-2 border-amber-500/60 bg-amber-950/25 space-y-3 animate-in fade-in">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-start space-x-3">
+                  <div className="p-2 sm:p-2.5 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/40 shrink-0 mt-0.5">
+                    <AlertTriangle className="w-5 h-5 sm:w-6 sm:h-6 animate-pulse" />
+                  </div>
+                  <div className="space-y-1">
+                    <h4 className="text-sm sm:text-base font-bold text-amber-200 uppercase tracking-wide">
+                      {detail.blocker_type === 'CAPTCHA' ? 'CAPTCHA Verification Required' :
+                       detail.blocker_type === 'LOGIN' ? 'Authentication Login Required' :
+                       detail.blocker_type === 'MFA' ? 'MFA / OTP Challenge' :
+                       'Your Action is Required'}
+                    </h4>
+                    <p className="text-xs sm:text-sm text-slate-200 leading-relaxed font-medium">
+                      {detail.blocker_instruction || detail.browser_review?.pause_reason || 'Please complete the required action in the authenticated browser session, then click Resume.'}
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  onClick={handleResume}
+                  disabled={resuming}
+                  className="px-5 py-2.5 text-xs sm:text-sm font-bold bg-amber-500 hover:bg-amber-400 active:bg-amber-600 text-slate-950 rounded-lg shadow-lg shadow-amber-500/20 transition-all flex items-center justify-center space-x-2 shrink-0 disabled:opacity-50"
+                >
+                  {resuming ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+                  <span>Resume Automation</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Historical Record / External Unverified Banner */}
+          {isUnverified && (
+            <div className="glass-panel p-4 rounded-xl border border-amber-500/40 bg-amber-950/20 space-y-1 text-xs">
+              <div className="flex items-center space-x-2 text-amber-300 font-bold">
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+                <span>INTERNAL RECORD (EXTERNAL SUBMISSION UNVERIFIED)</span>
+              </div>
+              <p className="text-slate-300 leading-relaxed pl-6">
+                This record was logged internally, but employer-side confirmation was not verified. It is preserved for history and will not be automatically retried.
+              </p>
+            </div>
+          )}
 
           {/* Mobile-Swipeable Sub-Navigation Tabs */}
           <div className="flex items-center space-x-1.5 overflow-x-auto pb-2 border-b border-slate-800 text-xs font-medium scrollbar-none no-scrollbar -mx-2 px-2">

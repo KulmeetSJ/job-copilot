@@ -132,3 +132,86 @@ class BrowserTaskRepository:
         self.db.commit()
         self.db.refresh(task)
         return task
+
+    def claim_task(
+        self,
+        task_id: str,
+        expected_status: BrowserTaskStatus,
+        new_status: BrowserTaskStatus,
+        worker_id: str,
+    ) -> bool:
+        """
+        Atomically claim a task by comparing expected status.
+        Guarantees that multiple concurrent workers cannot claim the same task.
+        """
+        from sqlalchemy import update
+        now = datetime.now(timezone.utc)
+        stmt = (
+            update(BrowserTaskModel)
+            .where(
+                BrowserTaskModel.task_id == task_id,
+                BrowserTaskModel.status == expected_status,
+            )
+            .values(
+                status=new_status,
+                worker_id=worker_id,
+                attempt_count=BrowserTaskModel.attempt_count + 1,
+                updated_at=now,
+            )
+        )
+        result = self.db.execute(stmt)
+        self.db.commit()
+        return result.rowcount > 0
+
+    def recover_stale_running_tasks(self, timeout_minutes: int = 15) -> int:
+        """
+        Recover tasks that were running when a previous container/worker crashed or restarted.
+        Resets SUBMISSION_RUNNING -> SUBMISSION_AUTHORIZED and RUNNING -> QUEUED if under max attempts.
+        """
+        from datetime import timedelta
+        cutoff = datetime.now(timezone.utc) - timedelta(minutes=timeout_minutes)
+        recovered_count = 0
+
+        # 1. Recover stale SUBMISSION_RUNNING tasks
+        stale_sub_stmt = (
+            select(BrowserTaskModel)
+            .where(
+                BrowserTaskModel.status == BrowserTaskStatus.SUBMISSION_RUNNING,
+                BrowserTaskModel.updated_at < cutoff,
+            )
+        )
+        stale_sub_tasks = list(self.db.scalars(stale_sub_stmt).all())
+        for task in stale_sub_tasks:
+            if task.attempt_count < task.max_attempts:
+                task.status = BrowserTaskStatus.SUBMISSION_AUTHORIZED
+                task.pause_reason = "Recovered after worker restart"
+                recovered_count += 1
+            else:
+                task.status = BrowserTaskStatus.FAILED
+                task.failure_reason = "Max execution attempts exceeded after multiple crashes"
+                recovered_count += 1
+
+        # 2. Recover stale RUNNING tasks
+        stale_run_stmt = (
+            select(BrowserTaskModel)
+            .where(
+                BrowserTaskModel.status == BrowserTaskStatus.RUNNING,
+                BrowserTaskModel.updated_at < cutoff,
+            )
+        )
+        stale_run_tasks = list(self.db.scalars(stale_run_stmt).all())
+        for task in stale_run_tasks:
+            if task.attempt_count < task.max_attempts:
+                task.status = BrowserTaskStatus.QUEUED
+                task.pause_reason = "Recovered after worker restart"
+                recovered_count += 1
+            else:
+                task.status = BrowserTaskStatus.FAILED
+                task.failure_reason = "Max execution attempts exceeded after multiple crashes"
+                recovered_count += 1
+
+        if recovered_count > 0:
+            self.db.commit()
+
+        return recovered_count
+

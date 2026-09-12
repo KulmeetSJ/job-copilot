@@ -38,22 +38,33 @@ class BrowserWorker:
         self._running = False
         self._processed_count = 0
 
+    def stop(self) -> None:
+        """Signal worker loop to stop gracefully."""
+        self._running = False
+
     async def process_next_task(self, db: Session) -> Optional[BrowserTaskModel]:
-        """Fetch and execute the next available SUBMISSION_AUTHORIZED or QUEUED task."""
+        """Fetch and execute the next available SUBMISSION_AUTHORIZED or QUEUED task with atomic compare-and-swap."""
         repo = BrowserTaskRepository(db)
 
         # 1. Prioritize authorized submissions
         auth_tasks = repo.list_by_status(BrowserTaskStatus.SUBMISSION_AUTHORIZED, limit=1)
         if auth_tasks:
             task = auth_tasks[0]
-            logger.info(f"Worker '{self.worker_id}' claimed SUBMISSION_AUTHORIZED task '{task.task_id}'")
-            task.attempt_count += 1
-            task.worker_id = self.worker_id
-            db.commit()
-            executor = BrowserTaskExecutor(db=db)
-            result = await executor.execute_submission_task(task.task_id)
-            self._processed_count += 1
-            return result
+            # Atomically transition from SUBMISSION_AUTHORIZED to SUBMISSION_RUNNING
+            claimed = repo.claim_task(
+                task_id=task.task_id,
+                expected_status=BrowserTaskStatus.SUBMISSION_AUTHORIZED,
+                new_status=BrowserTaskStatus.SUBMISSION_RUNNING,
+                worker_id=self.worker_id,
+            )
+            if claimed:
+                logger.info(f"Worker '{self.worker_id}' atomically claimed SUBMISSION_AUTHORIZED task '{task.task_id}'")
+                executor = BrowserTaskExecutor(db=db)
+                result = await executor.execute_submission_task(task.task_id)
+                self._processed_count += 1
+                return result
+            else:
+                logger.debug(f"Task '{task.task_id}' was claimed by another worker.")
 
         # 2. Process queued preparation tasks
         queued_tasks = repo.list_by_status(BrowserTaskStatus.QUEUED, limit=1)
@@ -61,22 +72,28 @@ class BrowserWorker:
             return None
 
         task = queued_tasks[0]
-        logger.info(f"Worker '{self.worker_id}' claimed QUEUED task '{task.task_id}' for URL: {task.target_url}")
-
         # Check attempt limits
         if task.attempt_count >= task.max_attempts:
             logger.warning(f"Task '{task.task_id}' exceeded max attempts ({task.max_attempts}). Marking FAILED.")
             repo.update_status(task.task_id, BrowserTaskStatus.FAILED, failure_reason="Max execution attempts exceeded")
             return task
 
-        task.attempt_count += 1
-        task.worker_id = self.worker_id
-        db.commit()
-
-        executor = BrowserTaskExecutor(db=db)
-        result = await executor.execute_task(task.task_id)
-        self._processed_count += 1
-        return result
+        # Atomically transition from QUEUED to RUNNING
+        claimed = repo.claim_task(
+            task_id=task.task_id,
+            expected_status=BrowserTaskStatus.QUEUED,
+            new_status=BrowserTaskStatus.RUNNING,
+            worker_id=self.worker_id,
+        )
+        if claimed:
+            logger.info(f"Worker '{self.worker_id}' atomically claimed QUEUED task '{task.task_id}' for URL: {task.target_url}")
+            executor = BrowserTaskExecutor(db=db)
+            result = await executor.execute_task(task.task_id)
+            self._processed_count += 1
+            return result
+        else:
+            logger.debug(f"Task '{task.task_id}' was claimed by another worker.")
+            return None
 
     async def run_once(self) -> Optional[BrowserTaskModel]:
         """Run a single execution cycle."""
@@ -88,9 +105,23 @@ class BrowserWorker:
             db.close()
 
     async def run_loop(self) -> None:
-        """Continuous polling execution loop."""
+        """Continuous polling execution loop with startup crash recovery."""
         self._running = True
         logger.info(f"Starting Browser Worker '{self.worker_id}' (poll_interval={self.poll_interval_seconds}s)...")
+
+        # Recover any stale tasks left running from previous crash/restart
+        try:
+            session_gen = get_db()
+            db = next(session_gen)
+            try:
+                repo = BrowserTaskRepository(db)
+                recovered = repo.recover_stale_running_tasks()
+                if recovered > 0:
+                    logger.info(f"Worker startup recovered {recovered} stale tasks from previous crash/restart.")
+            finally:
+                db.close()
+        except Exception as e:
+            logger.warning(f"Notice during startup crash recovery: {e}")
 
         def handle_signal(sig, frame):
             logger.info(f"Received stop signal ({sig}). Gracefully shutting down worker...")
@@ -116,3 +147,4 @@ class BrowserWorker:
                 await asyncio.sleep(self.poll_interval_seconds)
 
         logger.info(f"Browser Worker '{self.worker_id}' stopped. Total processed: {self._processed_count}.")
+

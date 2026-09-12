@@ -135,6 +135,14 @@ export const api = {
     return handleResponse<SubmissionConfirmResponse>(res);
   },
 
+  async resumeApplication(applicationId: string): Promise<ApplicationDetailResponse> {
+    const res = await fetch(`${API_BASE}/applications/${encodeURIComponent(applicationId)}/resume`, {
+      method: 'POST',
+      headers: getHeaders(),
+    });
+    return handleResponse<ApplicationDetailResponse>(res);
+  },
+
   // Analytics
   async getAnalytics(fromDate?: string, toDate?: string): Promise<any> {
     const query = new URLSearchParams();

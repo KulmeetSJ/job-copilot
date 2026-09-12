@@ -100,23 +100,23 @@ export const SubmissionModal: React.FC<SubmissionModalProps> = ({
 
         {/* Success State */}
         {result ? (
-          <div className="p-5 sm:p-6 rounded-xl bg-emerald-950/20 border border-emerald-500/30 text-center space-y-4">
-            <CheckCircle2 className="w-10 h-10 sm:w-12 sm:h-12 text-emerald-400 mx-auto" />
-            <h4 className="text-base sm:text-lg font-bold text-white">Application Submission Confirmed</h4>
+          <div className="p-5 sm:p-6 rounded-xl bg-blue-950/20 border border-blue-500/30 text-center space-y-4">
+            <CheckCircle2 className="w-10 h-10 sm:w-12 sm:h-12 text-blue-400 mx-auto" />
+            <h4 className="text-base sm:text-lg font-bold text-white">Submission Authorized — Worker Dispatched</h4>
             <p className="text-xs text-slate-300 max-w-md mx-auto leading-relaxed">
               {result.message}
             </p>
             {result.submission_reference && (
-              <div className="inline-block p-2.5 rounded-lg bg-slate-900 border border-slate-700 text-xs font-mono text-emerald-300">
-                Reference ID: <span className="font-bold">{result.submission_reference}</span>
+              <div className="inline-block p-2.5 rounded-lg bg-slate-900 border border-slate-700 text-xs font-mono text-blue-300">
+                Authorization Reference: <span className="font-bold">{result.submission_reference}</span>
               </div>
             )}
             <div className="pt-2">
               <button
                 onClick={onClose}
-                className="w-full sm:w-auto px-5 py-2.5 text-xs sm:text-sm font-semibold bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg transition-colors"
+                className="w-full sm:w-auto px-5 py-2.5 text-xs sm:text-sm font-semibold bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors"
               >
-                Close & Return to Dashboard
+                Close & View Progress
               </button>
             </div>
           </div>

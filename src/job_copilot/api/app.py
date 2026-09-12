@@ -68,10 +68,36 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan context for startup and shutdown events."""
+    import asyncio
+    import os
     logger.info("Starting Job Copilot API...")
     init_db()
+
+    # Start zero-cost supervised background BrowserWorker loop in server mode
+    worker = None
+    worker_task = None
+    enable_worker = os.environ.get("ENABLE_BACKGROUND_WORKER", "true").lower() in ("true", "1", "yes")
+    if enable_worker:
+        try:
+            from job_copilot.browser_worker.worker import BrowserWorker
+            worker = BrowserWorker(poll_interval_seconds=3.0)
+            worker_task = asyncio.create_task(worker.run_loop())
+            logger.info(f"Initialized background BrowserWorker '{worker.worker_id}' in API process.")
+        except Exception as e:
+            logger.warning(f"Could not start background BrowserWorker in lifespan: {e}")
+
     yield
+
     logger.info("Shutting down Job Copilot API...")
+    if worker:
+        worker.stop()
+    if worker_task:
+        worker_task.cancel()
+        try:
+            await asyncio.wait_for(worker_task, timeout=2.0)
+        except (asyncio.CancelledError, asyncio.TimeoutError, Exception):
+            pass
+
 
 
 app = FastAPI(

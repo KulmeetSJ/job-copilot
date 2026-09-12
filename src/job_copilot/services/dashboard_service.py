@@ -541,6 +541,40 @@ class DashboardService:
                 job_id=job_id,
             )
 
+            # Blocker and Resume state computation
+            blocker_type = None
+            blocker_instruction = None
+            can_resume = False
+            is_external_unverified = False
+
+            if browser_task:
+                if browser_task.status == BrowserTaskStatus.CAPTCHA_REQUIRED:
+                    blocker_type = "CAPTCHA"
+                    blocker_instruction = "CAPTCHA verification detected. Complete the CAPTCHA in the browser session, then click Resume."
+                    can_resume = True
+                elif browser_task.status == BrowserTaskStatus.LOGIN_REQUIRED:
+                    blocker_type = "LOGIN"
+                    blocker_instruction = "Authentication required. Log in to the employer/ATS portal in the browser session, then click Resume."
+                    can_resume = True
+                elif browser_task.status == BrowserTaskStatus.MFA_REQUIRED:
+                    blocker_type = "MFA"
+                    blocker_instruction = "MFA/OTP verification required. Complete verification in the browser session, then click Resume."
+                    can_resume = True
+                elif browser_task.status in (BrowserTaskStatus.HUMAN_ACTION_REQUIRED, BrowserTaskStatus.BLOCKED):
+                    blocker_type = "HUMAN_ACTION"
+                    blocker_instruction = browser_task.pause_reason or "Human intervention is required before submission can proceed. Complete it in the browser session, then click Resume."
+                    can_resume = True
+                elif browser_task.status == BrowserTaskStatus.USER_INPUT_REQUIRED:
+                    blocker_type = "USER_INPUT"
+                    blocker_instruction = "Required questions need your answer. Complete them in the Needs Input tab and save."
+                    can_resume = True
+                elif browser_task.status == BrowserTaskStatus.SUBMISSION_UNVERIFIED:
+                    is_external_unverified = True
+
+            # Historical unverified record check (Mastercard production application)
+            if (app_model and app_model.application_id == "app-usr-2a43a63d") or application_id == "app-usr-2a43a63d":
+                is_external_unverified = True
+
             browser_review: Optional[BrowserReviewSummary] = None
 
             if browser_task:
@@ -566,6 +600,10 @@ class DashboardService:
                     pause_reason=browser_task.pause_reason,
                     failure_reason=browser_task.failure_reason,
                     warnings=rp.get("warnings", []),
+                    blocker_type=blocker_type,
+                    blocker_instruction=blocker_instruction,
+                    can_resume=can_resume,
+                    is_external_unverified=is_external_unverified,
                 )
 
             # Timeline Events
@@ -608,10 +646,15 @@ class DashboardService:
                 discovered_at=app_model.discovered_at if app_model else None,
                 prepared_at=app_model.prepared_at if app_model else None,
                 submitted_at=app_model.submitted_at if app_model else None,
+                blocker_type=blocker_type,
+                blocker_instruction=blocker_instruction,
+                can_resume=can_resume,
+                is_external_unverified=is_external_unverified,
             )
         finally:
             if should_close:
                 db.close()
+
 
     # ==========================================================================
     # 5. Application Actions (Prepare, Skip, User Input, Confirm)
