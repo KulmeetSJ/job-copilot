@@ -202,14 +202,26 @@ class ArtifactService:
         artifact_type: Optional[ArtifactType] = None,
         status: Optional[ArtifactStatus] = None,
     ) -> List[ArtifactModel]:
-        """List artifacts matching criteria."""
+        """List artifacts matching criteria (merged by application_id and job_id)."""
         repo, session = self._get_repo()
         try:
+            results: List[ArtifactModel] = []
+            seen_ids = set()
             if application_id:
-                return repo.list_by_application(application_id, artifact_type=artifact_type, status=status)
+                app_arts = repo.list_by_application(application_id, artifact_type=artifact_type, status=status)
+                for a in app_arts:
+                    if a.artifact_id not in seen_ids:
+                        results.append(a)
+                        seen_ids.add(a.artifact_id)
             if job_id:
-                return repo.list_by_job(job_id, artifact_type=artifact_type, status=status)
-            return repo.list_all(status=status)
+                job_arts = repo.list_by_job(job_id, artifact_type=artifact_type, status=status)
+                for a in job_arts:
+                    if a.artifact_id not in seen_ids:
+                        results.append(a)
+                        seen_ids.add(a.artifact_id)
+            if not application_id and not job_id:
+                return repo.list_all(status=status)
+            return results
         finally:
             if session:
                 session.close()

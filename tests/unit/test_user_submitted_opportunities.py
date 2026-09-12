@@ -484,9 +484,129 @@ def test_real_mastercard_flow_end_to_end(isolated_dashboard_service):
         assert detail.selected_strategy == "backend_java"
         assert detail.browser_review is not None
         assert detail.browser_review.target_url == "https://careers.mastercard.com/jobs/mastercard-swe-pune-101"
-        assert detail.browser_review.confirmation_token is not None
+        # Task must be QUEUED initially, NOT prematurely marked READY_FOR_REVIEW without worker execution
+        assert detail.browser_review.status == "QUEUED"
+        assert detail.browser_review.has_confirmation_token is False
+        assert detail.browser_review.confirmation_token is None
+        assert detail.browser_review.is_ready_for_review is False
         assert "jobs.example.com" not in str(detail.model_dump())
         assert "Target Company" not in str(detail.model_dump())
 
+        # 6. Verify cover letter and prepared answers contain Mastercard, never Target Company
+        if detail.cover_letter_text:
+            assert "Mastercard" in detail.cover_letter_text
+            assert "Target Company" not in detail.cover_letter_text
+        for ans in detail.prepared_answers:
+            assert "Target Company" not in ans.answer_text
+            assert "Target Company" not in ans.question_text
+
+        # 7. Verify artifacts are associated and listed
+        assert len(detail.artifacts) >= 1
+        artifact_types = [a.artifact_type for a in detail.artifacts]
+        assert "TAILORED_RESUME_PDF" in artifact_types or "TAILORED_RESUME_TEX" in artifact_types
 
 
+def test_mastercard_cover_letter_and_qa_regression(isolated_dashboard_service):
+    """Regression test: Ensure Mastercard application cover letter and answers strictly contain canonical company/title and never 'Target Company'."""
+    service = isolated_dashboard_service
+
+    mc_jd = """
+    Software Engineer - Backend Java
+    Mastercard | Pune, Maharashtra, India
+
+    We are seeking a Software Engineer at Mastercard to develop high-throughput transaction routing systems in Java.
+    """
+
+    with patch("job_copilot.services.dashboard_service.UrlJobSource.fetch") as mock_fetch:
+        from job_copilot.ingestion.models import RawJob
+        mock_fetch.return_value = RawJob(
+            source="user_submitted_url",
+            source_url="https://careers.mastercard.com/jobs/swe-12345",
+            raw_description=mc_jd,
+            company="Mastercard",
+            title="Software Engineer - Backend Java",
+        )
+
+        resp = service.analyze_user_submitted_url("https://careers.mastercard.com/jobs/swe-12345")
+        detail = service.get_application_detail(resp.application_id)
+
+        assert detail.company == "Mastercard"
+        assert "Target Company" not in (detail.cover_letter_text or "")
+        assert "Mastercard" in (detail.cover_letter_text or "")
+
+        for ans in detail.prepared_answers:
+            assert "Target Company" not in ans.answer_text
+            assert "Target Company" not in ans.question_text
+
+
+def test_browser_task_creation_is_queued_not_ready_for_review(isolated_dashboard_service):
+    """Regression test: Newly created BrowserTasks must be in QUEUED status with no confirmation token."""
+    service = isolated_dashboard_service
+
+    with patch("job_copilot.services.dashboard_service.UrlJobSource.fetch") as mock_fetch:
+        from job_copilot.ingestion.models import RawJob
+        mock_fetch.return_value = RawJob(
+            source="user_submitted_url",
+            source_url="https://careers.example.com/jobs/swe-test-task",
+            raw_description="Software Engineer at Acme Corp. Python, Cloud.",
+            company="Acme Corp",
+            title="Software Engineer",
+        )
+
+        resp = service.analyze_user_submitted_url("https://careers.example.com/jobs/swe-test-task")
+        detail = service.get_application_detail(resp.application_id)
+
+        assert detail.browser_review is not None
+        assert detail.browser_review.status == "QUEUED"
+        assert detail.browser_review.is_ready_for_review is False
+        assert detail.browser_review.confirmation_token is None
+        assert detail.browser_review.has_confirmation_token is False
+        assert detail.browser_review.has_screenshot is False
+
+
+def test_mastercard_company_normalization_exact_match(isolated_dashboard_service):
+    """Regression test: Ensure 'Mastercard\\n\\nWe' or multiline company input normalizes to strictly 'Mastercard'."""
+    service = isolated_dashboard_service
+
+    # Test raw company with newline bleeding
+    with patch("job_copilot.services.dashboard_service.UrlJobSource.fetch") as mock_fetch:
+        from job_copilot.ingestion.models import RawJob
+        mock_fetch.return_value = RawJob(
+            source="user_submitted_url",
+            source_url="https://careers.mastercard.com/jobs/mc-norm-test-01",
+            raw_description="Overview:\nMastercard\n\nWe are a technology company.\nResponsibilities: Build Java microservices.",
+            company="Mastercard\n\nWe",
+            title="Software Engineer",
+        )
+
+        resp = service.analyze_user_submitted_url("https://careers.mastercard.com/jobs/mc-norm-test-01")
+        assert resp.company == "Mastercard"
+
+        detail = service.get_application_detail(resp.application_id)
+        assert detail.company == "Mastercard"
+        assert "\n" not in detail.company
+        assert "Mastercard\n\nWe" not in (detail.cover_letter_text or "")
+        assert "Mastercard" in (detail.cover_letter_text or "")
+
+
+def test_get_application_detail_does_not_trigger_compilation(isolated_dashboard_service):
+    """Regression test: GET /api/dashboard/applications/{id} must not trigger synchronous prepare_application."""
+    service = isolated_dashboard_service
+
+    # Create application first
+    with patch("job_copilot.services.dashboard_service.UrlJobSource.fetch") as mock_fetch:
+        from job_copilot.ingestion.models import RawJob
+        mock_fetch.return_value = RawJob(
+            source="user_submitted_url",
+            source_url="https://careers.example.com/jobs/fast-detail-test",
+            raw_description="DevOps Engineer at Cloud Inc.",
+            company="Cloud Inc",
+            title="DevOps Engineer",
+        )
+        resp = service.analyze_user_submitted_url("https://careers.example.com/jobs/fast-detail-test")
+
+    with patch.object(service.prep_service, "prepare_application") as mock_prep:
+        # Now call get_application_detail; it must not call prepare_application
+        detail = service.get_application_detail(resp.application_id)
+        assert detail.company == "Cloud Inc"
+        assert mock_prep.call_count == 0

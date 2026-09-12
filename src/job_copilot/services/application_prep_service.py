@@ -128,10 +128,37 @@ class ApplicationPrepService:
                 save_artifacts=True,
             )
         else:
-            assessment = self.intelligence_service.evaluate_job(
-                raw_text=job_id_or_text,
-                save_artifacts=True,
-            )
+            # Check database for existing Job record
+            db_job = None
+            try:
+                from job_copilot.db.database import get_db
+                from job_copilot.repositories.job_repository import JobRepository
+                from job_copilot.repositories.application_repository import ApplicationRepository
+                db_gen = get_db()
+                db = next(db_gen)
+                job_repo = JobRepository(db)
+                app_repo = ApplicationRepository(db)
+                db_job = job_repo.get_by_job_id(job_id_or_text)
+                if not db_job:
+                    app = app_repo.get_by_application_id(job_id_or_text) or app_repo.get_by_job_id_str(job_id_or_text)
+                    if app and app.job_id:
+                        db_job = job_repo.get_by_id(app.job_id)
+                db.close()
+            except Exception:
+                db_job = None
+
+            if db_job:
+                assessment = self.intelligence_service.evaluate_job(
+                    raw_text=db_job.description,
+                    company_override=db_job.company,
+                    title_override=db_job.title,
+                    save_artifacts=True,
+                )
+            else:
+                assessment = self.intelligence_service.evaluate_job(
+                    raw_text=job_id_or_text,
+                    save_artifacts=True,
+                )
 
         job_id = assessment.job.job_id
         strategy = strategy_override or assessment.recommended_strategy

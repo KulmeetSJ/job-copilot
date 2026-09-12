@@ -462,14 +462,8 @@ class DashboardService:
             recommendation = app_model.recommendation if app_model else None
             selected_strat = app_model.resume_strategy if app_model and app_model.resume_strategy else "general_swe"
 
-            # Retrieve prepared package if available
+            # Retrieve prepared package if available on disk/cache
             pkg = self.prep_service.get_application_package(job_id)
-            if not pkg and app_model:
-                try:
-                    # Attempt generation if not yet prepared
-                    pkg = self.prep_service.prepare_application(job_id_or_text=job_id)
-                except Exception as e:
-                    logger.debug(f"Application package generation notice for '{job_id}': {e}")
 
             prepared_answers: List[PreparedAnswerItem] = []
             user_inputs: List[UserInputRequiredItem] = []
@@ -652,7 +646,7 @@ class DashboardService:
                 )
                 db.commit()
 
-            # Create or update browser worker task in READY_FOR_REVIEW
+            # Ensure browser task exists in QUEUED status
             task_repo = BrowserTaskRepository(db)
             existing_task = task_repo.get_by_application_or_job_id(
                 application_id=app.application_id if app else application_id,
@@ -666,8 +660,6 @@ class DashboardService:
             }
             if not existing_task:
                 task_id = f"task-bw-{uuid.uuid4().hex[:8]}"
-                confirm_token = HumanConfirmationService.generate_confirmation_token()
-                expires_at = datetime.now(timezone.utc) + timedelta(hours=24)
                 job_repo = JobRepository(db)
                 db_job = job_repo.get_by_job_id(job_id)
                 target_url = app.canonical_job_url if app and app.canonical_job_url else (db_job.canonical_url or db_job.url if db_job else None)
@@ -677,18 +669,12 @@ class DashboardService:
                     job_id=job_id,
                     source=app.source if app else (db_job.source if db_job else "manual"),
                     target_url=target_url or f"https://jobs.example.com/apply/{job_id}",
-                    status=BrowserTaskStatus.READY_FOR_REVIEW,
-                    confirmation_token=confirm_token,
-                    confirmation_expires_at=expires_at,
+                    status=BrowserTaskStatus.QUEUED,
+                    confirmation_token=None,
+                    confirmation_expires_at=None,
                     review_package_json=review_pkg_json,
                 )
                 task_repo.create(new_task)
-            elif existing_task.status != BrowserTaskStatus.COMPLETED:
-                existing_task.status = BrowserTaskStatus.READY_FOR_REVIEW
-                existing_task.confirmation_token = HumanConfirmationService.generate_confirmation_token()
-                existing_task.confirmation_expires_at = datetime.now(timezone.utc) + timedelta(hours=24)
-                existing_task.review_package_json = review_pkg_json
-                db.commit()
 
             return self.get_application_detail(application_id)
         finally:
@@ -1204,34 +1190,7 @@ class DashboardService:
             # 5. Prepare Application Package (Phase 3 Resume Tailoring, Cover Letter, Q&A)
             pkg = self.prep_service.prepare_application(job_id_or_text=canonical.job_id)
 
-            # 6. Store artifacts in Object Storage & PostgreSQL metadata
-            if pkg.resume_tex_path and Path(pkg.resume_tex_path).exists():
-                tex_data = Path(pkg.resume_tex_path).read_bytes()
-                try:
-                    self.artifact_service.store_artifact(
-                        data=tex_data,
-                        artifact_type=ArtifactType.TAILORED_RESUME_TEX,
-                        job_id=canonical.job_id,
-                        original_filename=f"resume_{canonical.job_id}.tex",
-                        content_type="application/x-tex",
-                    )
-                except Exception as e:
-                    logger.warning(f"Failed to store tex artifact: {e}")
-
-            if pkg.resume_pdf_path and Path(pkg.resume_pdf_path).exists():
-                pdf_data = Path(pkg.resume_pdf_path).read_bytes()
-                try:
-                    self.artifact_service.store_artifact(
-                        data=pdf_data,
-                        artifact_type=ArtifactType.TAILORED_RESUME_PDF,
-                        job_id=canonical.job_id,
-                        original_filename=f"resume_{canonical.job_id}.pdf",
-                        content_type="application/pdf",
-                    )
-                except Exception as e:
-                    logger.warning(f"Failed to store pdf artifact: {e}")
-
-            # 7. Create/update database Job and Application records
+            # 6. Create/update database Job and Application records
             job_repo = JobRepository(db)
             db_job = job_repo.get_by_job_id(canonical.job_id)
             if not db_job:
@@ -1288,13 +1247,43 @@ class DashboardService:
                     notes=f"Application prepared with strategy '{pkg.selected_resume_strategy}'.",
                 )
 
-            # 8. Create BrowserTask in READY_FOR_REVIEW state
+            # 7. Store artifacts in Object Storage & PostgreSQL metadata
+            if pkg.resume_tex_path and Path(pkg.resume_tex_path).exists():
+                tex_data = Path(pkg.resume_tex_path).read_bytes()
+                try:
+                    self.artifact_service.store_artifact(
+                        data=tex_data,
+                        artifact_type=ArtifactType.TAILORED_RESUME_TEX,
+                        application_id=app_model.application_id,
+                        job_id=canonical.job_id,
+                        original_filename=f"resume_{canonical.job_id}.tex",
+                        content_type="application/x-tex",
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to store tex artifact: {e}")
+
+            if pkg.resume_pdf_path and Path(pkg.resume_pdf_path).exists():
+                pdf_data = Path(pkg.resume_pdf_path).read_bytes()
+                try:
+                    self.artifact_service.store_artifact(
+                        data=pdf_data,
+                        artifact_type=ArtifactType.TAILORED_RESUME_PDF,
+                        application_id=app_model.application_id,
+                        job_id=canonical.job_id,
+                        original_filename=f"resume_{canonical.job_id}.pdf",
+                        content_type="application/pdf",
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to store pdf artifact: {e}")
+
+            # 8. Create BrowserTask in QUEUED state (awaiting browser worker execution)
             task_repo = BrowserTaskRepository(db)
-            browser_task = task_repo.get_by_application_id(app_model.application_id) or task_repo.get_by_application_id(canonical.job_id)
+            browser_task = task_repo.get_by_application_or_job_id(
+                application_id=app_model.application_id,
+                job_id=canonical.job_id,
+            )
             if not browser_task:
                 task_id = f"task-usr-{uuid.uuid4().hex[:8]}"
-                confirm_token = HumanConfirmationService.generate_confirmation_token()
-                expires_at = utc_now() + timedelta(hours=24)
                 review_pkg_json = {
                     "detected_fields": [a.question_text for a in pkg.answers],
                     "filled_fields": [a.question_text for a in pkg.answers if not a.requires_user_input],
@@ -1307,9 +1296,9 @@ class DashboardService:
                     job_id=canonical.job_id,
                     source="user_submitted_url",
                     target_url=clean_url,
-                    status=BrowserTaskStatus.READY_FOR_REVIEW,
-                    confirmation_token=confirm_token,
-                    confirmation_expires_at=expires_at,
+                    status=BrowserTaskStatus.QUEUED,
+                    confirmation_token=None,
+                    confirmation_expires_at=None,
                     review_package_json=review_pkg_json,
                 )
                 task_repo.create(browser_task)

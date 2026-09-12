@@ -147,7 +147,7 @@ class JobAnalyzer:
         clean_text = raw_text.strip()
         lines = [line.strip() for line in clean_text.split("\n") if line.strip()]
 
-        company = company_override or self._extract_company(lines, clean_text) or "Target Company"
+        company = self._clean_company_name(company_override) or self._extract_company(lines, clean_text) or "Target Company"
         title = title_override or self._extract_title(lines, clean_text) or "Software Engineer"
         location = self._extract_location(lines, clean_text)
         remote_policy = self._extract_remote_policy(clean_text)
@@ -200,13 +200,45 @@ class JobAnalyzer:
         text_hash = hashlib.sha256(text.encode('utf-8')).hexdigest()[:6]
         return f"{c_slug}-{t_slug}-{text_hash}"
 
+    @staticmethod
+    def _clean_company_name(name: Optional[str]) -> Optional[str]:
+        """Sanitize and normalize company name, stripping newlines, pronouns, and extraneous punctuation."""
+        if not name:
+            return None
+        lines = [line.strip() for line in name.split("\n") if line.strip()]
+        if not lines:
+            return None
+        first_line = lines[0]
+        first_line = re.sub(r"[\.,;:!\?].*$", "", first_line)
+        first_line = re.sub(r"\s+\b(We|You|Our|The|In|On|At|For|To|Is|Are|And)\b.*$", "", first_line, flags=re.IGNORECASE)
+        first_line = re.sub(r"^[^A-Za-z0-9]+|[^A-Za-z0-9]+$", "", first_line)
+        cleaned = re.sub(r"\s+", " ", first_line).strip()
+        return cleaned or None
+
     def _extract_company(self, lines: List[str], text: str) -> Optional[str]:
-        for line in lines[:6]:
+        for line in lines[:8]:
             if line.lower().startswith("company:"):
-                return line.split(":", 1)[1].strip()
-        m = re.search(r"\b(?:at|with)\s+([A-Z][A-Za-z0-9\s&]{2,30})\b", text)
-        if m:
-            return m.group(1).strip()
+                extracted = self._clean_company_name(line.split(":", 1)[1])
+                if extracted:
+                    return extracted
+
+        for line in lines[:5]:
+            if "|" in line:
+                parts = [p.strip() for p in line.split("|")]
+                for part in parts:
+                    if part and not any(loc in part.lower() for loc in ["remote", "hybrid", "onsite", "full-time", "contract", "engineer", "developer"]):
+                        if len(part.split()) <= 4 and re.match(r"^[A-Z][A-Za-z0-9 &.,'-]+$", part):
+                            extracted = self._clean_company_name(part)
+                            if extracted:
+                                return extracted
+
+        for line in lines[:15]:
+            m = re.search(r"\b(?:at|with)\s+([A-Z][A-Za-z0-9 &.,'-]{1,40})\b", line)
+            if m:
+                extracted = self._clean_company_name(m.group(1))
+                if extracted:
+                    return extracted
+
         return None
 
     def _extract_title(self, lines: List[str], text: str) -> Optional[str]:
