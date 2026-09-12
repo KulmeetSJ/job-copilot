@@ -408,3 +408,273 @@ def test_dashboard_service_blocker_and_mastercard_historical_unverified(db_sessi
     # Historical Mastercard record must be flagged as unverified
     assert detail.is_external_unverified is True
 
+
+@pytest.mark.asyncio
+async def test_generic_unsafe_selector_pauses_in_human_action_required(db_session, mock_candidate_profile):
+    """
+    If an unknown or generic site only has ambiguous buttons (Save, Apply Filters, Next, Submit Feedback),
+    execute_submission_task MUST NOT click them and must pause in HUMAN_ACTION_REQUIRED.
+    """
+    session, _ = db_session
+    task_repo = BrowserTaskRepository(session)
+
+    task = BrowserTaskModel(
+        task_id="task-ambig-01",
+        application_id="app-ambig-01",
+        job_id="job-ambig-01",
+        source="generic",
+        target_url="https://example.com/careers/apply",
+        status=BrowserTaskStatus.SUBMISSION_AUTHORIZED,
+    )
+    task_repo.create(task)
+
+    # Page with ambiguous buttons: 'Save Application', 'Apply Filters', 'Next'
+    mock_adapter = MagicMock()
+    mock_adapter.launch = AsyncMock()
+    mock_adapter.navigate = AsyncMock(return_value="https://example.com/careers/apply")
+    mock_adapter.wait_for_dom_idle = AsyncMock()
+    mock_adapter.get_current_url = AsyncMock(return_value="https://example.com/careers/apply")
+    mock_adapter.get_page_content = AsyncMock(return_value="""
+        <html><body>
+            <button>Save Application</button>
+            <button>Apply Filters</button>
+            <button>Continue to Profile</button>
+            <button>Submit Feedback</button>
+            <button>Next</button>
+        </body></html>
+    """)
+    mock_adapter.screenshot = AsyncMock(return_value=None)
+    mock_adapter.is_captcha_present = AsyncMock(return_value=False)
+    mock_adapter.is_login_page = AsyncMock(return_value=False)
+    mock_adapter.click = AsyncMock(return_value=True)
+    mock_adapter.close = AsyncMock()
+
+    mock_manager = MagicMock(spec=BrowserManager)
+    mock_manager.get_adapter = AsyncMock(return_value=mock_adapter)
+    mock_manager.close = AsyncMock()
+
+    executor = BrowserTaskExecutor(db=session, browser_manager=mock_manager, candidate_profile=mock_candidate_profile)
+    res_task = await executor.execute_submission_task("task-ambig-01")
+
+    # Invariants:
+    # 1. Click MUST NEVER be called on ambiguous buttons
+    assert mock_adapter.click.call_count == 0
+    # 2. Task MUST pause in HUMAN_ACTION_REQUIRED
+    assert res_task.status == BrowserTaskStatus.HUMAN_ACTION_REQUIRED
+    assert "could not be safely identified" in (res_task.pause_reason or "")
+
+
+@pytest.mark.asyncio
+async def test_linkedin_multi_step_distinguishes_next_from_final_submit():
+    """
+    LinkedInAdapter must return None when page only contains 'Next' or 'Review'
+    and return final selector when page contains 'Submit application'.
+    """
+    from job_copilot.browser_worker.adapters.linkedin import LinkedInAdapter
+    from job_copilot.browser_worker.browser import BrowserSessionAdapter
+
+    adapter = LinkedInAdapter()
+
+    # Case 1: Intermediate step with 'Next'
+    mock_adapter_step1 = MagicMock()
+    mock_adapter_step1.get_page_content = AsyncMock(return_value="""
+        <div data-easy-apply-footer>
+            <button>Next</button>
+        </div>
+    """)
+    session_step1 = BrowserSessionAdapter(mock_adapter_step1)
+    sel_step1 = await adapter.get_submit_selector(session_step1)
+    assert sel_step1 is None
+
+    # Case 2: Final review step with 'Submit application'
+    mock_adapter_final = MagicMock()
+    mock_adapter_final.get_page_content = AsyncMock(return_value="""
+        <div data-easy-apply-footer>
+            <button aria-label="Submit application">Submit application</button>
+        </div>
+    """)
+    session_final = BrowserSessionAdapter(mock_adapter_final)
+    sel_final = await adapter.get_submit_selector(session_final)
+    assert sel_final is not None
+    assert "Submit application" in sel_final or "submit application" in sel_final
+
+
+@pytest.mark.asyncio
+async def test_network_drop_post_submit_becomes_unverified_without_retry(db_session, mock_candidate_profile):
+    """
+    If a network error / timeout occurs after submit is clicked,
+    the task becomes SUBMISSION_UNVERIFIED and does NOT auto-retry.
+    """
+    session, _ = db_session
+    task_repo = BrowserTaskRepository(session)
+    app_repo = ApplicationRepository(session)
+
+    job = Job(job_id="job-net-01", title="SRE", company="NetCorp", description="SRE role", source="greenhouse", url="https://boards.greenhouse.io/net/1")
+    session.add(job)
+    session.flush()
+    app = Application(application_id="app-net-01", job_id_str="job-net-01", job_id=job.id, company="NetCorp", role="SRE", status=ApplicationStatus.READY_TO_APPLY)
+    session.add(app)
+    session.commit()
+
+    task = BrowserTaskModel(
+        task_id="task-net-01",
+        application_id="app-net-01",
+        job_id="job-net-01",
+        source="greenhouse",
+        target_url="https://boards.greenhouse.io/net/1",
+        status=BrowserTaskStatus.SUBMISSION_AUTHORIZED,
+    )
+    task_repo.create(task)
+
+    mock_adapter = MagicMock()
+    mock_adapter.launch = AsyncMock()
+    mock_adapter.navigate = AsyncMock(return_value="https://boards.greenhouse.io/net/1")
+    mock_adapter.is_captcha_present = AsyncMock(return_value=False)
+    mock_adapter.is_login_page = AsyncMock(return_value=False)
+    mock_adapter.get_current_url = AsyncMock(return_value="https://boards.greenhouse.io/net/1")
+    mock_adapter.get_page_content = AsyncMock(return_value="<html>Submit Application</html>")
+    mock_adapter.wait_for_dom_idle = AsyncMock(return_value=None)
+    
+    # Network dies immediately after click during post-submit wait
+    async def mock_click_and_drop(*args, **kwargs):
+        mock_adapter.wait_for_dom_idle.side_effect = ConnectionResetError("Network connection aborted by remote host")
+        return True
+
+    mock_adapter.click = AsyncMock(side_effect=mock_click_and_drop)
+    mock_adapter.close = AsyncMock()
+
+    mock_manager = MagicMock(spec=BrowserManager)
+    mock_manager.get_adapter = AsyncMock(return_value=mock_adapter)
+    mock_manager.close = AsyncMock()
+
+    executor = BrowserTaskExecutor(db=session, browser_manager=mock_manager, candidate_profile=mock_candidate_profile)
+    res_task = await executor.execute_submission_task("task-net-01")
+
+    # Invariants:
+    assert res_task.status == BrowserTaskStatus.SUBMISSION_UNVERIFIED
+    assert "network" in (res_task.pause_reason or "").lower()
+    # Application MUST NOT be marked APPLIED
+    assert app_repo.get_by_application_id("app-net-01").status == ApplicationStatus.READY_TO_APPLY
+
+
+def test_stale_task_recovery_with_submit_dispatched_prevents_duplicate_retry(db_session):
+    """
+    When recover_stale_running_tasks runs on worker restart, if a SUBMISSION_RUNNING task
+    had 'submit_click_dispatched' in its audit events, it transitions to SUBMISSION_UNVERIFIED
+    (not SUBMISSION_AUTHORIZED), preventing duplicate submissions.
+    """
+    session, _ = db_session
+    task_repo = BrowserTaskRepository(session)
+
+    # Task that crashed after submit click
+    task = BrowserTaskModel(
+        task_id="task-crash-dispatched",
+        application_id="app-crash-01",
+        job_id="job-crash-01",
+        source="greenhouse",
+        target_url="https://boards.greenhouse.io/corp/1",
+        status=BrowserTaskStatus.SUBMISSION_RUNNING,
+        audit_events=[
+            {"event": "submission_running", "timestamp": "2026-09-12T10:00:00Z"},
+            {"event": "submit_click_dispatched", "selector": "button#submit_app", "timestamp": "2026-09-12T10:00:05Z"},
+        ],
+        updated_at=datetime.now(timezone.utc) - timedelta(minutes=30),
+    )
+    task_repo.create(task)
+
+    recovered = task_repo.recover_stale_running_tasks(timeout_minutes=15)
+    assert recovered == 1
+
+    reloaded = task_repo.get_by_task_id("task-crash-dispatched")
+    assert reloaded.status == BrowserTaskStatus.SUBMISSION_UNVERIFIED
+    assert "do not retry automatically" in (reloaded.pause_reason or "").lower()
+
+
+def test_deterministic_newly_created_mastercard_opportunity_renders_complete_data(db_session):
+    """
+    Verify that a newly created opportunity with:
+    company = Mastercard
+    role = Software Engineer
+    source = USER_SUBMITTED_URL
+    strategy = BACKEND_JAVA
+    renders complete data in DashboardService.get_application_detail without legacy/fallback defaults.
+    """
+    from job_copilot.services.dashboard_service import DashboardService
+    from job_copilot.application.models import ApplicationPackage, CoverLetter, CoverLetterValidation, ApplicationAnswer, QuestionClassification
+
+
+    session, _ = db_session
+    app_repo = ApplicationRepository(session)
+
+    job = Job(
+        job_id="job-mc-java-001",
+        title="Software Engineer",
+        company="Mastercard",
+        description="Core Java Payments Platform Engineering",
+        source="USER_SUBMITTED_URL",
+        url="https://mastercard.jobs/software-engineer",
+    )
+    session.add(job)
+    session.flush()
+
+    app = Application(
+        application_id="app-mc-java-001",
+        job_id_str="job-mc-java-001",
+        job_id=job.id,
+        company="Mastercard",
+        role="Software Engineer",
+        source="USER_SUBMITTED_URL",
+        resume_strategy="BACKEND_JAVA",
+        match_score=88.5,
+        recommendation="APPLY",
+        status=ApplicationStatus.READY_TO_APPLY,
+        canonical_job_url="https://mastercard.jobs/software-engineer",
+    )
+    session.add(app)
+    session.commit()
+
+    # Mock application package from prep_service
+    mock_prep = MagicMock()
+    mock_pkg = MagicMock()
+    mock_pkg.selected_resume_strategy = "BACKEND_JAVA"
+    mock_pkg.resume_pdf_path = "/tmp/fake_resume.pdf"
+    mock_pkg.resume_tex_path = None
+    mock_pkg.cover_letter = CoverLetter(
+        job_id="job-mc-java-001",
+        company="Mastercard",
+        title="Software Engineer",
+        letter_text="Dear Mastercard Team, I am writing to express my enthusiasm for the Software Engineer role...",
+        subject="Application for Software Engineer - Mastercard",
+        word_count=250,
+        validation=CoverLetterValidation(is_valid=True, total_words=250),
+    )
+    mock_pkg.answers = [
+        ApplicationAnswer(
+            question_id="java_experience",
+            question_text="How many years of Java experience do you have?",
+            answer="5+ years of enterprise Java in high-throughput payments systems.",
+            classification=QuestionClassification.ANSWERABLE_FROM_EVIDENCE,
+            confidence=0.95,
+            provenance=[],
+            rationale="Verified from candidate Java payments work history.",
+        )
+    ]
+    mock_pkg.user_inputs_required = []
+    mock_prep.get_application_package.return_value = mock_pkg
+
+    dash_svc = DashboardService(db=session, prep_service=mock_prep)
+    detail = dash_svc.get_application_detail("app-mc-java-001")
+
+    # Invariants:
+    assert detail.company == "Mastercard"
+    assert detail.role == "Software Engineer"
+    assert detail.source == "USER_SUBMITTED_URL"
+    assert detail.selected_strategy == "BACKEND_JAVA"
+    assert detail.match_score == 88.5
+    assert len(detail.prepared_answers) == 1
+    assert detail.prepared_answers[0].question_text == "How many years of Java experience do you have?"
+    assert detail.cover_letter_subject == "Application for Software Engineer - Mastercard"
+    assert "Mastercard Team" in (detail.cover_letter_text or "")
+    assert detail.is_external_unverified is False
+
+

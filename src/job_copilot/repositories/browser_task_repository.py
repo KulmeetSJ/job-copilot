@@ -182,7 +182,15 @@ class BrowserTaskRepository:
         )
         stale_sub_tasks = list(self.db.scalars(stale_sub_stmt).all())
         for task in stale_sub_tasks:
-            if task.attempt_count < task.max_attempts:
+            events = task.audit_events or []
+            has_dispatched_submit = any(e.get("event") == "submit_click_dispatched" for e in events)
+            if has_dispatched_submit:
+                # Submit was already dispatched to employer before crash/timeout.
+                # Outcome is ambiguous; do NOT retry automatically.
+                task.status = BrowserTaskStatus.SUBMISSION_UNVERIFIED
+                task.pause_reason = "Stale submission recovered after submit click was dispatched. Outcome unverified; do not retry automatically."
+                recovered_count += 1
+            elif task.attempt_count < task.max_attempts:
                 task.status = BrowserTaskStatus.SUBMISSION_AUTHORIZED
                 task.pause_reason = "Recovered after worker restart"
                 recovered_count += 1

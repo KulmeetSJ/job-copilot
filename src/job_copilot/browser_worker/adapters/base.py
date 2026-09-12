@@ -82,6 +82,20 @@ class JobSourceBrowserAdapter(ABC):
         # Default base verification
         return True, "Job identity verified"
 
+    async def get_submit_selector(self, session: BrowserSessionAdapter) -> Optional[str]:
+        """
+        Identify the deterministic final submission control on the page.
+        Returns None if no unambiguous final submission control is safely identified.
+        MUST NOT return intermediate navigation controls (Next, Continue, Save, Apply Filters).
+        """
+        return None
+
+    async def is_multi_step_form(self, session: BrowserSessionAdapter) -> bool:
+        """Detect whether the current form is in an intermediate multi-step workflow."""
+        page_text = (await session.get_page_content() or "").lower()
+        indicators = ["step 1", "step 2", "step 3", "page 1 of", "page 2 of", "next step", "save & continue"]
+        return any(ind in page_text for ind in indicators)
+
     async def inspect_form(self, session: BrowserSessionAdapter) -> List[BrowserField]:
         """Inspect and return interactive input fields on the application form."""
         return await session.inspect_fields()

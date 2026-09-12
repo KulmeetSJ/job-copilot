@@ -61,3 +61,11 @@ class NaukriAdapter(JobSourceBrowserAdapter):
             return True, "Job title matched in URL"
 
         return True, "Job identity verified on page"
+
+    async def get_submit_selector(self, session: BrowserSessionAdapter) -> Optional[str]:
+        """Identify Naukri final application submit button."""
+        page_html = (await session.get_page_content() or "").lower()
+        if "submit application" in page_html or "apply" in page_html:
+            return "button#submit-btn, button.apply-button:has-text('Apply'), button:has-text('Submit Application')"
+        return None
+

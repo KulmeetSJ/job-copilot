@@ -61,3 +61,11 @@ class InstahyreAdapter(JobSourceBrowserAdapter):
             return True, "Job title matched in URL"
 
         return True, "Job identity verified on page"
+
+    async def get_submit_selector(self, session: BrowserSessionAdapter) -> Optional[str]:
+        """Identify Instahyre final application submit button."""
+        page_html = (await session.get_page_content() or "").lower()
+        if "submit application" in page_html or "apply" in page_html:
+            return "button#apply-button[type='submit'], button:has-text('Apply'), button:has-text('Submit Application')"
+        return None
+

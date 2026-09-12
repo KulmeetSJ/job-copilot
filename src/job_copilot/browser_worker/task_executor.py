@@ -493,34 +493,90 @@ class BrowserTaskExecutor:
                 )
                 return self.task_repo.get_by_task_id(task_id)
 
-            # Execute Submit Click
-            submit_selectors = [
-                "button[type='submit']",
-                "input[type='submit']",
-                "button:has-text('Submit Application')",
-                "button:has-text('Submit application')",
-                "button:has-text('Submit')",
-                "button:has-text('Apply')",
-                "button:has-text('Send Application')",
-                "form button",
-            ]
-            clicked = False
-            for sel in submit_selectors:
-                if await session.click_element(sel):
-                    clicked = True
-                    break
+            # Adapter-Driven Submit Selector Determination
+            submit_selector = await adapter.get_submit_selector(session)
+            if not submit_selector:
+                logger.warning(
+                    f"Final application submit control could not be safely identified for task '{task_id}'. "
+                    "Pausing for human action."
+                )
+                self.task_repo.update_status(
+                    task_id,
+                    BrowserTaskStatus.HUMAN_ACTION_REQUIRED,
+                    pause_reason="Final application submit control could not be safely identified. Please review the browser page and continue manually.",
+                )
+                self.task_repo.append_audit_event(
+                    task_id,
+                    {
+                        "event": "human_action_required",
+                        "blocker_type": "UNIDENTIFIED_SUBMIT_CONTROL",
+                        "message": "Final application submit control could not be safely identified. Please review the browser page and continue manually.",
+                        "resume_allowed": True,
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    }
+                )
+                return self.task_repo.get_by_task_id(task_id)
 
-            # Wait for network idle and DOM changes
-            await session.wait_for_idle(timeout_ms=3000)
-            final_url = await session.get_current_url()
-            post_submit_text = (await session.get_page_content() or "").lower()
+            # Record submit click dispatch
+            self.task_repo.append_audit_event(
+                task_id,
+                {
+                    "event": "submit_click_dispatched",
+                    "selector": submit_selector,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                }
+            )
+
+            now = datetime.now(timezone.utc)
+
+            # Execute Submit Click and wait for post-submit response with network drop protection
+            try:
+                clicked = await session.click_element(submit_selector)
+                if not clicked:
+                    logger.warning(f"Could not click submit selector '{submit_selector}' for task '{task_id}'.")
+                    self.task_repo.update_status(
+                        task_id,
+                        BrowserTaskStatus.HUMAN_ACTION_REQUIRED,
+                        pause_reason="Submit button click could not be performed. Please review the browser page and continue manually.",
+                    )
+                    self.task_repo.append_audit_event(
+                        task_id,
+                        {
+                            "event": "human_action_required",
+                            "blocker_type": "SUBMIT_CLICK_FAILED",
+                            "message": "Submit button click could not be performed. Please complete submission manually in browser and resume.",
+                            "resume_allowed": True,
+                            "timestamp": now.isoformat(),
+                        }
+                    )
+                    return self.task_repo.get_by_task_id(task_id)
+
+                await session.wait_for_idle(timeout_ms=4000)
+                final_url = await session.get_current_url()
+                post_submit_text = (await session.get_page_content() or "").lower()
+            except Exception as net_err:
+                logger.warning(f"Network or page response error after submit dispatched: {net_err}")
+                self.task_repo.update_status(
+                    task_id,
+                    BrowserTaskStatus.SUBMISSION_UNVERIFIED,
+                    pause_reason="Submission was attempted, but a network error occurred before confirmation could be verified. Do not retry automatically because the employer may have received it.",
+                )
+                self.task_repo.append_audit_event(
+                    task_id,
+                    {
+                        "event": "submission_unverified",
+                        "reason": f"Network exception post-submit: {net_err}",
+                        "timestamp": now.isoformat(),
+                    }
+                )
+                return self.task_repo.get_by_task_id(task_id)
 
             # Capture post-submit screenshot
             post_submit_art_id = await self._capture_and_store_screenshot(
                 session, task_id, task.application_id, "post_submit_evidence.png"
             )
 
-            # Evaluate success signals
+            # Evaluate verified employer success signals
             success_indicators = [
                 "application submitted",
                 "thank you for applying",
@@ -536,8 +592,6 @@ class BrowserTaskExecutor:
             url_success = any(kw in (final_url or "").lower() for kw in ["/submitted", "/thank-you", "/thankyou", "/success", "/confirmation", "/applied"])
             text_success = any(ind in post_submit_text for ind in success_indicators)
             is_verified = (url_success or text_success) and clicked
-
-            now = datetime.now(timezone.utc)
 
             if is_verified:
                 ref_id = f"SUB-{secrets.token_hex(4).upper()}"
@@ -581,7 +635,7 @@ class BrowserTaskExecutor:
                 self.task_repo.update_status(
                     task_id,
                     BrowserTaskStatus.SUBMISSION_UNVERIFIED,
-                    pause_reason="Submission was attempted, but employer confirmation could not be verified.",
+                    pause_reason="Submission outcome could not be verified. Do not retry automatically because the employer may already have received the application.",
                 )
                 self.task_repo.append_audit_event(
                     task_id,

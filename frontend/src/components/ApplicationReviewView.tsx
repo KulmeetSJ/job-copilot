@@ -413,17 +413,20 @@ export const ApplicationReviewView: React.FC<ApplicationReviewViewProps> = ({
                     className="w-full md:w-auto px-5 py-2.5 text-xs sm:text-sm font-bold bg-rose-600 hover:bg-rose-500 active:bg-rose-700 text-white rounded-lg shadow-lg shadow-rose-600/20 transition-all flex items-center justify-center space-x-2"
                   >
                     <Send className="w-4 h-4" />
-                    <span>Authorize & Submit Application</span>
+                    <span>Authorize Submission</span>
                   </button>
                 ) : isSubmitted && !isUnverified ? (
                   <div className="w-full md:w-auto px-4 py-2.5 text-xs font-semibold bg-emerald-950/40 text-emerald-300 border border-emerald-500/40 rounded-lg flex items-center justify-center space-x-2">
                     <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                    <span>✓ Application submitted (Employer Verified)</span>
+                    <div className="text-left">
+                      <div className="font-bold text-emerald-300">✓ Application submitted</div>
+                      <div className="text-[10px] text-emerald-400 font-normal">Employer confirmation verified</div>
+                    </div>
                   </div>
                 ) : isUnverified ? (
                   <div className="w-full md:w-auto px-4 py-2.5 text-xs font-semibold bg-amber-950/30 text-amber-300 border border-amber-500/40 rounded-lg flex items-center justify-center space-x-2">
                     <AlertTriangle className="w-4 h-4 text-amber-400" />
-                    <span>Submission attempted — confirmation unverified</span>
+                    <span>Submission attempted — confirmation could not be verified</span>
                   </div>
                 ) : (
                   <button
@@ -452,7 +455,7 @@ export const ApplicationReviewView: React.FC<ApplicationReviewViewProps> = ({
                       {detail.blocker_type === 'CAPTCHA' ? 'CAPTCHA Verification Required' :
                        detail.blocker_type === 'LOGIN' ? 'Authentication Login Required' :
                        detail.blocker_type === 'MFA' ? 'MFA / OTP Challenge' :
-                       'Your Action is Required'}
+                       'Human Action Required'}
                     </h4>
                     <p className="text-xs sm:text-sm text-slate-200 leading-relaxed font-medium">
                       {detail.blocker_instruction || detail.browser_review?.pause_reason || 'Please complete the required action in the authenticated browser session, then click Resume.'}
@@ -480,7 +483,7 @@ export const ApplicationReviewView: React.FC<ApplicationReviewViewProps> = ({
                 <span>INTERNAL RECORD (EXTERNAL SUBMISSION UNVERIFIED)</span>
               </div>
               <p className="text-slate-300 leading-relaxed pl-6">
-                This record was logged internally, but employer-side confirmation was not verified. It is preserved for history and will not be automatically retried.
+                Submission outcome could not be verified. Do not retry automatically because the employer may already have received the application.
               </p>
             </div>
           )}

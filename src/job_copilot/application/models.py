@@ -89,9 +89,11 @@ class CoverLetter(BaseModel):
     title: str
     letter_text: str
     word_count: int
+    subject: Optional[str] = None
     provenance: List[ClaimProvenance] = Field(default_factory=list)
     validation: CoverLetterValidation = Field(default_factory=CoverLetterValidation)
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
 
 
 class ApplicationPackageStatus(str, Enum):

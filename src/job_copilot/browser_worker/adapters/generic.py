@@ -66,3 +66,49 @@ class GenericPortalAdapter(JobSourceBrowserAdapter):
     ) -> Tuple[bool, str]:
         """Verify job identity on generic portal."""
         return True, "Job identity verified"
+
+    async def get_submit_selector(self, session: BrowserSessionAdapter) -> Optional[str]:
+        """
+        Identify deterministic ATS final submit selector based on domain & DOM context.
+        Rejects ambiguous generic buttons (Next, Continue, Save, Apply Filters, Subscribe, etc.).
+        """
+        current_url = (await session.get_current_url() or "").lower()
+        page_html = (await session.get_page_content() or "").lower()
+
+        # 1. Greenhouse
+        if "greenhouse.io" in current_url:
+            return "input#submit_app[type='submit'], input[value='Submit Application'], button#submit_app, button:has-text('Submit Application')"
+
+        # 2. Lever
+        if "lever.co" in current_url:
+            return "button.template-btn-submit, button[data-qa='btn-submit'], button:has-text('Submit Application')"
+
+        # 3. Workday
+        if "myworkdayjobs.com" in current_url or "workday.com" in current_url:
+            return "button[data-automation-id='submitButton'], button[data-automation-id='bottom-navigation-next-button']:has-text('Submit')"
+
+        # 4. Ashby
+        if "ashbyhq.com" in current_url:
+            return "button[data-testid='submit-application'], button:has-text('Submit Application')"
+
+        # 5. SmartRecruiters
+        if "smartrecruiters.com" in current_url:
+            return "button[data-test='footer-submit'], button:has-text('Submit Application')"
+
+        # 6. Workable
+        if "workable.com" in current_url:
+            return "button[data-ui='application-submit-btn'], button:has-text('Submit Application')"
+
+        # 7. Breezy
+        if "breezy.hr" in current_url:
+            return "button#submit-app-btn, button:has-text('Submit Application')"
+
+        # 8. Unambiguous generic submit buttons inside application forms
+        # Explicitly require 'Submit Application' or input[type=submit] with value 'Submit Application'
+        # Explicitly reject 'Next', 'Continue', 'Save', 'Apply Filters', 'Apply Changes', 'Subscribe', 'Submit Feedback'
+        if "submit application" in page_html or "submit_app" in page_html:
+            return "form button:has-text('Submit Application'), form input[type='submit'][value='Submit Application'], button:has-text('Submit Application')"
+
+        # Ambiguous / unidentified submit control
+        return None
+

@@ -65,3 +65,15 @@ class LinkedInAdapter(JobSourceBrowserAdapter):
             return True, "Job title matched in URL"
 
         return True, "Job identity verified on page"
+
+    async def get_submit_selector(self, session: BrowserSessionAdapter) -> Optional[str]:
+        """
+        Identify LinkedIn Easy Apply final submission button.
+        Distinguishes final 'Submit application' from intermediate 'Next' / 'Review' buttons.
+        """
+        page_html = (await session.get_page_content() or "").lower()
+        if "submit application" in page_html or "submit your application" in page_html:
+            return "button[aria-label='Submit application'], div[data-easy-apply-footer] button:has-text('Submit application'), button:has-text('Submit application')"
+        # If page only has Next / Review buttons, it is an intermediate step -> not ready to submit
+        return None
+
