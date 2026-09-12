@@ -137,6 +137,7 @@ class LocalBrowserAgentRunner:
         task_id = task["task_id"]
         source = task.get("source", "generic")
         target_url = task["target_url"]
+        status = task.get("status", "QUEUED")
         action = task.get("action", "")
         is_submission = (
             action == "EXECUTE_SUBMISSION"

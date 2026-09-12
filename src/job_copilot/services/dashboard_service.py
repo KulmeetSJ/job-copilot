@@ -168,9 +168,10 @@ class DashboardService:
     ):
         self._db = db
         self.copilot_service = copilot_service or CopilotService()
-        self.tracking_service = tracking_service or TrackingService()
-        self.prep_service = prep_service or ApplicationPrepService()
-        self.intelligence_service = intelligence_service or JobIntelligenceService()
+        orchestrator = getattr(self.copilot_service, "orchestrator", None) if isinstance(self.copilot_service, CopilotService) else None
+        self.tracking_service = tracking_service or (getattr(orchestrator, "tracking_service", None) if orchestrator else None) or TrackingService()
+        self.prep_service = prep_service or (getattr(orchestrator, "prep_service", None) if orchestrator else None) or ApplicationPrepService()
+        self.intelligence_service = intelligence_service or (getattr(orchestrator, "intelligence_service", None) if orchestrator else None) or JobIntelligenceService()
         self.artifact_service = artifact_service or ArtifactService(db=db)
 
     def _get_db_session(self) -> Tuple[Session, bool]:
@@ -1527,10 +1528,7 @@ class DashboardService:
             # 4. Process through Copilot pipeline (JobIntelligence, Tracking, Prioritization, Queue)
             copilot_job = self.copilot_service.process_job(canonical.job_id)
 
-            # 5. Prepare Application Package (Phase 3 Resume Tailoring, Cover Letter, Q&A)
-            pkg = self.prep_service.prepare_application(job_id_or_text=canonical.job_id)
-
-            # 6. Create/update database Job and Application records
+            # 5. Create/update database Job record
             job_repo = JobRepository(db)
             db_job = job_repo.get_by_job_id(canonical.job_id)
             if not db_job:
@@ -1548,6 +1546,9 @@ class DashboardService:
                 db.add(db_job)
                 db.commit()
                 db.refresh(db_job)
+
+            # 6. Prepare Application Package (Phase 3 Resume Tailoring, Cover Letter, Q&A)
+            pkg = self.prep_service.prepare_application(job_id_or_text=canonical.job_id, db_session=db)
 
             app_repo = ApplicationRepository(db)
             app_model = app_repo.get_by_job_id_str(canonical.job_id)
