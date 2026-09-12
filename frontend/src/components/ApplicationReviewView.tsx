@@ -452,7 +452,7 @@ export const ApplicationReviewView: React.FC<ApplicationReviewViewProps> = ({
             <div className="glass-panel p-4 sm:p-5 rounded-xl space-y-4">
               <h3 className="text-sm font-semibold text-white flex items-center space-x-2">
                 <CheckCircle2 className="w-4 h-4 text-blue-400" />
-                <span>Phase 6 Evidence-Grounded Application Answers</span>
+                <span>Evidence-Grounded Application Answers</span>
               </h3>
 
               <div className="space-y-3">

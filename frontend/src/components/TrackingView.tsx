@@ -73,10 +73,10 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ onSelectApplication 
         <div>
           <h2 className="text-base sm:text-lg font-bold text-white tracking-tight flex items-center space-x-2">
             <Activity className="w-5 h-5 text-blue-400" />
-            <span>Phase 8 Application Lifecycle Tracking</span>
+            <span>Application Tracking</span>
           </h2>
           <p className="text-[11px] sm:text-xs text-slate-400 mt-0.5">
-            Append-only application ledger across all 16 authoritative status milestones.
+            Track and manage your applications across all lifecycle stages from discovery to offer.
           </p>
         </div>
 

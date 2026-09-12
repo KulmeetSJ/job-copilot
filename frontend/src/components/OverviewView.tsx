@@ -55,16 +55,16 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
             <ShieldCheck className="w-5 h-5" />
           </div>
           <div>
-            <h2 className="text-sm font-semibold text-slate-100">Human Control Invariant Active</h2>
+            <h2 className="text-sm font-semibold text-slate-100">Human Review Control Active</h2>
             <p className="text-xs text-slate-400">
-              Applications are never submitted autonomously. Review, preparation, and explicit confirmation remain strictly human-driven.
+              Applications are never sent without your review and explicit authorization.
             </p>
           </div>
         </div>
         <div className="flex items-center space-x-2">
           <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 mr-1.5 animate-pulse"></span>
-            Authoritative Engine Online
+            System Online
           </span>
         </div>
       </div>

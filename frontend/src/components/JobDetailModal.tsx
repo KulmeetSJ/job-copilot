@@ -152,7 +152,7 @@ export const JobDetailModal: React.FC<JobDetailModalProps> = ({
               <div className="space-y-3">
                 <h3 className="text-sm font-semibold text-white flex items-center space-x-2">
                   <Layers className="w-4 h-4 text-blue-400" />
-                  <span>Phase 4 Evaluation Breakdown (7 Dimensions)</span>
+                  <span>Job Match Evaluation Breakdown</span>
                 </h3>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">

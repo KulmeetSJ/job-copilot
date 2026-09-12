@@ -58,14 +58,14 @@ export const AnalyticsView: React.FC = () => {
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
           <h2 className="text-base sm:text-lg font-bold text-white tracking-tight flex items-center space-x-2">
             <BarChart3 className="w-5 h-5 text-blue-400" />
-            <span>Outcome & Pipeline Analytics (Phase 8)</span>
+            <span>Outcome & Pipeline Analytics</span>
           </h2>
           <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-500/10 text-blue-300 border border-blue-500/20">
-            Advisory Learning Only
+            Advisory Insights
           </span>
         </div>
         <p className="text-xs text-slate-400 leading-relaxed">
-          Historical patterns inform application strategy and prioritization. In accordance with Phase 8 safety invariants, samples with <b className="text-slate-200">N &lt; 10</b> are labeled as insufficient samples and never used for ungrounded conclusions.
+          Historical patterns inform application strategy and prioritization. Cohorts with <b className="text-slate-200">N &lt; 10</b> are labeled as insufficient sample sizes to ensure statistical reliability.
         </p>
         {!conversion.is_statistically_reliable && conversion.sample_size_warning && (
           <div className="flex items-center space-x-2 text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 px-3 py-1.5 rounded-lg">

@@ -72,12 +72,9 @@ export const Header: React.FC<HeaderProps> = ({
                   <span className="font-bold text-base sm:text-lg tracking-tight bg-gradient-to-r from-white via-slate-200 to-blue-300 bg-clip-text text-transparent">
                     Job Copilot
                   </span>
-                  <span className="px-1.5 py-0.2 text-[9px] sm:text-[10px] font-semibold tracking-wide uppercase rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20">
-                    Phase 11
-                  </span>
                 </div>
-                <p className="text-[10px] sm:text-xs text-slate-400 font-medium truncate max-w-[190px] sm:max-w-none">
-                  Human Review & Control Center
+                <p className="text-[10px] sm:text-xs text-slate-400 font-medium truncate max-w-[220px] sm:max-w-none">
+                  Intelligent Application Assistant
                 </p>
               </div>
             </div>

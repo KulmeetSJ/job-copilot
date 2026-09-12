@@ -172,10 +172,10 @@ export function App() {
           <div className="flex items-center space-x-2">
             <span className="font-semibold text-slate-400">Job Copilot</span>
             <span>•</span>
-            <span>Phase 11 Human Review Dashboard</span>
+            <span>Your intelligent job search and application assistant</span>
           </div>
-          <div className="font-mono text-[11px] text-slate-600">
-            Authoritative Pipeline Locked • Confirmation Gate Protected • Zero Autonomous Submit
+          <div className="text-[11px] text-slate-500">
+            Human-in-the-Loop • Verified Evidence Grounding • Secure Application Delivery
           </div>
         </div>
       </footer>

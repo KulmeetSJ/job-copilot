@@ -44,7 +44,7 @@ export const SourcesView: React.FC = () => {
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
           <h2 className="text-base sm:text-lg font-bold text-white tracking-tight flex items-center space-x-2">
             <Globe className="w-5 h-5 text-blue-400" />
-            <span>Job Sources & Authenticated Sessions (Phase 10C)</span>
+            <span>Job Sources & Authenticated Sessions</span>
           </h2>
           <button
             onClick={loadData}
@@ -55,7 +55,7 @@ export const SourcesView: React.FC = () => {
           </button>
         </div>
         <p className="text-xs text-slate-400">
-          Source adapters allow authenticated form inspection. In accordance with Phase 10C security invariants, <b className="text-slate-200">zero passwords, cookies, or storage tokens</b> are exposed to the UI or API.
+          Source adapters allow authenticated form inspection. Zero passwords, cookies, or storage tokens are exposed to the UI or API.
         </p>
       </div>
 
