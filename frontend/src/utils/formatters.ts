@@ -24,6 +24,9 @@ export function formatSource(source?: string | null): string {
       return 'Workday';
     case 'ashby':
       return 'Ashby';
+    case 'user_submitted_url':
+    case 'user_submitted':
+      return 'Added by you';
     default:
       return source
         .replace(/[_-]/g, ' ')

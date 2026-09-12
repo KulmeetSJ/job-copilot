@@ -12,6 +12,8 @@ from job_copilot.copilot.models import PriorityBand, QueueStatus
 from job_copilot.db.database import get_db
 from job_copilot.domain.enums import ApplicationStatus
 from job_copilot.schemas.dashboard import (
+    AnalyzeOpportunityRequest,
+    AnalyzeOpportunityResponse,
     ApplicationDetailResponse,
     ApplicationTimelineEvent,
     ArtifactSummaryItem,
@@ -81,6 +83,27 @@ def get_job_detail(
     except Exception as e:
         logger.error(f"Failed to fetch job detail for '{job_id}': {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+
+@router.post("/opportunities/analyze", response_model=AnalyzeOpportunityResponse)
+def analyze_submitted_opportunity(
+    payload: AnalyzeOpportunityRequest,
+    service: DashboardService = Depends(get_dashboard_service),
+) -> AnalyzeOpportunityResponse:
+    """
+    Ingest, normalize, match, tailor resume, and prepare application for a candidate-submitted job URL.
+    Safely validates URL/domain, deduplicates, and stages at READY_FOR_REVIEW.
+    Never performs automated external submissions.
+    """
+    try:
+        return service.analyze_user_submitted_url(payload.url)
+    except ValueError as ve:
+        logger.warning(f"Validation error analyzing opportunity URL '{payload.url}': {ve}")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(ve))
+    except Exception as e:
+        logger.error(f"Unexpected error analyzing opportunity URL '{payload.url}': {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to analyze job opportunity: {e}")
+
 
 
 # ==============================================================================

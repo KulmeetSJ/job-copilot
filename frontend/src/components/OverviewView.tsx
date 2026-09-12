@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { 
   Flame, 
   Sparkles, 
@@ -11,9 +11,19 @@ import {
   ArrowRight,
   ShieldCheck,
   CheckCircle,
-  AlertCircle
+  AlertCircle,
+  Link2,
+  FileText,
+  Download,
+  ExternalLink,
+  ChevronRight,
+  Loader2,
+  CheckCircle2,
+  Info
 } from 'lucide-react';
-import { DashboardOverviewResponse } from '../types';
+import { DashboardOverviewResponse, AnalyzeOpportunityResponse } from '../types';
+import { api } from '../api';
+import { formatSource } from '../utils/formatters';
 
 interface OverviewViewProps {
   overview: DashboardOverviewResponse | null;
@@ -21,10 +31,60 @@ interface OverviewViewProps {
   onSelectJob?: (jobId: string) => void;
 }
 
+const ANALYSIS_STEPS = [
+  'Reading job posting',
+  'Understanding requirements',
+  'Matching your profile',
+  'Tailoring resume',
+  'Preparing application'
+];
+
 export const OverviewView: React.FC<OverviewViewProps> = ({
   overview,
   onNavigateTab,
+  onSelectJob,
 }) => {
+  const [jobUrl, setJobUrl] = useState('');
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [currentStepIndex, setCurrentStepIndex] = useState(0);
+  const [analysisResult, setAnalysisResult] = useState<AnalyzeOpportunityResponse | null>(null);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
+
+  const handleAnalyzeOpportunity = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const cleanUrl = jobUrl.trim();
+    if (!cleanUrl || isAnalyzing) return;
+
+    setIsAnalyzing(true);
+    setCurrentStepIndex(0);
+    setAnalysisResult(null);
+    setAnalysisError(null);
+
+    // Realistic progressive step transitions matching backend stages
+    const timer = setInterval(() => {
+      setCurrentStepIndex((prev) => (prev < ANALYSIS_STEPS.length - 1 ? prev + 1 : prev));
+    }, 1800);
+
+    try {
+      const result = await api.analyzeOpportunity(cleanUrl);
+      clearInterval(timer);
+      setCurrentStepIndex(ANALYSIS_STEPS.length - 1);
+      setAnalysisResult(result);
+    } catch (err: any) {
+      clearInterval(timer);
+      setAnalysisError(err.message || 'Failed to analyze opportunity.');
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
+  const handleClearForm = () => {
+    setJobUrl('');
+    setAnalysisResult(null);
+    setAnalysisError(null);
+    setIsAnalyzing(false);
+  };
+
   if (!overview) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
@@ -48,7 +108,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
   return (
     <div className="space-y-6">
       
-      {/* Top Banner / Invariant Notice */}
+      {/* Top Banner / Review Notice */}
       <div className="glass-panel p-4 rounded-xl border border-blue-500/20 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div className="flex items-center space-x-3">
           <div className="p-2 rounded-lg bg-blue-500/10 text-blue-400 border border-blue-500/20">
@@ -68,6 +128,296 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
           </span>
         </div>
       </div>
+
+      {/* User-Submitted Opportunity Card: "Found a job yourself?" */}
+      <div className="glass-panel p-5 sm:p-6 rounded-2xl border border-blue-500/25 bg-gradient-to-b from-blue-950/20 to-slate-900/40 relative overflow-hidden shadow-xl">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-800/80">
+          <div className="space-y-1">
+            <div className="flex items-center space-x-2.5">
+              <div className="w-7 h-7 rounded-lg bg-blue-600/20 border border-blue-500/30 flex items-center justify-center text-blue-400">
+                <Link2 className="w-4 h-4" />
+              </div>
+              <h2 className="text-base sm:text-lg font-bold text-white tracking-tight">
+                Found a job yourself?
+              </h2>
+            </div>
+            <p className="text-xs sm:text-sm text-slate-300">
+              Paste a job posting URL and I'll analyze the opportunity, match it against your profile, and prepare the application.
+            </p>
+          </div>
+          <span className="text-[11px] text-slate-400 bg-slate-900/80 px-3 py-1.5 rounded-lg border border-slate-800 self-start md:self-auto whitespace-nowrap">
+            Works with supported job boards and company career pages.
+          </span>
+        </div>
+
+        {/* Input & Form */}
+        <form onSubmit={handleAnalyzeOpportunity} className="mt-4 flex flex-col sm:flex-row items-stretch gap-2.5">
+          <div className="relative flex-1">
+            <input
+              type="url"
+              required
+              placeholder="Paste job URL (e.g. https://jobs.lever.co/company/job-id or company career link)..."
+              value={jobUrl}
+              onChange={(e) => setJobUrl(e.target.value)}
+              disabled={isAnalyzing}
+              className="w-full pl-4 pr-4 py-2.5 bg-slate-950/80 border border-slate-700/80 rounded-xl text-xs sm:text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all disabled:opacity-50"
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={isAnalyzing || !jobUrl.trim()}
+            className="px-5 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 disabled:from-slate-800 disabled:to-slate-800 disabled:text-slate-500 text-white font-semibold text-xs sm:text-sm rounded-xl transition-all shadow-lg shadow-blue-600/20 flex items-center justify-center space-x-2 shrink-0"
+          >
+            {isAnalyzing ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin text-blue-300" />
+                <span>Analyzing Opportunity...</span>
+              </>
+            ) : (
+              <>
+                <Sparkles className="w-4 h-4 text-blue-200" />
+                <span>Analyze Opportunity</span>
+              </>
+            )}
+          </button>
+        </form>
+
+        {/* Processing State: Live Step Indicators */}
+        {isAnalyzing && (
+          <div className="mt-5 p-4 rounded-xl bg-slate-950/60 border border-blue-500/20 space-y-3 animate-fadeIn">
+            <div className="flex items-center justify-between text-xs text-slate-300 font-medium">
+              <span className="flex items-center space-x-2">
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-400" />
+                <span>Processing opportunity...</span>
+              </span>
+              <span className="text-blue-400 font-mono">
+                Stage {currentStepIndex + 1} of {ANALYSIS_STEPS.length}
+              </span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-5 gap-2 pt-1">
+              {ANALYSIS_STEPS.map((step, idx) => {
+                const isCompleted = idx < currentStepIndex;
+                const isCurrent = idx === currentStepIndex;
+                return (
+                  <div
+                    key={step}
+                    className={`p-2 rounded-lg text-[11px] font-medium transition-all flex items-center space-x-1.5 ${
+                      isCompleted
+                        ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/20'
+                        : isCurrent
+                        ? 'bg-blue-500/15 text-blue-300 border border-blue-500/30 animate-pulse'
+                        : 'bg-slate-900/40 text-slate-500 border border-slate-800/40'
+                    }`}
+                  >
+                    {isCompleted ? (
+                      <CheckCircle2 className="w-3 h-3 text-emerald-400 shrink-0" />
+                    ) : isCurrent ? (
+                      <Loader2 className="w-3 h-3 animate-spin text-blue-400 shrink-0" />
+                    ) : (
+                      <div className="w-3 h-3 rounded-full border border-slate-700 shrink-0 text-[9px] flex items-center justify-center font-mono">
+                        {idx + 1}
+                      </div>
+                    )}
+                    <span className="truncate">{step}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Error State */}
+        {analysisError && (
+          <div className="mt-4 p-4 rounded-xl bg-rose-950/20 border border-rose-500/30 text-rose-300 flex items-start space-x-3 text-xs sm:text-sm">
+            <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+            <div className="flex-1 space-y-1">
+              <p className="font-semibold text-rose-200">Unable to Process Opportunity</p>
+              <p className="text-rose-300/90 text-xs">{analysisError}</p>
+            </div>
+            <button
+              onClick={() => setAnalysisError(null)}
+              className="text-xs text-rose-400 hover:text-rose-200"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
+
+        {/* Duplicate State */}
+        {analysisResult && analysisResult.is_duplicate && (
+          <div className="mt-4 p-4 sm:p-5 rounded-xl bg-amber-950/20 border border-amber-500/30 space-y-3">
+            <div className="flex items-start justify-between">
+              <div className="flex items-center space-x-2 text-amber-300">
+                <Info className="w-4 h-4 text-amber-400 shrink-0" />
+                <h4 className="font-semibold text-sm">This opportunity is already in Job Copilot.</h4>
+              </div>
+              <button
+                onClick={handleClearForm}
+                className="text-xs text-slate-400 hover:text-slate-200"
+              >
+                Clear
+              </button>
+            </div>
+            <div className="text-xs text-slate-300">
+              <span className="font-medium text-white">{analysisResult.company}</span> • {analysisResult.title}
+              {analysisResult.location && <span className="text-slate-400"> ({analysisResult.location})</span>}
+            </div>
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              <button
+                onClick={() => {
+                  if (onSelectJob) onSelectJob(analysisResult.job_id);
+                }}
+                className="px-3.5 py-1.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 text-xs font-semibold rounded-lg transition-colors flex items-center space-x-1.5"
+              >
+                <span>View Existing Opportunity</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={() => onNavigateTab('applications')}
+                className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium rounded-lg transition-colors"
+              >
+                Go to Application Review
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Completion Result State */}
+        {analysisResult && !analysisResult.is_duplicate && (
+          <div className="mt-5 p-4 sm:p-5 rounded-xl bg-slate-950/80 border border-emerald-500/30 space-y-4 shadow-lg animate-fadeIn">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-800/80">
+              <div className="flex items-center space-x-2">
+                <CheckCircle className="w-4 h-4 text-emerald-400" />
+                <span className="text-xs font-semibold uppercase tracking-wider text-emerald-300">
+                  Opportunity Analyzed & Prepared
+                </span>
+              </div>
+              <button
+                onClick={handleClearForm}
+                className="text-xs text-slate-400 hover:text-slate-200 self-start sm:self-auto"
+              >
+                Analyze Another
+              </button>
+            </div>
+
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+              <div className="space-y-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-bold text-base text-white">{analysisResult.company}</span>
+                  <span className="text-slate-600">•</span>
+                  <span className="text-sm font-medium text-slate-300">{analysisResult.title}</span>
+                </div>
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-400">
+                  <span>{analysisResult.location || 'Remote / Flexible'}</span>
+                  <span>•</span>
+                  <span className="font-medium text-slate-300">{formatSource(analysisResult.source)}</span>
+                  {analysisResult.selected_strategy && (
+                    <>
+                      <span>•</span>
+                      <span className="font-mono text-emerald-300 text-[11px] uppercase">
+                        Strategy: {analysisResult.selected_strategy.replace(/_/g, ' ')}
+                      </span>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* Match Score & Recommendation Badge */}
+              <div className="flex items-center space-x-2">
+                <div className="px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-700 flex items-center space-x-2">
+                  <span className="text-xs text-slate-400 font-medium">Match Fit</span>
+                  <span className={`text-base font-bold font-mono ${
+                    analysisResult.match_score >= 80 ? 'text-emerald-400' : analysisResult.match_score >= 60 ? 'text-blue-400' : 'text-amber-400'
+                  }`}>
+                    {Math.round(analysisResult.match_score)}%
+                  </span>
+                </div>
+                <span className={`px-2.5 py-1.5 rounded-xl text-xs font-bold border ${
+                  analysisResult.recommendation.toUpperCase().includes('APPLY')
+                    ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                    : 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+                }`}>
+                  {analysisResult.recommendation.toUpperCase().replace(/_/g, ' ')}
+                </span>
+              </div>
+            </div>
+
+            {/* Strengths & Gaps Highlights */}
+            {(analysisResult.strengths.length > 0 || analysisResult.gaps.length > 0) && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2 border-t border-slate-800/60 text-xs">
+                {analysisResult.strengths.length > 0 && (
+                  <div className="space-y-1">
+                    <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Key Strengths:</span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {analysisResult.strengths.slice(0, 4).map((str, idx) => (
+                        <span key={idx} className="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 text-[11px]">
+                          ✓ {str}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {analysisResult.gaps.length > 0 && (
+                  <div className="space-y-1">
+                    <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Gaps / Review Points:</span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {analysisResult.gaps.slice(0, 3).map((gap, idx) => (
+                        <span key={idx} className="px-2 py-0.5 rounded bg-amber-500/10 text-amber-300 border border-amber-500/20 text-[11px]">
+                          ! {gap}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Action Buttons */}
+            <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-800/60">
+              {onSelectJob && (
+                <button
+                  onClick={() => onSelectJob(analysisResult.job_id)}
+                  className="px-3.5 py-2 text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-lg transition-colors flex items-center space-x-1.5"
+                >
+                  <Eye className="w-3.5 h-3.5" />
+                  <span>View Opportunity</span>
+                </button>
+              )}
+
+              {analysisResult.resume_download_url && (
+                <a
+                  href={analysisResult.resume_download_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-3.5 py-2 text-xs font-semibold bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/30 rounded-lg transition-colors flex items-center space-x-1.5"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Download Resume</span>
+                </a>
+              )}
+
+              <button
+                onClick={() => onNavigateTab('applications')}
+                className="px-4 py-2 text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-colors shadow-sm flex items-center space-x-1.5"
+              >
+                <span>Review Application</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+
+              {analysisResult.supports_browser_prep && analysisResult.has_active_session && (
+                <button
+                  onClick={() => onNavigateTab('applications')}
+                  className="px-3.5 py-2 text-xs font-semibold bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 rounded-lg transition-colors flex items-center space-x-1.5"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  <span>Prepare on Website</span>
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
 
       {/* KPI Stat Cards Grid */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3.5">

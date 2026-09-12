@@ -1,4 +1,5 @@
 import {
+  AnalyzeOpportunityResponse,
   ApplicationDetailResponse,
   DashboardOverviewResponse,
   DashboardQueueResponse,
@@ -160,4 +161,15 @@ export const api = {
     const res = await fetch(`${API_BASE}/activity?limit=${limit}`, { headers: getHeaders() });
     return handleResponse<any[]>(res);
   },
+
+  // User-Submitted Opportunities
+  async analyzeOpportunity(url: string): Promise<AnalyzeOpportunityResponse> {
+    const res = await fetch(`${API_BASE}/opportunities/analyze`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ url }),
+    });
+    return handleResponse<AnalyzeOpportunityResponse>(res);
+  },
 };
+

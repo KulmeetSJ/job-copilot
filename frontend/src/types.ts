@@ -264,3 +264,34 @@ export interface SubmissionConfirmResponse {
   submitted_at?: string;
   message: string;
 }
+
+export interface AnalyzeOpportunityRequest {
+  url: string;
+}
+
+export interface AnalyzeOpportunityResponse {
+  job_id: string;
+  application_id?: string;
+  company: string;
+  title: string;
+  location?: string;
+  canonical_url: string;
+  source: string;
+  match_score: number;
+  recommendation: string;
+  priority_band: string;
+  priority_score: number;
+  selected_strategy?: string;
+  strengths: string[];
+  gaps: string[];
+  risks: string[];
+  is_duplicate: boolean;
+  duplicate_of_id?: string;
+  status: string;
+  resume_download_url?: string;
+  supports_browser_prep: boolean;
+  has_active_session: boolean;
+  needs_user_input_count: number;
+  message: string;
+}
+

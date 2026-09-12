@@ -349,3 +349,40 @@ class SessionMetadataItem(BaseModel):
     last_verified_at: Optional[datetime] = None
     expires_at: Optional[datetime] = None
     metadata: Optional[Dict[str, Any]] = None
+
+
+# ==============================================================================
+# User-Submitted Opportunity Models
+# ==============================================================================
+
+class AnalyzeOpportunityRequest(BaseModel):
+    """Request payload for user-submitted opportunity analysis."""
+    url: str = Field(..., description="Public job posting URL to ingest and analyze")
+
+
+class AnalyzeOpportunityResponse(BaseModel):
+    """Structured response from user-submitted opportunity pipeline."""
+    job_id: str
+    application_id: Optional[str] = None
+    company: str
+    title: str
+    location: Optional[str] = None
+    canonical_url: str
+    source: str = "user_submitted_url"
+    match_score: float
+    recommendation: str
+    priority_band: str
+    priority_score: float
+    selected_strategy: Optional[str] = None
+    strengths: List[str] = Field(default_factory=list)
+    gaps: List[str] = Field(default_factory=list)
+    risks: List[str] = Field(default_factory=list)
+    is_duplicate: bool = False
+    duplicate_of_id: Optional[str] = None
+    status: str = "READY_FOR_REVIEW"
+    resume_download_url: Optional[str] = None
+    supports_browser_prep: bool = False
+    has_active_session: bool = False
+    needs_user_input_count: int = 0
+    message: str = "Opportunity successfully analyzed and prepared for review."
+

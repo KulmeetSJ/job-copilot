@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+from urllib.parse import urlparse
 import uuid
 from sqlalchemy.orm import Session
 
@@ -18,8 +19,12 @@ from job_copilot.copilot.models import (
     QueueStatus,
 )
 from job_copilot.db.database import get_db
+from job_copilot.domain.artifact_enums import ArtifactType
 from job_copilot.domain.browser_worker_enums import BrowserTaskStatus
 from job_copilot.domain.enums import ApplicationStatus
+from job_copilot.ingestion.deduplicator import JobDeduplicator
+from job_copilot.ingestion.normalizer import JobNormalizer
+from job_copilot.ingestion.sources.url import UrlJobSource
 from job_copilot.matching.models import JobAssessment, MatchClassification
 from job_copilot.models.application import Application, ApplicationEventModel
 from job_copilot.models.browser_task import BrowserTaskModel
@@ -28,6 +33,8 @@ from job_copilot.repositories.application_repository import ApplicationRepositor
 from job_copilot.repositories.browser_task_repository import BrowserTaskRepository
 from job_copilot.repositories.job_repository import JobRepository
 from job_copilot.schemas.dashboard import (
+    AnalyzeOpportunityRequest,
+    AnalyzeOpportunityResponse,
     ApplicationDetailResponse,
     ApplicationTimelineEvent,
     ArtifactSummaryItem,
@@ -1028,4 +1035,306 @@ class DashboardService:
         finally:
             if should_close:
                 db.close()
+
+    # ==========================================================================
+    # 7. User-Submitted Job Opportunities ("Found a job yourself?")
+    # ==========================================================================
+
+    @staticmethod
+    def validate_user_submitted_url(url: str) -> str:
+        """
+        Validate that target URL has a safe HTTP/HTTPS scheme, valid hostname,
+        and is not pointing to private/internal/local addresses (SSRF prevention).
+        """
+        if not url or not isinstance(url, str):
+            raise ValueError("Target URL must be a non-empty string.")
+
+        clean_url = url.strip()
+        parsed = urlparse(clean_url)
+        scheme = (parsed.scheme or "").lower()
+        if scheme not in ("http", "https"):
+            raise ValueError("Disallowed URL scheme. Only HTTP and HTTPS are permitted.")
+
+        hostname = (parsed.hostname or "").lower()
+        if not hostname:
+            raise ValueError("Target URL has no valid hostname.")
+
+        # SSRF Safeguards: reject loopback, internal, and private IPs
+        blocked_hosts = {"localhost", "127.0.0.1", "0.0.0.0", "::1", "test.local"}
+        if (
+            hostname in blocked_hosts
+            or hostname.startswith("127.")
+            or hostname.startswith("10.")
+            or hostname.startswith("192.168.")
+            or hostname.startswith("169.254.")
+            or hostname.endswith(".local")
+            or hostname.endswith(".internal")
+        ):
+            raise ValueError("Unsafe URL: Local and private network addresses are not permitted.")
+
+        # Reject private IPv4 range 172.16.0.0 - 172.31.255.255
+        if hostname.startswith("172."):
+            parts = hostname.split(".")
+            if len(parts) >= 2 and parts[1].isdigit() and 16 <= int(parts[1]) <= 31:
+                raise ValueError("Unsafe URL: Private network addresses are not permitted.")
+
+        # Validate domain structure (must contain a valid dot)
+        if "." not in hostname or hostname.endswith("."):
+            raise ValueError("This job site isn't currently supported for automated processing.")
+
+        return clean_url
+
+    def analyze_user_submitted_url(self, raw_url: str) -> AnalyzeOpportunityResponse:
+        """
+        Ingest and process a candidate-submitted opportunity URL through the pipeline:
+        1. Validate URL and safe navigation target (SSRF prevention).
+        2. Fetch JD content via UrlJobSource.
+        3. Normalize & check deduplication against existing jobs.
+        4. Evaluate JD against Candidate Truth (7 dimensions) via JobIntelligenceService.
+        5. Prioritize and register in Tracking and Copilot Queue.
+        6. Prepare application package, tailor resume (Phase 3 strategy), and store artifacts.
+        7. Stage in READY_FOR_REVIEW without automated submission.
+        """
+        clean_url = self.validate_user_submitted_url(raw_url)
+
+        db, should_close = self._get_db_session()
+        try:
+            # 1. Fetch raw job description
+            url_source = UrlJobSource(name="user_submitted_url")
+            raw_job = url_source.fetch(clean_url)
+            if not raw_job or not raw_job.raw_description or len(raw_job.raw_description.strip()) < 20:
+                raise ValueError("Couldn't reliably read this job posting.")
+
+            raw_job.source = "user_submitted_url"
+            raw_job.source_url = clean_url
+
+            # 2. Normalize and Deduplicate
+            normalizer = JobNormalizer()
+            canonical = normalizer.normalize(raw_job)
+            canonical.source = "user_submitted_url"
+            canonical.source_url = clean_url
+
+            deduplicator = JobDeduplicator()
+            existing_jobs = self.copilot_service.orchestrator.discovery_service.store.list_canonical_jobs(include_duplicates=True)
+            is_dup, canonical_id, reason = deduplicator.check_duplicate(canonical, existing_jobs)
+
+            if is_dup and canonical_id:
+                logger.info(f"User-submitted URL '{clean_url}' is DUPLICATE of '{canonical_id}' ({reason})")
+                existing_canonical = self.copilot_service.orchestrator.discovery_service.store.get_canonical_job(canonical_id)
+                existing_copilot_job = self.copilot_service.get_job(canonical_id)
+
+                company = existing_canonical.company if existing_canonical else (existing_copilot_job.company if existing_copilot_job else canonical.company)
+                title = existing_canonical.title if existing_canonical else (existing_copilot_job.title if existing_copilot_job else canonical.title)
+                location = existing_canonical.location if existing_canonical else (existing_copilot_job.location if existing_copilot_job else canonical.location)
+                match_score = existing_copilot_job.match_score if existing_copilot_job and existing_copilot_job.match_score is not None else 0.0
+                recommendation = existing_copilot_job.recommendation_tier if existing_copilot_job else "CONSIDER"
+                priority_band = existing_copilot_job.priority_band.value if existing_copilot_job and hasattr(existing_copilot_job.priority_band, "value") else "MEDIUM"
+                priority_score = existing_copilot_job.priority_score if existing_copilot_job else 50.0
+                selected_strat = existing_copilot_job.selected_strategy if existing_copilot_job else None
+
+                app_repo = ApplicationRepository(db)
+                existing_app = app_repo.get_by_job_id_str(canonical_id)
+                app_id = existing_app.application_id if existing_app else None
+
+                return AnalyzeOpportunityResponse(
+                    job_id=canonical_id,
+                    application_id=app_id,
+                    company=company,
+                    title=title,
+                    location=location,
+                    canonical_url=clean_url,
+                    source="user_submitted_url",
+                    match_score=match_score,
+                    recommendation=recommendation,
+                    priority_band=priority_band,
+                    priority_score=priority_score,
+                    selected_strategy=selected_strat,
+                    strengths=existing_copilot_job.recommendation.strengths if existing_copilot_job and existing_copilot_job.recommendation else [],
+                    gaps=existing_copilot_job.explanation.why_not_apply if existing_copilot_job and existing_copilot_job.explanation else [],
+                    risks=existing_copilot_job.risk_flags if existing_copilot_job else [],
+                    is_duplicate=True,
+                    duplicate_of_id=canonical_id,
+                    status=existing_app.status.value if existing_app else "READY_FOR_REVIEW",
+                    resume_download_url=f"/api/dashboard/applications/{app_id or canonical_id}/resume/pdf",
+                    supports_browser_prep=False,
+                    has_active_session=False,
+                    needs_user_input_count=0,
+                    message="This opportunity is already in Job Copilot.",
+                )
+
+            # 3. Save raw & canonical job in store
+            self.copilot_service.orchestrator.discovery_service.store.save_raw_job(canonical.job_id, raw_job)
+            self.copilot_service.orchestrator.discovery_service.store.save_canonical_job(canonical)
+
+            # 4. Process through Copilot pipeline (JobIntelligence, Tracking, Prioritization, Queue)
+            copilot_job = self.copilot_service.process_job(canonical.job_id)
+
+            # 5. Prepare Application Package (Phase 3 Resume Tailoring, Cover Letter, Q&A)
+            pkg = self.prep_service.prepare_application(job_id_or_text=canonical.job_id)
+
+            # 6. Store artifacts in Object Storage & PostgreSQL metadata
+            if pkg.resume_tex_path and Path(pkg.resume_tex_path).exists():
+                tex_data = Path(pkg.resume_tex_path).read_bytes()
+                try:
+                    self.artifact_service.store_artifact(
+                        data=tex_data,
+                        artifact_type=ArtifactType.TAILORED_RESUME_TEX,
+                        job_id=canonical.job_id,
+                        original_filename=f"resume_{canonical.job_id}.tex",
+                        content_type="application/x-tex",
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to store tex artifact: {e}")
+
+            if pkg.resume_pdf_path and Path(pkg.resume_pdf_path).exists():
+                pdf_data = Path(pkg.resume_pdf_path).read_bytes()
+                try:
+                    self.artifact_service.store_artifact(
+                        data=pdf_data,
+                        artifact_type=ArtifactType.TAILORED_RESUME_PDF,
+                        job_id=canonical.job_id,
+                        original_filename=f"resume_{canonical.job_id}.pdf",
+                        content_type="application/pdf",
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to store pdf artifact: {e}")
+
+            # 7. Create/update database Job and Application records
+            job_repo = JobRepository(db)
+            db_job = job_repo.get_by_job_id(canonical.job_id)
+            if not db_job:
+                db_job = Job(
+                    job_id=canonical.job_id,
+                    title=canonical.title,
+                    company=canonical.company,
+                    location=canonical.location,
+                    url=clean_url,
+                    canonical_url=canonical.canonical_url or clean_url,
+                    description=canonical.clean_description,
+                    source="user_submitted_url",
+                    lifecycle_status="RECOMMENDED",
+                )
+                db.add(db_job)
+                db.commit()
+                db.refresh(db_job)
+
+            app_repo = ApplicationRepository(db)
+            app_model = app_repo.get_by_job_id_str(canonical.job_id)
+            if not app_model:
+                app_id = f"app-usr-{uuid.uuid4().hex[:8]}"
+                app_model = Application(
+                    application_id=app_id,
+                    job_id=db_job.id if db_job else None,
+                    job_id_str=canonical.job_id,
+                    company=canonical.company,
+                    role=canonical.title,
+                    source="user_submitted_url",
+                    canonical_job_url=clean_url,
+                    status=ApplicationStatus.READY_TO_APPLY,
+                    match_score=copilot_job.match_score if copilot_job else None,
+                    resume_strategy=pkg.selected_resume_strategy,
+                    prepared_at=utc_now(),
+                    user_notes=["Added by candidate via dashboard."],
+                )
+                db.add(app_model)
+                db.commit()
+                db.refresh(app_model)
+                app_repo.append_event(
+                    application_id=app_model.application_id,
+                    job_id=canonical.job_id,
+                    event_type="DISCOVERED",
+                    event_id=f"evt-usr-disc-{uuid.uuid4().hex[:8]}",
+                    source="user_submitted_url",
+                    notes="Opportunity submitted by candidate.",
+                )
+                app_repo.append_event(
+                    application_id=app_model.application_id,
+                    job_id=canonical.job_id,
+                    event_type="PREPARED",
+                    event_id=f"evt-usr-prep-{uuid.uuid4().hex[:8]}",
+                    source="user_submitted_url",
+                    notes=f"Application prepared with strategy '{pkg.selected_resume_strategy}'.",
+                )
+
+            # 8. Create BrowserTask in READY_FOR_REVIEW state
+            task_repo = BrowserTaskRepository(db)
+            browser_task = task_repo.get_by_application_id(app_model.application_id) or task_repo.get_by_application_id(canonical.job_id)
+            if not browser_task:
+                task_id = f"task-usr-{uuid.uuid4().hex[:8]}"
+                confirm_token = HumanConfirmationService.generate_confirmation_token()
+                expires_at = utc_now() + timedelta(hours=24)
+                review_pkg_json = {
+                    "detected_fields": [a.question_text for a in pkg.answers],
+                    "filled_fields": [a.question_text for a in pkg.answers if not a.requires_user_input],
+                    "unresolved_fields": [u.question_text for u in pkg.user_inputs_required],
+                    "warnings": [],
+                }
+                browser_task = BrowserTaskModel(
+                    task_id=task_id,
+                    application_id=app_model.application_id,
+                    job_id=canonical.job_id,
+                    source="user_submitted_url",
+                    target_url=clean_url,
+                    status=BrowserTaskStatus.READY_FOR_REVIEW,
+                    confirmation_token=confirm_token,
+                    confirmation_expires_at=expires_at,
+                    review_package_json=review_pkg_json,
+                )
+                task_repo.create(browser_task)
+
+            # 9. Check browser adapter and active authenticated session
+            session_mgr = AuthenticatedSessionManager(db)
+            hostname = (urlparse(clean_url).hostname or "").lower()
+            source_type = "generic"
+            if "linkedin.com" in hostname:
+                source_type = "linkedin"
+            elif "naukri.com" in hostname:
+                source_type = "naukri"
+            elif "instahyre.com" in hostname:
+                source_type = "instahyre"
+            elif "greenhouse.io" in hostname:
+                source_type = "greenhouse"
+            elif "lever.co" in hostname:
+                source_type = "lever"
+            elif "workday.com" in hostname:
+                source_type = "workday"
+            elif "ashbyhq.com" in hostname:
+                source_type = "ashby"
+
+            has_active_session = bool(session_mgr.get_session(source_type))
+            supports_browser = source_type in ["linkedin", "naukri", "instahyre", "greenhouse", "lever", "workday", "ashby", "generic"]
+
+            strengths = copilot_job.recommendation.strengths if copilot_job and copilot_job.recommendation else []
+            gaps = copilot_job.explanation.why_not_apply if copilot_job and copilot_job.explanation else []
+            risks = copilot_job.risk_flags if copilot_job else []
+
+            return AnalyzeOpportunityResponse(
+                job_id=canonical.job_id,
+                application_id=app_model.application_id,
+                company=canonical.company,
+                title=canonical.title,
+                location=canonical.location,
+                canonical_url=clean_url,
+                source="user_submitted_url",
+                match_score=copilot_job.match_score if copilot_job and copilot_job.match_score is not None else 0.0,
+                recommendation=copilot_job.recommendation_tier if copilot_job else "APPLY",
+                priority_band=copilot_job.priority_band.value if copilot_job and hasattr(copilot_job.priority_band, "value") else "HIGH",
+                priority_score=copilot_job.priority_score if copilot_job else 75.0,
+                selected_strategy=pkg.selected_resume_strategy,
+                strengths=strengths,
+                gaps=gaps,
+                risks=risks,
+                is_duplicate=False,
+                duplicate_of_id=None,
+                status="READY_FOR_REVIEW",
+                resume_download_url=f"/api/dashboard/applications/{app_model.application_id}/resume/pdf",
+                supports_browser_prep=supports_browser,
+                has_active_session=has_active_session,
+                needs_user_input_count=len(pkg.user_inputs_required),
+                message="Opportunity successfully analyzed and prepared for review.",
+            )
+        finally:
+            if should_close:
+                db.close()
+
 
