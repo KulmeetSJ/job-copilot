@@ -92,7 +92,7 @@ def check_db_connection(custom_engine: Optional[Engine] = None) -> bool:
 
 
 def init_db(custom_engine: Optional[Engine] = None) -> None:
-    """Initialize database tables and create required parent directories."""
+    """Initialize database tables, run schema migrations, and ensure all columns exist."""
     from job_copilot.db.base import Base
 
     target_engine = custom_engine or engine
@@ -107,4 +107,31 @@ def init_db(custom_engine: Optional[Engine] = None) -> None:
 
     logger.info(f"Creating database tables on: {sanitize_database_url(db_url)}")
     Base.metadata.create_all(bind=target_engine)
+
+    # 1. Apply Alembic migrations if alembic config is present
+    try:
+        from job_copilot.db.migrations_runner import run_migrations
+        run_migrations(db_url=db_url)
+    except Exception as me:
+        logger.warning(f"Alembic migration notice during init_db: {me}")
+
+    # 2. Defensive schema self-healing: ensure newly added columns exist in PostgreSQL and SQLite
+    try:
+        with target_engine.connect() as conn:
+            is_sqlite = db_url.startswith("sqlite")
+            if is_sqlite:
+                cols = [row[1] for row in conn.execute(text("PRAGMA table_info(browser_tasks)")).fetchall()]
+                if "execution_mode" not in cols:
+                    conn.execute(text("ALTER TABLE browser_tasks ADD COLUMN execution_mode VARCHAR(50) DEFAULT 'REMOTE_HEADLESS'"))
+                if "assigned_device_id" not in cols:
+                    conn.execute(text("ALTER TABLE browser_tasks ADD COLUMN assigned_device_id VARCHAR(100)"))
+                conn.commit()
+            else:
+                # PostgreSQL safe column addition
+                conn.execute(text("ALTER TABLE browser_tasks ADD COLUMN IF NOT EXISTS execution_mode VARCHAR(50) DEFAULT 'REMOTE_HEADLESS'"))
+                conn.execute(text("ALTER TABLE browser_tasks ADD COLUMN IF NOT EXISTS assigned_device_id VARCHAR(100)"))
+                conn.commit()
+    except Exception as se:
+        logger.warning(f"Notice while verifying table columns in init_db: {se}")
+
     logger.info("Database tables initialized successfully.")

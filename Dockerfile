@@ -44,7 +44,7 @@ RUN groupadd -g 1000 appgroup && \
 WORKDIR /app
 
 # Copy dependency definition and source code
-COPY pyproject.toml README.md ./
+COPY pyproject.toml README.md alembic.ini ./
 COPY src/ ./src/
 COPY data/candidate/ ./data/candidate/
 COPY data/config/ ./data/config/
