@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { api } from '../api';
 import { SubmissionConfirmResponse } from '../types';
+import { formatSource } from '../utils/formatters';
 
 interface SubmissionModalProps {
   applicationId: string;
@@ -70,21 +71,21 @@ export const SubmissionModal: React.FC<SubmissionModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4">
-      <div className="bg-[#0f172a] border-2 border-rose-500/40 rounded-2xl max-w-xl w-full p-6 shadow-2xl space-y-5 overflow-hidden">
+    <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+      <div className="bg-[#0f172a] border-2 border-rose-500/40 rounded-2xl max-w-xl w-full p-4 sm:p-6 shadow-2xl space-y-4 sm:space-y-5 max-h-[92vh] overflow-y-auto">
         
         {/* Top Warning Banner */}
-        <div className="flex items-start justify-between pb-4 border-b border-slate-800">
+        <div className="flex items-start justify-between pb-3 sm:pb-4 border-b border-slate-800">
           <div className="flex items-center space-x-3">
-            <div className="p-2.5 rounded-xl bg-rose-500/20 text-rose-400 border border-rose-500/40 animate-pulse">
-              <ShieldAlert className="w-6 h-6" />
+            <div className="p-2 sm:p-2.5 rounded-xl bg-rose-500/20 text-rose-400 border border-rose-500/40 animate-pulse shrink-0">
+              <ShieldAlert className="w-5 h-5 sm:w-6 sm:h-6" />
             </div>
             <div>
-              <h3 className="text-base font-bold text-white uppercase tracking-wide">
-                Final Submission Confirmation Gate
+              <h3 className="text-sm sm:text-base font-bold text-white uppercase tracking-wide">
+                Final Submission Gate
               </h3>
-              <p className="text-xs text-rose-300 font-medium">
-                Consequential Action: External application transmission
+              <p className="text-[11px] sm:text-xs text-rose-300 font-medium">
+                Consequential Action: External transmission
               </p>
             </div>
           </div>
@@ -99,9 +100,9 @@ export const SubmissionModal: React.FC<SubmissionModalProps> = ({
 
         {/* Success State */}
         {result ? (
-          <div className="p-6 rounded-xl bg-emerald-950/20 border border-emerald-500/30 text-center space-y-4">
-            <CheckCircle2 className="w-12 h-12 text-emerald-400 mx-auto" />
-            <h4 className="text-lg font-bold text-white">Application Submission Confirmed</h4>
+          <div className="p-5 sm:p-6 rounded-xl bg-emerald-950/20 border border-emerald-500/30 text-center space-y-4">
+            <CheckCircle2 className="w-10 h-10 sm:w-12 sm:h-12 text-emerald-400 mx-auto" />
+            <h4 className="text-base sm:text-lg font-bold text-white">Application Submission Confirmed</h4>
             <p className="text-xs text-slate-300 max-w-md mx-auto leading-relaxed">
               {result.message}
             </p>
@@ -113,7 +114,7 @@ export const SubmissionModal: React.FC<SubmissionModalProps> = ({
             <div className="pt-2">
               <button
                 onClick={onClose}
-                className="px-5 py-2 text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg transition-colors"
+                className="w-full sm:w-auto px-5 py-2.5 text-xs sm:text-sm font-semibold bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg transition-colors"
               >
                 Close & Return to Dashboard
               </button>
@@ -122,15 +123,15 @@ export const SubmissionModal: React.FC<SubmissionModalProps> = ({
         ) : (
           <>
             {/* Warning Message */}
-            <div className="p-3.5 rounded-xl bg-rose-950/20 border border-rose-500/30 text-xs text-rose-200 space-y-1">
-              <span className="font-bold">You are about to submit this application to an external company portal.</span>
-              <p className="text-slate-300 text-[11px]">
-                Once authorized, the browser worker will execute the submission transition. Candidate truth and verified answers will be delivered.
+            <div className="p-3 sm:p-3.5 rounded-xl bg-rose-950/20 border border-rose-500/30 text-xs text-rose-200 space-y-1">
+              <span className="font-bold">You are authorizing external transmission to the employer portal.</span>
+              <p className="text-slate-300 text-[11px] leading-relaxed">
+                Once confirmed, the browser worker submits verified candidate profile data and answers.
               </p>
             </div>
 
             {/* Target Summary Card */}
-            <div className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 space-y-2 text-xs">
+            <div className="p-3.5 sm:p-4 rounded-xl bg-slate-900/80 border border-slate-800 space-y-2 text-xs">
               <div className="flex items-center justify-between">
                 <span className="text-slate-400">Target Company:</span>
                 <span className="font-bold text-white">{company}</span>
@@ -140,21 +141,21 @@ export const SubmissionModal: React.FC<SubmissionModalProps> = ({
                 <span className="font-medium text-slate-200">{role}</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-slate-400">Source Portal:</span>
-                <span className="capitalize font-mono text-slate-300">{source}</span>
+                <span className="text-slate-400">Source:</span>
+                <span className="font-medium text-slate-200">{formatSource(source)}</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-slate-400">Tailored Resume Strategy:</span>
+                <span className="text-slate-400">Resume Strategy:</span>
                 <span className="font-mono uppercase text-emerald-400 font-semibold">{strategy}</span>
               </div>
               {targetUrl && (
                 <div className="flex items-center justify-between pt-1 border-t border-slate-800/60">
-                  <span className="text-slate-400">Target URL:</span>
+                  <span className="text-slate-400">Portal URL:</span>
                   <a 
                     href={targetUrl} 
                     target="_blank" 
                     rel="noopener noreferrer" 
-                    className="text-blue-400 hover:underline flex items-center space-x-1 truncate max-w-[240px]"
+                    className="text-blue-400 hover:underline flex items-center space-x-1 truncate max-w-[200px] sm:max-w-[280px]"
                   >
                     <span className="truncate">{targetUrl}</span>
                     <ExternalLink className="w-3 h-3 flex-shrink-0" />
@@ -163,19 +164,12 @@ export const SubmissionModal: React.FC<SubmissionModalProps> = ({
               )}
             </div>
 
-            {/* Error Message */}
-            {error && (
-              <div className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/20 text-xs text-rose-300">
-                {error}
-              </div>
-            )}
-
             {/* User Notes Input */}
-            <div className="space-y-1.5 text-xs">
+            <div className="space-y-1 text-xs">
               <label className="text-slate-400 font-medium">Optional Submission Notes:</label>
               <input
                 type="text"
-                placeholder="e.g. Applied with referral code or custom salary note"
+                placeholder="e.g. Applied with referral / notes"
                 value={userNotes}
                 onChange={(e) => setUserNotes(e.target.value)}
                 className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-blue-500"
@@ -183,10 +177,10 @@ export const SubmissionModal: React.FC<SubmissionModalProps> = ({
             </div>
 
             {/* Explicit Gated Confirmation Input */}
-            <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-3">
+            <div className="p-3.5 sm:p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2.5 sm:space-y-3">
               <label className="text-xs font-semibold text-slate-200 flex items-center space-x-2">
-                <Lock className="w-3.5 h-3.5 text-rose-400" />
-                <span>Type exact keyword <code className="text-rose-400 font-bold bg-rose-500/10 px-1 py-0.5 rounded">SUBMIT</code> to authorize:</span>
+                <Lock className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                <span>Type exact keyword <code className="text-rose-400 font-bold bg-rose-500/10 px-1.5 py-0.5 rounded">SUBMIT</code> to authorize:</span>
               </label>
               
               <input
@@ -194,7 +188,7 @@ export const SubmissionModal: React.FC<SubmissionModalProps> = ({
                 placeholder="Type SUBMIT"
                 value={confirmInput}
                 onChange={(e) => setConfirmInput(e.target.value)}
-                className="w-full px-3 py-2.5 bg-slate-900 border border-slate-700 rounded-lg text-sm font-mono text-center tracking-widest text-white uppercase focus:outline-none focus:border-rose-500 font-bold"
+                className="w-full px-3 py-2.5 bg-slate-900 border border-slate-700 rounded-lg text-sm sm:text-base font-mono text-center tracking-widest text-white uppercase focus:outline-none focus:border-rose-500 font-bold"
               />
             </div>
 
@@ -203,18 +197,18 @@ export const SubmissionModal: React.FC<SubmissionModalProps> = ({
               <div className="p-3.5 rounded-xl bg-rose-500/15 border border-rose-500/30 flex items-start space-x-2.5 text-xs text-rose-300">
                 <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5 text-rose-400" />
                 <div className="space-y-0.5">
-                  <div className="font-bold text-rose-200">Submission Authorization Blocked</div>
+                  <div className="font-bold text-rose-200">Submission Blocked</div>
                   <div className="text-[11px] leading-relaxed">{error}</div>
                 </div>
               </div>
             )}
 
             {/* Modal Actions */}
-            <div className="flex items-center justify-between pt-2">
+            <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-between gap-2.5 pt-2">
               <button
                 type="button"
                 onClick={onClose}
-                className="px-4 py-2 text-xs font-medium text-slate-400 hover:text-slate-200"
+                className="px-4 py-2.5 text-xs font-medium text-slate-400 hover:text-slate-200 text-center"
               >
                 Cancel
               </button>
@@ -223,13 +217,13 @@ export const SubmissionModal: React.FC<SubmissionModalProps> = ({
                 type="button"
                 disabled={!isKeywordExact || loading}
                 onClick={handleConfirm}
-                className={`px-6 py-2.5 text-xs font-bold rounded-lg transition-all flex items-center space-x-2 ${
+                className={`px-6 py-2.5 text-xs sm:text-sm font-bold rounded-lg transition-all flex items-center justify-center space-x-2 ${
                   isKeywordExact && !loading
                     ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-lg shadow-rose-600/30'
                     : 'bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-700'
                 }`}
               >
-                <Send className="w-3.5 h-3.5" />
+                <Send className="w-4 h-4" />
                 <span>{loading ? 'Validating Token...' : 'Confirm & Authorize Submission'}</span>
               </button>
             </div>

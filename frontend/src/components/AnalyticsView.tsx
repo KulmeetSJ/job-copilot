@@ -11,6 +11,7 @@ import {
   Globe
 } from 'lucide-react';
 import { api } from '../api';
+import { formatSource } from '../utils/formatters';
 
 export const AnalyticsView: React.FC = () => {
   const [data, setData] = useState<any>(null);
@@ -50,12 +51,12 @@ export const AnalyticsView: React.FC = () => {
   const responseTimes = data.response_times ?? [];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       
       {/* Header & Advisory Guardrail Notice */}
-      <div className="glass-panel p-5 rounded-xl space-y-2">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-bold text-white tracking-tight flex items-center space-x-2">
+      <div className="glass-panel p-4 sm:p-5 rounded-xl space-y-2">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+          <h2 className="text-base sm:text-lg font-bold text-white tracking-tight flex items-center space-x-2">
             <BarChart3 className="w-5 h-5 text-blue-400" />
             <span>Outcome & Pipeline Analytics (Phase 8)</span>
           </h2>
@@ -75,10 +76,10 @@ export const AnalyticsView: React.FC = () => {
       </div>
 
       {/* Funnel Metrics & Conversion Rates */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
         
         {/* Funnel Counts */}
-        <div className="glass-panel p-5 rounded-xl space-y-4">
+        <div className="glass-panel p-4 sm:p-5 rounded-xl space-y-4">
           <h3 className="text-sm font-semibold text-white flex items-center space-x-2">
             <TrendingUp className="w-4 h-4 text-emerald-400" />
             <span>Application Funnel Counts</span>
@@ -119,7 +120,7 @@ export const AnalyticsView: React.FC = () => {
         </div>
 
         {/* Strategy Cohorts */}
-        <div className="glass-panel p-5 rounded-xl space-y-4">
+        <div className="glass-panel p-4 sm:p-5 rounded-xl space-y-4">
           <h3 className="text-sm font-semibold text-white flex items-center space-x-2">
             <PieChart className="w-4 h-4 text-indigo-400" />
             <span>Resume Strategy Performance</span>
@@ -143,7 +144,7 @@ export const AnalyticsView: React.FC = () => {
                       {isInsufficient ? (
                         <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-500/15 text-amber-300 border border-amber-500/30 flex items-center space-x-1">
                           <AlertTriangle className="w-3 h-3" />
-                          <span>Insufficient sample (N &lt; 10)</span>
+                          <span>Insufficient (N &lt; 10)</span>
                         </span>
                       ) : (
                         <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
@@ -152,7 +153,7 @@ export const AnalyticsView: React.FC = () => {
                       )}
                     </div>
 
-                    <div className="grid grid-cols-4 gap-2 pt-1 text-[11px] font-mono">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 text-[11px] font-mono">
                       <div>
                         <span className="text-slate-500">Apps:</span> <b className="text-white">{total}</b>
                       </div>
@@ -176,14 +177,14 @@ export const AnalyticsView: React.FC = () => {
       </div>
 
       {/* Sources Performance Breakdown */}
-      <div className="glass-panel p-5 rounded-xl space-y-4">
+      <div className="glass-panel p-4 sm:p-5 rounded-xl space-y-4">
         <h3 className="text-sm font-semibold text-white flex items-center space-x-2">
           <Globe className="w-4 h-4 text-cyan-400" />
           <span>Source Performance Breakdown</span>
         </h3>
         
-        <div className="border border-slate-800 rounded-xl overflow-hidden">
-          <table className="w-full text-left text-xs">
+        <div className="border border-slate-800 rounded-xl overflow-x-auto">
+          <table className="w-full text-left text-xs min-w-[600px]">
             <thead className="bg-slate-900 text-slate-400 border-b border-slate-800 font-semibold">
               <tr>
                 <th className="p-3">Job Source</th>
@@ -206,7 +207,7 @@ export const AnalyticsView: React.FC = () => {
                   const isSmall = total < 10;
                   return (
                     <tr key={name} className="hover:bg-slate-900/30">
-                      <td className="p-3 font-semibold capitalize text-white">{name}</td>
+                      <td className="p-3 font-semibold text-white">{formatSource(name)}</td>
                       <td className="p-3 font-mono">{total}</td>
                       <td className="p-3 font-mono text-blue-300">{src.recruiter_responses ?? 0} ({src.response_rate ?? 0}%)</td>
                       <td className="p-3 font-mono text-purple-300">{src.interviews ?? 0} ({src.interview_rate ?? 0}%)</td>

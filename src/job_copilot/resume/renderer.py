@@ -127,11 +127,19 @@ class LaTeXResumeRenderer:
         output_dir.mkdir(parents=True, exist_ok=True)
         pdf_path = output_dir / f"{tex_path.stem}.pdf"
 
-        # Find Tectonic binary
-        tectonic_bin = shutil.which("tectonic") or "/opt/homebrew/bin/tectonic"
-        if not os.path.exists(tectonic_bin):
-            pdflatex_bin = shutil.which("pdflatex")
-            if not pdflatex_bin:
+        # Find Tectonic binary across PATH and standard installation paths
+        candidate_paths = [
+            shutil.which("tectonic"),
+            "/usr/local/bin/tectonic",
+            "/opt/homebrew/bin/tectonic",
+            os.path.expanduser("~/.cargo/bin/tectonic"),
+            os.path.expanduser("~/.local/bin/tectonic"),
+        ]
+        tectonic_bin = next((p for p in candidate_paths if p and os.path.exists(p) and os.access(p, os.X_OK)), None)
+        
+        if not tectonic_bin:
+            pdflatex_bin = shutil.which("pdflatex") or "/usr/bin/pdflatex" or "/usr/local/bin/pdflatex"
+            if not pdflatex_bin or not os.path.exists(pdflatex_bin):
                 return None, "Neither 'tectonic' nor 'pdflatex' compiler found.", None
             
             # Use pdflatex fallback

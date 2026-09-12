@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { api } from '../api';
 import { JobDetailResponse, MatchClassification } from '../types';
+import { formatSource } from '../utils/formatters';
 
 interface JobDetailModalProps {
   jobId: string;
@@ -71,26 +72,26 @@ export const JobDetailModal: React.FC<JobDetailModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
-      <div className="bg-[#0c121e] border border-slate-700 rounded-2xl max-w-4xl w-full my-8 max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+      <div className="bg-[#0c121e] border border-slate-700 rounded-2xl max-w-4xl w-full my-4 max-h-[92vh] flex flex-col shadow-2xl overflow-hidden">
         
         {/* Header */}
-        <div className="p-6 border-b border-slate-800 flex items-start justify-between bg-slate-900/40">
+        <div className="p-4 sm:p-6 border-b border-slate-800 flex items-start justify-between bg-slate-900/40">
           <div className="space-y-1">
-            <div className="flex items-center space-x-3">
-              <h2 className="text-xl font-bold text-white tracking-tight">
+            <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+              <h2 className="text-lg sm:text-xl font-bold text-white tracking-tight">
                 {detail?.company || 'Loading...'}
               </h2>
-              <span className="text-slate-600">•</span>
-              <span className="text-base text-slate-300 font-medium">
+              <span className="text-slate-600 hidden sm:inline">•</span>
+              <span className="text-sm sm:text-base text-slate-300 font-medium">
                 {detail?.title}
               </span>
             </div>
 
-            <div className="flex flex-wrap items-center gap-3 text-xs text-slate-400">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-400">
               <span>{detail?.location || 'Remote'}</span>
               <span>•</span>
-              <span className="capitalize">{detail?.source}</span>
+              <span className="font-medium text-slate-300">{formatSource(detail?.source)}</span>
               <span>•</span>
               <span>ID: <code className="font-mono text-slate-300">{jobId}</code></span>
               {detail?.url && (
@@ -116,7 +117,7 @@ export const JobDetailModal: React.FC<JobDetailModalProps> = ({
         </div>
 
         {/* Content Body */}
-        <div className="p-6 overflow-y-auto space-y-6 flex-1 text-sm">
+        <div className="p-4 sm:p-6 overflow-y-auto space-y-4 sm:space-y-6 flex-1 text-sm">
           {loading ? (
             <div className="flex items-center justify-center min-h-[300px]">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
@@ -128,22 +129,22 @@ export const JobDetailModal: React.FC<JobDetailModalProps> = ({
           ) : (
             <>
               {/* Top Score Summary Banner */}
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800">
-                  <span className="text-xs text-slate-400 font-medium">Overall Fit Score</span>
-                  <div className="text-2xl font-bold text-white mt-1">{detail.match_score}%</div>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 sm:gap-3">
+                <div className="p-3 sm:p-3.5 rounded-xl bg-slate-900/80 border border-slate-800">
+                  <span className="text-[11px] sm:text-xs text-slate-400 font-medium">Fit Score</span>
+                  <div className="text-xl sm:text-2xl font-bold text-white mt-0.5">{detail.match_score}%</div>
                 </div>
-                <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800">
-                  <span className="text-xs text-slate-400 font-medium">Recommendation</span>
-                  <div className="text-lg font-bold text-blue-400 mt-1">{detail.recommendation}</div>
+                <div className="p-3 sm:p-3.5 rounded-xl bg-slate-900/80 border border-slate-800">
+                  <span className="text-[11px] sm:text-xs text-slate-400 font-medium">Recommendation</span>
+                  <div className="text-sm sm:text-base font-bold text-blue-400 mt-0.5">{detail.recommendation}</div>
                 </div>
-                <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800">
-                  <span className="text-xs text-slate-400 font-medium">Priority Band</span>
-                  <div className="text-lg font-bold text-indigo-300 mt-1">{detail.priority_band} ({detail.priority_score})</div>
+                <div className="p-3 sm:p-3.5 rounded-xl bg-slate-900/80 border border-slate-800">
+                  <span className="text-[11px] sm:text-xs text-slate-400 font-medium">Priority Band</span>
+                  <div className="text-sm sm:text-base font-bold text-indigo-300 mt-0.5">{detail.priority_band} ({detail.priority_score})</div>
                 </div>
-                <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800">
-                  <span className="text-xs text-slate-400 font-medium">Resume Strategy</span>
-                  <div className="text-sm font-bold text-emerald-400 mt-1 font-mono uppercase">{detail.recommended_strategy}</div>
+                <div className="p-3 sm:p-3.5 rounded-xl bg-slate-900/80 border border-slate-800">
+                  <span className="text-[11px] sm:text-xs text-slate-400 font-medium">Resume Strategy</span>
+                  <div className="text-xs sm:text-sm font-bold text-emerald-400 mt-0.5 font-mono uppercase">{detail.recommended_strategy}</div>
                 </div>
               </div>
 
@@ -190,7 +191,7 @@ export const JobDetailModal: React.FC<JobDetailModalProps> = ({
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                   
                   {/* Facts */}
-                  <div className="p-4 rounded-xl bg-emerald-950/15 border border-emerald-500/20 space-y-2">
+                  <div className="p-3.5 sm:p-4 rounded-xl bg-emerald-950/15 border border-emerald-500/20 space-y-2">
                     <span className="text-xs font-bold uppercase tracking-wider text-emerald-400 flex items-center space-x-1.5">
                       <CheckCircle2 className="w-3.5 h-3.5" />
                       <span>Verified Facts</span>
@@ -206,7 +207,7 @@ export const JobDetailModal: React.FC<JobDetailModalProps> = ({
                   </div>
 
                   {/* Inferences */}
-                  <div className="p-4 rounded-xl bg-blue-950/15 border border-blue-500/20 space-y-2">
+                  <div className="p-3.5 sm:p-4 rounded-xl bg-blue-950/15 border border-blue-500/20 space-y-2">
                     <span className="text-xs font-bold uppercase tracking-wider text-blue-400 flex items-center space-x-1.5">
                       <HelpCircle className="w-3.5 h-3.5" />
                       <span>Derived Inferences</span>
@@ -222,7 +223,7 @@ export const JobDetailModal: React.FC<JobDetailModalProps> = ({
                   </div>
 
                   {/* Recommendations */}
-                  <div className="p-4 rounded-xl bg-purple-950/15 border border-purple-500/20 space-y-2">
+                  <div className="p-3.5 sm:p-4 rounded-xl bg-purple-950/15 border border-purple-500/20 space-y-2">
                     <span className="text-xs font-bold uppercase tracking-wider text-purple-400 flex items-center space-x-1.5">
                       <Sparkles className="w-3.5 h-3.5" />
                       <span>Action Advice</span>
@@ -247,8 +248,8 @@ export const JobDetailModal: React.FC<JobDetailModalProps> = ({
                   <span>Requirement Match Provenance</span>
                 </h3>
 
-                <div className="border border-slate-800 rounded-xl overflow-hidden">
-                  <table className="w-full text-left text-xs">
+                <div className="border border-slate-800 rounded-xl overflow-x-auto">
+                  <table className="w-full text-left text-xs min-w-[500px]">
                     <thead className="bg-slate-900 text-slate-400 border-b border-slate-800 font-semibold">
                       <tr>
                         <th className="p-3">Requirement</th>
@@ -314,10 +315,10 @@ export const JobDetailModal: React.FC<JobDetailModalProps> = ({
         </div>
 
         {/* Footer Actions */}
-        <div className="p-4 border-t border-slate-800 bg-slate-900/40 flex items-center justify-between">
+        <div className="p-4 border-t border-slate-800 bg-slate-900/40 flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-xs font-medium text-slate-400 hover:text-slate-200"
+            className="px-4 py-2 text-xs font-medium text-slate-400 hover:text-slate-200 text-center"
           >
             Close
           </button>
@@ -325,17 +326,17 @@ export const JobDetailModal: React.FC<JobDetailModalProps> = ({
           <div className="flex items-center space-x-2">
             <button
               onClick={() => { onPrepare(jobId); onClose(); }}
-              className="px-4 py-2 text-xs font-semibold bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/30 rounded-lg transition-colors flex items-center space-x-1.5"
+              className="flex-1 sm:flex-initial px-4 py-2 text-xs font-semibold bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/30 rounded-lg transition-colors flex items-center justify-center space-x-1.5"
             >
               <Sparkles className="w-3.5 h-3.5" />
-              <span>Prepare Application</span>
+              <span>Prepare</span>
             </button>
 
             <button
               onClick={() => { onReview(jobId); onClose(); }}
-              className="px-4 py-2 text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-colors"
+              className="flex-1 sm:flex-initial px-4 py-2 text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-colors text-center"
             >
-              Open Application Review
+              Review Application
             </button>
           </div>
         </div>

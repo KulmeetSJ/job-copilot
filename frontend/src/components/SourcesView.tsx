@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { api } from '../api';
 import { SessionMetadataItem, SourceMonitoringItem } from '../types';
+import { formatSource } from '../utils/formatters';
 
 export const SourcesView: React.FC = () => {
   const [sources, setSources] = useState<SourceMonitoringItem[]>([]);
@@ -36,12 +37,12 @@ export const SourcesView: React.FC = () => {
   }, []);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       
       {/* Header & Invariant Notice */}
-      <div className="glass-panel p-5 rounded-xl space-y-2">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-bold text-white tracking-tight flex items-center space-x-2">
+      <div className="glass-panel p-4 sm:p-5 rounded-xl space-y-2">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+          <h2 className="text-base sm:text-lg font-bold text-white tracking-tight flex items-center space-x-2">
             <Globe className="w-5 h-5 text-blue-400" />
             <span>Job Sources & Authenticated Sessions (Phase 10C)</span>
           </h2>
@@ -59,11 +60,11 @@ export const SourcesView: React.FC = () => {
       </div>
 
       {/* Configured Sources Table */}
-      <div className="glass-panel p-5 rounded-xl space-y-4">
+      <div className="glass-panel p-4 sm:p-5 rounded-xl space-y-4">
         <h3 className="text-sm font-semibold text-white">Configured Job Sources</h3>
 
-        <div className="border border-slate-800 rounded-xl overflow-hidden">
-          <table className="w-full text-left text-xs">
+        <div className="border border-slate-800 rounded-xl overflow-x-auto">
+          <table className="w-full text-left text-xs min-w-[600px]">
             <thead className="bg-slate-900 text-slate-400 border-b border-slate-800 font-semibold">
               <tr>
                 <th className="p-3">Source Name</th>
@@ -84,7 +85,7 @@ export const SourcesView: React.FC = () => {
                   <tr key={src.source_name} className="hover:bg-slate-900/30">
                     <td className="p-3 font-semibold text-white">
                       <div>{src.display_name}</div>
-                      <span className="text-[10px] text-slate-500 font-mono">{src.source_name}</span>
+                      <span className="text-[10px] text-slate-500 font-mono">{formatSource(src.source_name)}</span>
                     </td>
                     <td className="p-3 font-mono text-slate-300 uppercase">{src.discovery_mode}</td>
                     <td className="p-3">
@@ -118,8 +119,8 @@ export const SourcesView: React.FC = () => {
       </div>
 
       {/* Authenticated Sessions Metadata Table (Zero Secrets) */}
-      <div className="glass-panel p-5 rounded-xl space-y-4">
-        <div className="flex items-center justify-between">
+      <div className="glass-panel p-4 sm:p-5 rounded-xl space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <h3 className="text-sm font-semibold text-white flex items-center space-x-2">
             <ShieldCheck className="w-4 h-4 text-indigo-400" />
             <span>Authenticated Browser Sessions Metadata</span>
@@ -127,8 +128,8 @@ export const SourcesView: React.FC = () => {
           <span className="text-[11px] text-slate-500 font-mono">Zero cookie / token exposure</span>
         </div>
 
-        <div className="border border-slate-800 rounded-xl overflow-hidden">
-          <table className="w-full text-left text-xs">
+        <div className="border border-slate-800 rounded-xl overflow-x-auto">
+          <table className="w-full text-left text-xs min-w-[600px]">
             <thead className="bg-slate-900 text-slate-400 border-b border-slate-800 font-semibold">
               <tr>
                 <th className="p-3">Session ID</th>
@@ -148,7 +149,7 @@ export const SourcesView: React.FC = () => {
                 sessions.map((sess) => (
                   <tr key={sess.session_id} className="hover:bg-slate-900/30">
                     <td className="p-3 font-mono text-blue-400">{sess.session_id}</td>
-                    <td className="p-3 capitalize font-semibold text-white">{sess.source}</td>
+                    <td className="p-3 font-semibold text-white">{formatSource(sess.source)}</td>
                     <td className="p-3">
                       <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
                         {sess.status}

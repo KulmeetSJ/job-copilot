@@ -16,11 +16,13 @@ import {
   Save,
   Check,
   FileCode,
-  ExternalLink
+  ExternalLink,
+  ChevronDown
 } from 'lucide-react';
 import { api } from '../api';
 import { ApplicationDetailResponse } from '../types';
 import { SubmissionModal } from './SubmissionModal';
+import { formatSource } from '../utils/formatters';
 
 interface ApplicationReviewViewProps {
   initialApplicationId?: string;
@@ -139,17 +141,17 @@ export const ApplicationReviewView: React.FC<ApplicationReviewViewProps> = ({
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       
       {/* Top Application Selector & Summary */}
-      <div className="glass-panel p-5 rounded-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-        <div className="space-y-1">
-          <div className="flex items-center space-x-3">
-            <h2 className="text-lg font-bold text-white tracking-tight">
-              Application Review & Material Inspection
+      <div className="glass-panel p-4 sm:p-5 rounded-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-3 sm:gap-4">
+        <div className="space-y-1 w-full md:w-auto">
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-base sm:text-lg font-bold text-white tracking-tight">
+              Application Review & Materials
             </h2>
             {detail?.status && (
-              <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold uppercase ${
+              <span className={`px-2.5 py-0.5 rounded-full text-[10px] sm:text-xs font-semibold uppercase ${
                 detail.status === 'READY_FOR_REVIEW' 
                   ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse'
                   : detail.status === 'SUBMITTED'
@@ -160,17 +162,17 @@ export const ApplicationReviewView: React.FC<ApplicationReviewViewProps> = ({
               </span>
             )}
           </div>
-          <p className="text-xs text-slate-400">
-            Inspect tailored resume, cover letter, and evidence-grounded answers before authorizing submission.
+          <p className="text-[11px] sm:text-xs text-slate-400">
+            Inspect tailored resume, cover letter, and verified answers before authorizing submission.
           </p>
         </div>
 
-        {/* Application Dropdown */}
-        <div className="flex items-center space-x-3 w-full md:w-auto">
+        {/* Application Dropdown & Actions */}
+        <div className="flex items-center space-x-2 w-full md:w-auto">
           <select
             value={selectedAppId}
             onChange={(e) => setSelectedAppId(e.target.value)}
-            className="px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-blue-500 max-w-xs"
+            className="flex-1 md:flex-initial px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-blue-500 md:max-w-xs"
           >
             {applications.map((app) => (
               <option key={app.application_id || app.job_id_str} value={app.application_id || app.job_id_str}>
@@ -181,10 +183,11 @@ export const ApplicationReviewView: React.FC<ApplicationReviewViewProps> = ({
 
           <button
             onClick={handlePrepareAgain}
-            className="px-3 py-2 text-xs font-semibold bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/30 rounded-lg transition-colors flex items-center space-x-1.5 whitespace-nowrap"
+            title="Reprepare application materials"
+            className="px-3 py-2 text-xs font-semibold bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/30 rounded-lg transition-colors flex items-center space-x-1.5 shrink-0"
           >
             <Sparkles className="w-3.5 h-3.5" />
-            <span>Reprepare</span>
+            <span className="hidden sm:inline">Reprepare</span>
           </button>
         </div>
       </div>
@@ -194,24 +197,24 @@ export const ApplicationReviewView: React.FC<ApplicationReviewViewProps> = ({
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
         </div>
       ) : (
-        <div className="space-y-6">
+        <div className="space-y-4 sm:space-y-6">
           
           {/* Target Opportunity Header Card */}
-          <div className="glass-card p-5 rounded-xl border border-slate-800 space-y-3">
-            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
-              <div className="space-y-1">
-                <div className="flex items-center space-x-3">
-                  <span className="text-xl font-bold text-white">{detail.company}</span>
-                  <span className="text-slate-600">•</span>
-                  <span className="text-base text-slate-300 font-medium">{detail.role}</span>
+          <div className="glass-card p-4 sm:p-5 rounded-xl border border-slate-800 space-y-3 sm:space-y-4">
+            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3 sm:gap-4">
+              <div className="space-y-1.5">
+                <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                  <span className="text-lg sm:text-xl font-bold text-white">{detail.company}</span>
+                  <span className="text-slate-600 hidden sm:inline">•</span>
+                  <span className="text-sm sm:text-base text-slate-300 font-medium">{detail.role}</span>
                 </div>
-                <div className="flex items-center space-x-3 text-xs text-slate-400">
-                  <span className="capitalize">Source: {detail.source}</span>
-                  <span>•</span>
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-400">
+                  <span>Source: <b className="text-slate-300">{formatSource(detail.source)}</b></span>
+                  <span className="hidden sm:inline">•</span>
                   <span>Strategy: <code className="font-mono text-emerald-400 uppercase font-semibold">{detail.selected_strategy}</code></span>
                   {detail.match_score && (
                     <>
-                      <span>•</span>
+                      <span className="hidden sm:inline">•</span>
                       <span>Fit Score: <b className="text-white">{Math.round(detail.match_score)}%</b></span>
                     </>
                   )}
@@ -219,34 +222,34 @@ export const ApplicationReviewView: React.FC<ApplicationReviewViewProps> = ({
               </div>
 
               {/* Consequential Action Confirmation Button */}
-              <div className="flex items-center space-x-3">
+              <div className="w-full md:w-auto pt-1 md:pt-0">
                 <button
                   onClick={() => setShowSubmissionModal(true)}
-                  className="px-5 py-2.5 text-xs font-bold bg-rose-600 hover:bg-rose-500 text-white rounded-lg shadow-lg shadow-rose-600/20 transition-all flex items-center space-x-2"
+                  className="w-full md:w-auto px-5 py-2.5 text-xs sm:text-sm font-bold bg-rose-600 hover:bg-rose-500 active:bg-rose-700 text-white rounded-lg shadow-lg shadow-rose-600/20 transition-all flex items-center justify-center space-x-2"
                 >
-                  <Send className="w-3.5 h-3.5" />
-                  <span>Authorize & Submit</span>
+                  <Send className="w-4 h-4" />
+                  <span>Authorize & Submit Application</span>
                 </button>
               </div>
             </div>
           </div>
 
-          {/* Sub-Navigation Tabs */}
-          <div className="flex items-center space-x-1 border-b border-slate-800 pb-2 text-xs font-medium">
+          {/* Mobile-Swipeable Sub-Navigation Tabs */}
+          <div className="flex items-center space-x-1.5 overflow-x-auto pb-2 border-b border-slate-800 text-xs font-medium scrollbar-none no-scrollbar -mx-2 px-2">
             <button
               onClick={() => setActiveSubTab('resume')}
-              className={`px-3.5 py-2 rounded-lg transition-colors flex items-center space-x-2 ${
-                activeSubTab === 'resume' ? 'bg-blue-600/20 text-blue-400 border border-blue-500/30' : 'text-slate-400 hover:text-slate-200'
+              className={`px-3.5 py-2 rounded-lg transition-colors flex items-center space-x-2 shrink-0 ${
+                activeSubTab === 'resume' ? 'bg-blue-600/25 text-blue-300 border border-blue-500/40 font-semibold' : 'text-slate-400 hover:text-slate-200'
               }`}
             >
               <FileText className="w-4 h-4" />
-              <span>Tailored Resume & Cover Letter</span>
+              <span>Resume & Cover Letter</span>
             </button>
 
             <button
               onClick={() => setActiveSubTab('answers')}
-              className={`px-3.5 py-2 rounded-lg transition-colors flex items-center space-x-2 ${
-                activeSubTab === 'answers' ? 'bg-blue-600/20 text-blue-400 border border-blue-500/30' : 'text-slate-400 hover:text-slate-200'
+              className={`px-3.5 py-2 rounded-lg transition-colors flex items-center space-x-2 shrink-0 ${
+                activeSubTab === 'answers' ? 'bg-blue-600/25 text-blue-300 border border-blue-500/40 font-semibold' : 'text-slate-400 hover:text-slate-200'
               }`}
             >
               <CheckCircle2 className="w-4 h-4" />
@@ -255,28 +258,28 @@ export const ApplicationReviewView: React.FC<ApplicationReviewViewProps> = ({
 
             <button
               onClick={() => setActiveSubTab('human_input')}
-              className={`px-3.5 py-2 rounded-lg transition-colors flex items-center space-x-2 ${
-                activeSubTab === 'human_input' ? 'bg-purple-600/20 text-purple-400 border border-purple-500/30' : 'text-slate-400 hover:text-slate-200'
+              className={`px-3.5 py-2 rounded-lg transition-colors flex items-center space-x-2 shrink-0 ${
+                activeSubTab === 'human_input' ? 'bg-purple-600/25 text-purple-300 border border-purple-500/40 font-semibold' : 'text-slate-400 hover:text-slate-200'
               }`}
             >
               <HelpCircle className="w-4 h-4" />
-              <span>Needs Human Input ({detail.user_inputs_required.length})</span>
+              <span>Needs Input ({detail.user_inputs_required.length})</span>
             </button>
 
             <button
               onClick={() => setActiveSubTab('browser')}
-              className={`px-3.5 py-2 rounded-lg transition-colors flex items-center space-x-2 ${
-                activeSubTab === 'browser' ? 'bg-amber-600/20 text-amber-400 border border-amber-500/30' : 'text-slate-400 hover:text-slate-200'
+              className={`px-3.5 py-2 rounded-lg transition-colors flex items-center space-x-2 shrink-0 ${
+                activeSubTab === 'browser' ? 'bg-amber-600/25 text-amber-300 border border-amber-500/40 font-semibold' : 'text-slate-400 hover:text-slate-200'
               }`}
             >
               <Eye className="w-4 h-4" />
-              <span>Browser Review Package</span>
+              <span>Browser Review</span>
             </button>
 
             <button
               onClick={() => setActiveSubTab('timeline')}
-              className={`px-3.5 py-2 rounded-lg transition-colors flex items-center space-x-2 ${
-                activeSubTab === 'timeline' ? 'bg-slate-800 text-slate-200' : 'text-slate-400 hover:text-slate-200'
+              className={`px-3.5 py-2 rounded-lg transition-colors flex items-center space-x-2 shrink-0 ${
+                activeSubTab === 'timeline' ? 'bg-slate-800 text-slate-200 font-semibold' : 'text-slate-400 hover:text-slate-200'
               }`}
             >
               <Clock className="w-4 h-4" />
@@ -286,11 +289,11 @@ export const ApplicationReviewView: React.FC<ApplicationReviewViewProps> = ({
 
           {/* Sub-Tab 1: Resume & Cover Letter */}
           {activeSubTab === 'resume' && (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
               
               {/* Resume Panel with PDF / LaTeX toggle */}
-              <div className="glass-panel p-5 rounded-xl space-y-3">
-                <div className="flex flex-wrap items-center justify-between gap-2 pb-1 border-b border-slate-800">
+              <div className="glass-panel p-4 sm:p-5 rounded-xl space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-800">
                   <h3 className="text-sm font-semibold text-white flex items-center space-x-2">
                     <FileText className="w-4 h-4 text-blue-400" />
                     <span>Tailored Resume</span>
@@ -308,7 +311,7 @@ export const ApplicationReviewView: React.FC<ApplicationReviewViewProps> = ({
                         }`}
                       >
                         <FileText className="w-3.5 h-3.5" />
-                        <span>Compiled PDF</span>
+                        <span>PDF</span>
                       </button>
                       
                       <button
@@ -320,7 +323,7 @@ export const ApplicationReviewView: React.FC<ApplicationReviewViewProps> = ({
                         }`}
                       >
                         <FileCode className="w-3.5 h-3.5" />
-                        <span>LaTeX Code</span>
+                        <span>LaTeX</span>
                       </button>
                     </div>
 
@@ -342,7 +345,7 @@ export const ApplicationReviewView: React.FC<ApplicationReviewViewProps> = ({
                         title="Open PDF in new tab"
                       >
                         <ExternalLink className="w-3.5 h-3.5" />
-                        <span>Open Full</span>
+                        <span>Open</span>
                       </a>
                     )}
                   </div>
@@ -352,38 +355,38 @@ export const ApplicationReviewView: React.FC<ApplicationReviewViewProps> = ({
                   <div className="space-y-2">
                     <iframe
                       src={`/api/dashboard/applications/${detail.application_id}/resume/pdf`}
-                      className="w-full h-[500px] rounded-lg border border-slate-800 bg-slate-950"
+                      className="w-full h-[400px] sm:h-[500px] rounded-lg border border-slate-800 bg-slate-950"
                       title="Compiled Resume PDF"
                     />
-                    <div className="flex items-center justify-between text-[11px] text-slate-400 px-1">
-                      <span>Compiled via Tectonic LaTeX engine</span>
+                    <div className="flex items-center justify-between text-[11px] text-slate-400 px-1 pt-1">
+                      <span>Compiled via Tectonic Engine</span>
                       <a
                         href={`/api/dashboard/applications/${detail.application_id}/resume/pdf`}
                         download={`Resume_${detail.company.replace(/\s+/g, '_')}.pdf`}
-                        className="text-blue-400 hover:underline flex items-center space-x-1 font-medium"
+                        className="text-blue-400 hover:underline flex items-center space-x-1 font-semibold"
                       >
-                        <Download className="w-3 h-3" />
+                        <Download className="w-3.5 h-3.5" />
                         <span>Download PDF</span>
                       </a>
                     </div>
                   </div>
                 ) : (
-                  <pre className="p-4 bg-slate-950 border border-slate-800 rounded-lg text-xs font-mono text-slate-300 max-h-[500px] overflow-y-auto leading-relaxed whitespace-pre-wrap">
+                  <pre className="p-4 bg-slate-950 border border-slate-800 rounded-lg text-xs font-mono text-slate-300 max-h-[450px] sm:max-h-[500px] overflow-y-auto leading-relaxed whitespace-pre-wrap">
                     {detail.resume_tex_content || '% Tailored LaTeX generated for this opportunity\n\\begin{document}\n...'}
                   </pre>
                 )}
               </div>
 
               {/* Cover Letter Panel */}
-              <div className="glass-panel p-5 rounded-xl space-y-3">
-                <div className="flex items-center justify-between">
+              <div className="glass-panel p-4 sm:p-5 rounded-xl space-y-3">
+                <div className="flex items-center justify-between pb-2 border-b border-slate-800">
                   <h3 className="text-sm font-semibold text-white flex items-center space-x-2">
                     <FileText className="w-4 h-4 text-emerald-400" />
                     <span>Tailored Cover Letter</span>
                   </h3>
                   <button
                     onClick={handleCopyCover}
-                    className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 text-xs flex items-center space-x-1"
+                    className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 text-xs flex items-center space-x-1 border border-slate-800"
                   >
                     {copiedCover ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
                     <span>{copiedCover ? 'Copied' : 'Copy'}</span>
@@ -406,7 +409,7 @@ export const ApplicationReviewView: React.FC<ApplicationReviewViewProps> = ({
 
           {/* Sub-Tab 2: Prepared Answers */}
           {activeSubTab === 'answers' && (
-            <div className="glass-panel p-5 rounded-xl space-y-4">
+            <div className="glass-panel p-4 sm:p-5 rounded-xl space-y-4">
               <h3 className="text-sm font-semibold text-white flex items-center space-x-2">
                 <CheckCircle2 className="w-4 h-4 text-blue-400" />
                 <span>Phase 6 Evidence-Grounded Application Answers</span>
@@ -419,9 +422,9 @@ export const ApplicationReviewView: React.FC<ApplicationReviewViewProps> = ({
                   detail.prepared_answers.map((ans, idx) => (
                     <div 
                       key={idx}
-                      className="p-4 rounded-xl bg-slate-900/50 border border-slate-800 space-y-2 text-xs"
+                      className="p-3.5 sm:p-4 rounded-xl bg-slate-900/50 border border-slate-800 space-y-2 text-xs"
                     >
-                      <div className="flex items-center justify-between">
+                      <div className="flex flex-wrap items-center justify-between gap-1.5">
                         <span className="font-semibold text-slate-200 text-sm">{ans.question_text}</span>
                         <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-blue-500/10 text-blue-400 border border-blue-500/20 uppercase">
                           {ans.field_category}
@@ -444,10 +447,10 @@ export const ApplicationReviewView: React.FC<ApplicationReviewViewProps> = ({
             </div>
           )}
 
-          {/* Sub-Tab 3: Needs Human Input ("Human Input") */}
+          {/* Sub-Tab 3: Needs Human Input */}
           {activeSubTab === 'human_input' && (
-            <div className="glass-panel p-5 rounded-xl space-y-4">
-              <div className="flex items-center justify-between">
+            <div className="glass-panel p-4 sm:p-5 rounded-xl space-y-4">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                 <div>
                   <h3 className="text-sm font-semibold text-white flex items-center space-x-2">
                     <HelpCircle className="w-4 h-4 text-purple-400" />
@@ -461,7 +464,7 @@ export const ApplicationReviewView: React.FC<ApplicationReviewViewProps> = ({
                 <button
                   onClick={handleSaveInputs}
                   disabled={savingInputs}
-                  className="px-4 py-2 text-xs font-semibold bg-purple-600 hover:bg-purple-500 text-white rounded-lg transition-colors flex items-center space-x-1.5"
+                  className="w-full sm:w-auto px-4 py-2.5 text-xs font-semibold bg-purple-600 hover:bg-purple-500 text-white rounded-lg transition-colors flex items-center justify-center space-x-1.5"
                 >
                   <Save className="w-3.5 h-3.5" />
                   <span>{savingInputs ? 'Saving...' : 'Save Answers'}</span>
@@ -475,7 +478,7 @@ export const ApplicationReviewView: React.FC<ApplicationReviewViewProps> = ({
                 </div>
               )}
 
-              <div className="space-y-4">
+              <div className="space-y-3 sm:space-y-4">
                 {detail.user_inputs_required.length === 0 ? (
                   <div className="text-xs text-slate-500 py-8 text-center bg-slate-900/30 rounded-xl border border-slate-800">
                     No unresolved or sensitive input fields required for this role.
@@ -484,9 +487,9 @@ export const ApplicationReviewView: React.FC<ApplicationReviewViewProps> = ({
                   detail.user_inputs_required.map((req) => (
                     <div 
                       key={req.question_id}
-                      className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 space-y-2 text-xs"
+                      className="p-3.5 sm:p-4 rounded-xl bg-slate-900/60 border border-slate-800 space-y-2 text-xs"
                     >
-                      <div className="flex items-center justify-between">
+                      <div className="flex flex-wrap items-center justify-between gap-1.5">
                         <label className="font-semibold text-slate-200 text-sm">
                           {req.question_text}
                         </label>
@@ -500,7 +503,7 @@ export const ApplicationReviewView: React.FC<ApplicationReviewViewProps> = ({
                         placeholder="Enter value (e.g. Authorized to work without sponsorship / 30 Days Notice)"
                         value={humanAnswers[req.question_id] || ''}
                         onChange={(e) => setHumanAnswers({ ...humanAnswers, [req.question_id]: e.target.value })}
-                        className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-xs text-slate-100 focus:outline-none focus:border-purple-500"
+                        className="w-full px-3 py-2.5 bg-slate-950 border border-slate-700 rounded-lg text-xs text-slate-100 focus:outline-none focus:border-purple-500"
                       />
                     </div>
                   ))
@@ -511,12 +514,12 @@ export const ApplicationReviewView: React.FC<ApplicationReviewViewProps> = ({
 
           {/* Sub-Tab 4: Browser Review */}
           {activeSubTab === 'browser' && (
-            <div className="glass-panel p-5 rounded-xl space-y-4">
+            <div className="glass-panel p-4 sm:p-5 rounded-xl space-y-4">
               
               {/* Unmistakable READY_FOR_REVIEW Alert Banner */}
               <div className="p-4 rounded-xl bg-amber-950/25 border-2 border-amber-500/50 text-amber-200 space-y-1.5">
                 <div className="flex items-center space-x-2 text-amber-400 font-bold text-sm tracking-wide uppercase">
-                  <ShieldAlert className="w-5 h-5" />
+                  <ShieldAlert className="w-5 h-5 flex-shrink-0" />
                   <span>Ready For Your Review — The application has NOT been sent</span>
                 </div>
                 <p className="text-xs text-slate-300 leading-relaxed">
@@ -526,7 +529,7 @@ export const ApplicationReviewView: React.FC<ApplicationReviewViewProps> = ({
 
               {detail.browser_review ? (
                 <div className="space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
                     <div className="p-3 rounded-lg bg-slate-900/80 border border-slate-800">
                       <span className="text-slate-400">Task Status:</span>
                       <div className="text-sm font-bold text-white mt-0.5">{detail.browser_review.status}</div>
@@ -568,32 +571,32 @@ export const ApplicationReviewView: React.FC<ApplicationReviewViewProps> = ({
 
           {/* Sub-Tab 5: Timeline */}
           {activeSubTab === 'timeline' && (
-            <div className="glass-panel p-5 rounded-xl space-y-4">
+            <div className="glass-panel p-4 sm:p-5 rounded-xl space-y-4">
               <h3 className="text-sm font-semibold text-white flex items-center space-x-2">
                 <Clock className="w-4 h-4 text-blue-400" />
                 <span>Append-Only Lifecycle Timeline</span>
               </h3>
 
-              <div className="space-y-3">
+              <div className="space-y-2.5">
                 {detail.timeline.length === 0 ? (
                   <div className="text-xs text-slate-500 py-6 text-center">No lifecycle events recorded.</div>
                 ) : (
-                  detail.timeline.map((evt, idx) => (
+                  detail.timeline.map((evt) => (
                     <div 
                       key={evt.event_id}
                       className="flex items-start space-x-3 p-3 rounded-lg bg-slate-900/40 border border-slate-800 text-xs"
                     >
-                      <div className="w-2 h-2 rounded-full bg-blue-400 mt-1.5"></div>
-                      <div className="flex-1 space-y-0.5">
-                        <div className="flex items-center justify-between">
+                      <div className="w-2 h-2 rounded-full bg-blue-400 mt-1.5 shrink-0"></div>
+                      <div className="flex-1 space-y-0.5 min-w-0">
+                        <div className="flex flex-wrap items-center justify-between gap-1">
                           <span className="font-semibold text-slate-200">{evt.event_type}</span>
                           <span className="text-[10px] font-mono text-slate-500">
                             {evt.timestamp ? new Date(evt.timestamp).toLocaleString() : ''}
                           </span>
                         </div>
-                        <div className="text-slate-400">
-                          Source: <span className="font-mono text-slate-300">{evt.source}</span>
-                          {evt.notes && <span className="ml-2">• {evt.notes}</span>}
+                        <div className="text-slate-400 truncate">
+                          Source: <span className="font-mono text-slate-300">{formatSource(evt.source)}</span>
+                          {evt.notes && <span className="ml-2 text-slate-400">• {evt.notes}</span>}
                         </div>
                       </div>
                     </div>
