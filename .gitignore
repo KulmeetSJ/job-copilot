@@ -73,6 +73,12 @@ test-results/
 data/downloads/
 data/test_screenshots/
 
+# Frontend & Node dependencies
+node_modules/
+*/node_modules/
+frontend/dist/
+frontend/.vite/
+
 # Sensitive Dynamic Runtime Stores & Artifacts
 data/jobs/
 data/applications/

@@ -1,6 +1,7 @@
 """FastAPI application for Job Copilot."""
 
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Dict
 from fastapi import FastAPI
 import uvicorn
@@ -12,6 +13,7 @@ from job_copilot.api.routes.browser import router as browser_router
 from job_copilot.api.routes.browser_sessions import router as browser_sessions_router
 from job_copilot.api.routes.browser_tasks import router as browser_tasks_router
 from job_copilot.api.routes.copilot import router as copilot_router
+from job_copilot.api.routes.dashboard import router as dashboard_router
 from job_copilot.api.routes.discovery import router as discovery_router
 from job_copilot.api.routes.job_intelligence import router as job_intelligence_router
 from job_copilot.api.routes.resume import router as resume_router
@@ -34,11 +36,12 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Job Copilot API",
-    description="Personal Job Application Automation and Copilot System",
+    description="Personal Job Application Automation and Human Review Control Center",
     version=__version__,
     lifespan=lifespan,
 )
 
+app.include_router(dashboard_router)
 app.include_router(analytics_router)
 app.include_router(application_prep_router)
 app.include_router(browser_sessions_router)
@@ -74,6 +77,23 @@ def readiness_check() -> Dict[str, str]:
     }
 
 
+# Static and UI routes
+static_dir = Path(__file__).parent.parent / "static"
+if static_dir.exists():
+    from fastapi.staticfiles import StaticFiles
+    from fastapi.responses import FileResponse
+
+    app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+
+    @app.get("/dashboard", summary="Dashboard Control Center UI")
+    @app.get("/dashboard/{full_path:path}", summary="Dashboard Single Page App")
+    def serve_dashboard(full_path: str = ""):
+        index_file = static_dir / "index.html"
+        if index_file.exists():
+            return FileResponse(str(index_file))
+        return {"status": "Dashboard frontend asset building in progress"}
+
+
 @app.get("/", summary="Root Status")
 def root() -> Dict[str, str]:
     """Basic service identifier."""
@@ -81,6 +101,7 @@ def root() -> Dict[str, str]:
         "service": "Job Copilot API",
         "version": __version__,
         "status": "online",
+        "dashboard": "/dashboard",
     }
 
 
@@ -96,3 +117,4 @@ def start_api():
 
 if __name__ == "__main__":
     start_api()
+

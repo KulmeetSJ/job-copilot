@@ -57,6 +57,12 @@ class Settings(BaseSettings):
         default="http://localhost:11434", alias="OLLAMA_BASE_URL"
     )
 
+    # Dashboard Security (Phase 11)
+    dashboard_api_key: Optional[str] = Field(
+        default=None,
+        alias="DASHBOARD_API_KEY",
+    )
+
     # Artifact Storage (Phase 10A)
     artifact_storage_provider: str = Field(
         default="local",
