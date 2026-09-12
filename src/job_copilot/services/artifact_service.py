@@ -105,43 +105,60 @@ class ArtifactService:
             if stored_sha != sha256 or stored_size != size_bytes:
                 raise IOError("Artifact write integrity mismatch between computed and stored hash.")
 
-            # 4. Persist metadata in relational database
+            # 4. Persist metadata in relational database with compensatory rollback on failure
             provider_type = (
                 StorageProvider.S3
                 if settings.artifact_storage_provider.lower() == "s3"
                 else StorageProvider.LOCAL
             )
 
-            if existing:
-                existing.size_bytes = stored_size
-                existing.sha256 = stored_sha
-                existing.content_type = content_type
-                existing.metadata_json = metadata or {}
-                existing.status = ArtifactStatus.ACTIVE
-                repo.db.commit()
-                repo.db.refresh(existing)
-                artifact_model = existing
-            else:
-                artifact_model = ArtifactModel(
-                    artifact_id=artifact_id,
-                    application_id=application_id,
-                    job_id=job_id,
-                    artifact_type=artifact_type,
-                    storage_provider=provider_type,
-                    storage_key=storage_key,
-                    content_type=content_type,
-                    size_bytes=stored_size,
-                    sha256=stored_sha,
-                    original_filename=original_filename,
-                    status=ArtifactStatus.ACTIVE,
-                    metadata_json=metadata or {},
-                )
-                artifact_model = repo.create(artifact_model)
+            try:
+                if existing:
+                    existing.size_bytes = stored_size
+                    existing.sha256 = stored_sha
+                    existing.content_type = content_type
+                    existing.metadata_json = metadata or {}
+                    existing.status = ArtifactStatus.ACTIVE
+                    repo.db.commit()
+                    repo.db.refresh(existing)
+                    artifact_model = existing
+                else:
+                    artifact_model = ArtifactModel(
+                        artifact_id=artifact_id,
+                        application_id=application_id,
+                        job_id=job_id,
+                        artifact_type=artifact_type,
+                        storage_provider=provider_type,
+                        storage_key=storage_key,
+                        content_type=content_type,
+                        size_bytes=stored_size,
+                        sha256=stored_sha,
+                        original_filename=original_filename,
+                        status=ArtifactStatus.ACTIVE,
+                        metadata_json=metadata or {},
+                    )
+                    artifact_model = repo.create(artifact_model)
 
-            logger.info(
-                f"Stored artifact '{artifact_id}' (type={artifact_type.value}, size={stored_size} bytes) via {provider_type.value}"
-            )
-            return artifact_model
+                logger.info(
+                    f"Stored artifact '{artifact_id}' (type={artifact_type.value}, size={stored_size} bytes) via {provider_type.value}"
+                )
+                return artifact_model
+
+            except Exception as db_err:
+                logger.error(
+                    f"Database persistence failed for artifact '{artifact_id}'. Triggering compensatory object storage cleanup: {db_err}"
+                )
+                try:
+                    repo.db.rollback()
+                except Exception:
+                    pass
+                try:
+                    # Clean up newly uploaded binary to prevent orphaned objects
+                    if not existing:
+                        self.store.delete(storage_key)
+                except Exception as clean_err:
+                    logger.warning(f"Compensatory storage cleanup notice for '{storage_key}': {clean_err}")
+                raise
 
         finally:
             if session:

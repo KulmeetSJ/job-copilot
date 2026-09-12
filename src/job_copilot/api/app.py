@@ -148,16 +148,27 @@ def health_check() -> Dict[str, str]:
 
 @app.get("/ready", summary="Readiness Check")
 def readiness_check() -> Dict[str, str]:
-    """Readiness probe checking database connectivity without leaking credentials."""
+    """Readiness probe checking database connectivity and storage readiness without leaking credentials."""
     db_healthy = check_db_connection()
     if not db_healthy:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Database connectivity unavailable",
         )
+
+    # In production with S3 storage, verify configuration is present
+    if settings.is_production and settings.artifact_storage_provider.lower() == "s3":
+        s3_valid, s3_msg = settings.validate_s3_config()
+        if not s3_valid:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"Storage configuration unavailable: {s3_msg}",
+            )
+
     return {
         "status": "ready",
         "database": "connected",
+        "storage": settings.artifact_storage_provider,
     }
 
 

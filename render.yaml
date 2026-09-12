@@ -29,6 +29,15 @@ services:
         fromDatabase:
           name: job-copilot-postgres
           property: connectionString
+      # ------------------------------------------------------------------------
+      # Phase 12.2: Cloud Object Storage (Configure in Render Dashboard Environment)
+      # - ARTIFACT_STORAGE_PROVIDER: s3
+      # - S3_BUCKET: <your-r2-or-s3-bucket-name>
+      # - S3_REGION: us-east-1 (or 'auto' for Cloudflare R2)
+      # - S3_ENDPOINT_URL: https://<account_id>.r2.cloudflarestorage.com (if R2)
+      # - S3_ACCESS_KEY_ID: <secret-access-key-id>
+      # - S3_SECRET_ACCESS_KEY: <secret-access-key>
+      # ------------------------------------------------------------------------
 
   # ----------------------------------------------------------------------------
   # 2. Scheduled Periodic Copilot Execution (Cron Job - Reserved for Future Phase)

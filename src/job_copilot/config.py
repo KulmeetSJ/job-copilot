@@ -67,39 +67,75 @@ class Settings(BaseSettings):
         alias="CORS_ALLOWED_ORIGINS",
     )
 
-    # Artifact Storage (Phase 10A)
+    # Artifact Storage (Phase 10A / Phase 12.2)
     artifact_storage_provider: str = Field(
         default="local",
-        alias="ARTIFACT_STORAGE_PROVIDER",
+        validation_alias=AliasChoices("ARTIFACT_STORAGE_PROVIDER", "STORAGE_PROVIDER", "artifact_storage_provider"),
     )
     artifact_storage_dir: Path = Field(
         default=Path("./data/artifacts"),
-        alias="ARTIFACT_STORAGE_DIR",
+        validation_alias=AliasChoices("ARTIFACT_STORAGE_DIR", "artifact_storage_dir"),
     )
     artifact_storage_bucket: Optional[str] = Field(
         default=None,
-        alias="ARTIFACT_STORAGE_BUCKET",
+        validation_alias=AliasChoices(
+            "ARTIFACT_STORAGE_BUCKET",
+            "S3_BUCKET",
+            "AWS_S3_BUCKET",
+            "S3_BUCKET_NAME",
+            "artifact_storage_bucket",
+        ),
     )
     artifact_storage_region: str = Field(
         default="us-east-1",
-        alias="ARTIFACT_STORAGE_REGION",
+        validation_alias=AliasChoices(
+            "ARTIFACT_STORAGE_REGION",
+            "S3_REGION",
+            "AWS_REGION",
+            "AWS_DEFAULT_REGION",
+            "artifact_storage_region",
+        ),
     )
     artifact_storage_endpoint: Optional[str] = Field(
         default=None,
-        alias="ARTIFACT_STORAGE_ENDPOINT",
+        validation_alias=AliasChoices(
+            "ARTIFACT_STORAGE_ENDPOINT",
+            "S3_ENDPOINT_URL",
+            "S3_ENDPOINT",
+            "AWS_ENDPOINT_URL",
+            "artifact_storage_endpoint",
+        ),
     )
     artifact_storage_access_key: Optional[str] = Field(
         default=None,
-        alias="ARTIFACT_STORAGE_ACCESS_KEY",
+        validation_alias=AliasChoices(
+            "ARTIFACT_STORAGE_ACCESS_KEY",
+            "S3_ACCESS_KEY_ID",
+            "AWS_ACCESS_KEY_ID",
+            "S3_ACCESS_KEY",
+            "artifact_storage_access_key",
+        ),
     )
     artifact_storage_secret_key: Optional[str] = Field(
         default=None,
-        alias="ARTIFACT_STORAGE_SECRET_KEY",
+        validation_alias=AliasChoices(
+            "ARTIFACT_STORAGE_SECRET_KEY",
+            "S3_SECRET_ACCESS_KEY",
+            "AWS_SECRET_ACCESS_KEY",
+            "S3_SECRET_KEY",
+            "artifact_storage_secret_key",
+        ),
     )
     artifact_max_size_bytes: int = Field(
         default=50 * 1024 * 1024,  # 50MB
-        alias="ARTIFACT_MAX_SIZE_BYTES",
+        validation_alias=AliasChoices("ARTIFACT_MAX_SIZE_BYTES", "artifact_max_size_bytes"),
     )
+
+    def validate_s3_config(self) -> tuple[bool, str]:
+        """Validate whether S3 object storage configuration is complete."""
+        if not self.artifact_storage_bucket:
+            return False, "ARTIFACT_STORAGE_BUCKET (or S3_BUCKET) is not configured."
+        return True, "S3 configuration valid."
 
     @property
     def is_production(self) -> bool:

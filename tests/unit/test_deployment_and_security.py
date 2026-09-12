@@ -118,7 +118,9 @@ def test_read_only_smoke_test_endpoints(client):
     # 2. /ready
     r_ready = client.get("/ready")
     assert r_ready.status_code == 200
-    assert r_ready.json() == {"status": "ready", "database": "connected"}
+    ready_data = r_ready.json()
+    assert ready_data["status"] == "ready"
+    assert ready_data["database"] == "connected"
 
     # 3. /
     r_root = client.get("/")

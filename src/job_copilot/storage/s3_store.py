@@ -57,6 +57,61 @@ class S3ArtifactStore(ArtifactStore):
                     "boto3 package is required for S3ArtifactStore. Install via `pip install boto3`."
                 ) from e
 
+    def _execute_with_retry(self, operation_name: str, func, *args, **kwargs):
+        """Execute S3 operation with bounded retries and exponential backoff for transient failures."""
+        import time
+
+        max_attempts = 3
+        backoff_base = 0.1
+
+        for attempt in range(1, max_attempts + 1):
+            try:
+                return func(*args, **kwargs)
+            except Exception as e:
+                err_str = str(e)
+                err_name = type(e).__name__
+                err_code = ""
+                if hasattr(e, "response") and isinstance(e.response, dict):
+                    err_code = e.response.get("Error", {}).get("Code", "")
+
+                # Do not retry client 404/NoSuchKey errors or path validation errors
+                if (
+                    err_code in ("NoSuchKey", "404", "NotFound")
+                    or "NoSuchKey" in err_name
+                    or "NoSuchKey" in err_str
+                    or "404" in err_str
+                    or "NotFound" in err_name
+                ):
+                    raise
+                if isinstance(e, (ValueError, TypeError, FileNotFoundError)):
+                    raise
+
+                # Check if transient error
+                is_transient = any(
+                    t in err_str.lower() or t in err_name.lower() or t in err_code.lower()
+                    for t in [
+                        "timeout",
+                        "connection",
+                        "500",
+                        "502",
+                        "503",
+                        "504",
+                        "slowdown",
+                        "throttling",
+                        "retryable",
+                        "endpointconnectionerror",
+                    ]
+                )
+
+                if is_transient and attempt < max_attempts:
+                    sleep_time = backoff_base * (2 ** (attempt - 1))
+                    logger.warning(
+                        f"Transient S3 error on '{operation_name}' (attempt {attempt}/{max_attempts}): {err_name}. Retrying in {sleep_time:.2f}s..."
+                    )
+                    time.sleep(sleep_time)
+                else:
+                    raise
+
     def put(
         self,
         storage_key: str,
@@ -72,7 +127,9 @@ class S3ArtifactStore(ArtifactStore):
         size_bytes = len(data)
 
         try:
-            self._client.put_object(
+            self._execute_with_retry(
+                "put_object",
+                self._client.put_object,
                 Bucket=self.bucket_name,
                 Key=storage_key,
                 Body=data,
@@ -89,16 +146,27 @@ class S3ArtifactStore(ArtifactStore):
         """Download binary data from S3 bucket."""
         validate_storage_key(storage_key)
         try:
-            response = self._client.get_object(
+            response = self._execute_with_retry(
+                "get_object",
+                self._client.get_object,
                 Bucket=self.bucket_name,
                 Key=storage_key,
             )
             body = response["Body"]
             return body.read()
-        except self._client.exceptions.NoSuchKey:
-            raise FileNotFoundError(f"Artifact not found in S3 at key '{storage_key}'")
         except Exception as e:
-            if "NoSuchKey" in type(e).__name__ or "404" in str(e):
+            err_name = type(e).__name__
+            err_str = str(e)
+            err_code = ""
+            if hasattr(e, "response") and isinstance(e.response, dict):
+                err_code = e.response.get("Error", {}).get("Code", "")
+            if (
+                err_code in ("NoSuchKey", "404", "NotFound")
+                or "NoSuchKey" in err_name
+                or "NoSuchKey" in err_str
+                or "404" in err_str
+                or "NotFound" in err_name
+            ):
                 raise FileNotFoundError(f"Artifact not found in S3 at key '{storage_key}'") from e
             logger.error(f"S3 get_object failed for '{storage_key}': {e}")
             raise IOError(f"Failed retrieving from S3 at '{storage_key}': {e}") from e
@@ -109,7 +177,9 @@ class S3ArtifactStore(ArtifactStore):
         try:
             if not self.exists(storage_key):
                 return False
-            self._client.delete_object(
+            self._execute_with_retry(
+                "delete_object",
+                self._client.delete_object,
                 Bucket=self.bucket_name,
                 Key=storage_key,
             )

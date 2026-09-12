@@ -50,6 +50,21 @@ def validate_storage_key(storage_key: str) -> None:
     if storage_key.startswith("/") or storage_key.startswith("\\"):
         raise ValueError("Storage key cannot be an absolute path.")
 
+    # Check for Windows drive letters (e.g. C:\ or C:/)
+    if re.match(r"^[a-zA-Z]:", storage_key):
+        raise ValueError("Storage key cannot contain Windows drive letters.")
+
+    # Check for URL-encoded traversal patterns (%2e = ., %2f = /, %5c = \)
+    lower_key = storage_key.lower()
+    if (
+        "%2e" in lower_key
+        or "%2f" in lower_key
+        or "%5c" in lower_key
+        or "..%2f" in lower_key
+        or "..%5c" in lower_key
+    ):
+        raise ValueError("Storage key contains URL-encoded traversal characters.")
+
     parts = storage_key.replace("\\", "/").split("/")
     for part in parts:
         if part in ("", ".", ".."):
