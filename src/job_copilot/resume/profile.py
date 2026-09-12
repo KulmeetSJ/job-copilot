@@ -21,7 +21,7 @@ class TailoredResumeData(BaseModel):
     faithful rephrasings of the canonical Master Candidate Profile.
     No fabricated metrics, experiences, or skills are permitted.
     """
-    strategy: ResumeStrategy = Field(default=ResumeStrategy.GENERAL_SWE)
+    strategy: ResumeStrategy = Field(default=ResumeStrategy.BACKEND_JAVA)
     target_job_title: str = Field(description="Target role for this resume")
     target_company: Optional[str] = Field(default=None, description="Target company if customized")
     personal_info: PersonalInformation

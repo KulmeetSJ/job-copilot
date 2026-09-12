@@ -133,9 +133,9 @@ class TrackingService:
                 "credential_score": sb.credential_score,
             }
 
-        company = assessment.job.company if (hasattr(assessment, "job") and assessment.job) else "Target Company"
-        role = assessment.job.title if (hasattr(assessment, "job") and assessment.job) else "Software Engineer"
-        source = assessment.job.source if (hasattr(assessment, "job") and assessment.job) else "unknown"
+        company = assessment.job.company if (hasattr(assessment, "job") and assessment.job and assessment.job.company) else "Company unavailable"
+        role = assessment.job.title if (hasattr(assessment, "job") and assessment.job and assessment.job.title) else "Role unavailable"
+        source = assessment.job.source if (hasattr(assessment, "job") and assessment.job and assessment.job.source) else "Source unavailable"
         url = assessment.job.source_url if (hasattr(assessment, "job") and assessment.job) else None
 
         if not app:
@@ -354,7 +354,7 @@ class TrackingService:
         # Extract scores and assessment breakdown safely
         match_score = 0.0
         recommendation = "UNKNOWN"
-        strategy = package.selected_resume_strategy if package else (app.resume_strategy if app else "general_swe")
+        strategy = package.selected_resume_strategy if package else (app.resume_strategy if app else "backend_java")
         tech_m = resp_m = sen_m = prof_m = dom_m = pref_m = cred_m = 0.0
 
         if package and package.assessment:
@@ -435,10 +435,10 @@ class TrackingService:
             app = ApplicationRecord(
                 application_id=app_id,
                 job_id=job_id,
-                company=package.company if package else "Target Company",
-                role=package.job_title if package else "Software Engineer",
+                company=package.company if (package and package.company) else "Company unavailable",
+                role=package.job_title if (package and package.job_title) else "Role unavailable",
                 canonical_job_url=browser_session.application_url if browser_session else None,
-                source=snapshot.job_source,
+                source=snapshot.job_source or "Source unavailable",
                 discovered_at=now,
                 recommended_at=now,
                 prepared_at=now,

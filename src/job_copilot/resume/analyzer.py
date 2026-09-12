@@ -197,7 +197,7 @@ class JobDescriptionAnalyzer:
             if m:
                 return m.group(1)
 
-        return lines[0] if lines else "Software Engineer"
+        return lines[0] if lines else "Role unavailable"
 
     @staticmethod
     def _clean_company_name(name: Optional[str]) -> Optional[str]:
@@ -266,7 +266,7 @@ class JobDescriptionAnalyzer:
     def _extract_years_experience(self, text: str) -> Optional[float]:
         """Extract required years of experience."""
         # e.g. "3+ years", "5-7 years", "at least 4 years"
-        m = re.search(r"(\d+)(?:\+|\s*-\s*\d+)?\s*(?:years|yrs)\s+(?:of\s+)?(?:experience|exp)", text, re.IGNORECASE)
+        m = re.search(r"(\d+)(?:\+|\s*-\s*\d+)?\s*(?:years|yrs)\s+(?:of\s+)?(?:[^.\n]{0,60}?)?(?:experience|exp)", text, re.IGNORECASE)
         if m:
             try:
                 return float(m.group(1))

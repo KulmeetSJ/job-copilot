@@ -9,12 +9,21 @@ from job_copilot.services.tracking_service import TrackingService
 from job_copilot.tracking.models import ApplicationLifecycleStatus
 
 
-def test_tracking_registration_and_lifecycle():
-    prep = ApplicationPrepService()
+from job_copilot.tracking.store import TrackingStore
+
+
+def test_tracking_registration_and_lifecycle(tmp_path):
+    prep = ApplicationPrepService(
+        applications_data_dir=tmp_path / "apps",
+        jobs_data_dir=tmp_path / "jobs",
+    )
     pkg = prep.prepare_application("Job Title: Lead Java Engineer\nCompany: TargetCo\nRequirements: Java, GCP, Payments")
     job_id = pkg.job_id
 
-    tracking = TrackingService(prep_service=prep)
+    tracking = TrackingService(
+        prep_service=prep,
+        tracking_dir=tmp_path / "tracking",
+    )
 
     # 1. Register application submission
     sub_res = SubmissionResult(

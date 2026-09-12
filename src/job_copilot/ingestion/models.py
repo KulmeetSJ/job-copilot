@@ -44,8 +44,8 @@ class CanonicalJob(BaseModel):
     source_url: Optional[str] = None
     canonical_url: Optional[str] = Field(default=None, description="URL with tracking parameters stripped")
     
-    company: str = Field(default="Target Company")
-    title: str = Field(default="Software Engineer")
+    company: str = Field(default="Company unavailable")
+    title: str = Field(default="Role unavailable")
     location: Optional[str] = None
     remote_policy: RemoteStatus = Field(default=RemoteStatus.UNKNOWN)
     employment_type: EmploymentType = Field(default=EmploymentType.FULL_TIME)

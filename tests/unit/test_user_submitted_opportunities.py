@@ -405,7 +405,12 @@ def test_duplicate_confirmation_blocked(in_memory_db):
 
 def test_sensitive_questions_require_user_input(isolated_dashboard_service):
     """15. Sensitive fields (salary, sponsorship, work authorization) must require human input and never be hallucinated."""
-    pkg = isolated_dashboard_service.prep_service.prepare_application(job_id_or_text="sample-test-job")
+    sample_jd = (
+        "Role: Senior Software Engineer\n"
+        "Company: FinTech Systems\n"
+        "Looking for backend engineers with 3+ years experience in Java, Spring Boot, and PostgreSQL."
+    )
+    pkg = isolated_dashboard_service.prep_service.prepare_application(job_id_or_text=sample_jd)
     sensitive_inputs = pkg.user_inputs_required
     assert len(sensitive_inputs) > 0
 

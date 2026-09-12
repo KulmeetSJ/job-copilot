@@ -79,7 +79,7 @@ def test_create_and_update_application(db_session: Session):
     app_in = ApplicationCreate(
         job_id=job.id,
         status=ApplicationStatus.DISCOVERED,
-        strategy_used=ResumeStrategy.PLATFORM_DEVOPS,
+        strategy_used=ResumeStrategy.CLOUD_DEVOPS,
         notes="Discovered via referral.",
     )
     app = app_repo.create(app_in)

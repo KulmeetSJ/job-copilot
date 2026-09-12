@@ -62,16 +62,25 @@ class UrlJobSource(JobSource):
                 except (UnicodeDecodeError, LookupError):
                     raw_text = raw_bytes.decode("utf-8", errors="replace")
 
+                from job_copilot.ingestion.metadata_extractor import JobMetadataExtractor
+                meta = JobMetadataExtractor.extract_from_html(raw_text, url=url)
+
                 return RawJob(
                     source=self.name,
                     source_job_id=None,
                     source_url=url,
+                    company=meta.company,
+                    title=meta.title,
+                    location=meta.location,
                     raw_description=raw_text,
                     discovered_at=datetime.utcnow(),
                     retrieved_at=datetime.utcnow(),
                     source_metadata={
                         "http_status": response.status,
                         "content_type": content_type,
+                        "ats_name": meta.ats_name,
+                        "source_type": meta.source_type,
+                        "extracted_meta": meta.metadata,
                     },
                 )
         except urllib.error.HTTPError as e:

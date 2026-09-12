@@ -30,13 +30,28 @@ class JobNormalizer:
         """Transform raw job into normalized CanonicalJob."""
         # 1. Clean description text
         clean_desc = self.clean_text(raw_job.raw_description)
-
-        # 2. Extract or use provided metadata
         lines = [line.strip() for line in clean_desc.split("\n") if line.strip()]
-        
-        company = self._clean_company_name(raw_job.company) or self._extract_company(lines, clean_desc) or "Target Company"
-        title = raw_job.title or self._extract_title(lines, clean_desc) or "Software Engineer"
-        location = raw_job.location or self._extract_location(lines, clean_desc)
+
+        from job_copilot.ingestion.metadata_extractor import JobMetadataExtractor
+
+        # Extract metadata from raw content/url if company/title missing
+        meta = None
+        if not raw_job.company or not raw_job.title or not raw_job.location:
+            meta = JobMetadataExtractor.extract_from_html(raw_job.raw_description, url=raw_job.source_url)
+
+        company = (
+            JobMetadataExtractor.clean_company_name(raw_job.company)
+            or (meta.company if meta else None)
+            or self._extract_company(lines, clean_desc)
+            or "Company unavailable"
+        )
+        title = (
+            JobMetadataExtractor.clean_title(raw_job.title)
+            or (meta.title if meta else None)
+            or self._extract_title(lines, clean_desc)
+            or "Role unavailable"
+        )
+        location = raw_job.location or (meta.location if meta else None) or self._extract_location(lines, clean_desc)
         remote_policy = self._extract_remote_policy(clean_desc, location)
         
         # 3. Canonicalize URL
@@ -165,8 +180,8 @@ class JobNormalizer:
             sjid_slug = self._sanitize_slug(source_job_id.strip())
             return f"{s_slug}-{sjid_slug}"
 
-        c_slug = self._sanitize_slug(company) or "target-company"
-        t_slug = self._sanitize_slug(title) or "software-engineer"
+        c_slug = self._sanitize_slug(company) or "company-unavailable"
+        t_slug = self._sanitize_slug(title) or "role-unavailable"
         text_hash = hashlib.sha256(clean_text.encode("utf-8")).hexdigest()[:6]
         return f"{c_slug}-{t_slug}-{text_hash}"
 
@@ -246,7 +261,7 @@ class JobNormalizer:
             m = re.search(pat, text, re.IGNORECASE)
             if m:
                 return m.group(1).strip()
-        return lines[0] if lines else "Software Engineer"
+        return lines[0] if lines else "Role unavailable"
 
     def _extract_location(self, lines: list[str], text: str) -> Optional[str]:
         for line in lines[:8]:

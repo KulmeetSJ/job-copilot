@@ -112,6 +112,7 @@ class ApplicationPrepService:
         job_id_or_text: str,
         custom_questions: Optional[List[ApplicationQuestion]] = None,
         strategy_override: Optional[str] = None,
+        db_session: Optional[Any] = None,
     ) -> ApplicationPackage:
         """
         Build the complete application package for a target job.
@@ -131,19 +132,30 @@ class ApplicationPrepService:
             # Check database for existing Job record
             db_job = None
             try:
-                from job_copilot.db.database import get_db
                 from job_copilot.repositories.job_repository import JobRepository
                 from job_copilot.repositories.application_repository import ApplicationRepository
-                db_gen = get_db()
-                db = next(db_gen)
-                job_repo = JobRepository(db)
-                app_repo = ApplicationRepository(db)
-                db_job = job_repo.get_by_job_id(job_id_or_text)
-                if not db_job:
-                    app = app_repo.get_by_application_id(job_id_or_text) or app_repo.get_by_job_id_str(job_id_or_text)
-                    if app and app.job_id:
-                        db_job = job_repo.get_by_id(app.job_id)
-                db.close()
+                if db_session is not None:
+                    job_repo = JobRepository(db_session)
+                    app_repo = ApplicationRepository(db_session)
+                    db_job = job_repo.get_by_job_id(job_id_or_text)
+                    if not db_job:
+                        app = app_repo.get_by_application_id(job_id_or_text) or app_repo.get_by_job_id_str(job_id_or_text)
+                        if app and app.job_id:
+                            db_job = job_repo.get_by_id(app.job_id)
+                else:
+                    from job_copilot.db.database import get_db
+                    db_gen = get_db()
+                    db = next(db_gen)
+                    try:
+                        job_repo = JobRepository(db)
+                        app_repo = ApplicationRepository(db)
+                        db_job = job_repo.get_by_job_id(job_id_or_text)
+                        if not db_job:
+                            app = app_repo.get_by_application_id(job_id_or_text) or app_repo.get_by_job_id_str(job_id_or_text)
+                            if app and app.job_id:
+                                db_job = job_repo.get_by_id(app.job_id)
+                    finally:
+                        db.close()
             except Exception:
                 db_job = None
 
@@ -155,6 +167,16 @@ class ApplicationPrepService:
                     save_artifacts=True,
                 )
             else:
+                # Disallow evaluating identifiers as raw JD text to prevent fake "Target Company" generation
+                text_clean = job_id_or_text.strip()
+                is_likely_id = (
+                    "\n" not in text_clean
+                    and len(text_clean) < 120
+                    and not any(kw in text_clean.lower() for kw in ["looking for", "requirements", "responsibilities", "qualifications", "experience", "we are", "role:"])
+                )
+                if is_likely_id:
+                    raise ValueError(f"Job or Application record '{job_id_or_text}' not found.")
+
                 assessment = self.intelligence_service.evaluate_job(
                     raw_text=job_id_or_text,
                     save_artifacts=True,

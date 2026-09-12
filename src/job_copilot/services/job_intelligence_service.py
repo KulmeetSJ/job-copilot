@@ -72,6 +72,11 @@ class JobIntelligenceService:
         self._profile_cache = CandidateProfile.model_validate(data)
         return self._profile_cache
 
+    @property
+    def profile(self) -> CandidateProfile:
+        """Accessor for loaded canonical candidate profile."""
+        return self.load_master_profile()
+
     def analyze_job(
         self,
         raw_text: str,

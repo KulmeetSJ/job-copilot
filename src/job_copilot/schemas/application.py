@@ -15,7 +15,7 @@ class ApplicationBase(BaseModel):
         description="Application status"
     )
     strategy_used: Optional[ResumeStrategy] = Field(
-        default=ResumeStrategy.GENERAL_SWE,
+        default=ResumeStrategy.BACKEND_JAVA,
         description="Strategy used for tailoring"
     )
     notes: Optional[str] = Field(default=None, description="Personal notes or logs")

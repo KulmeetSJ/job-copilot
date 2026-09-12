@@ -22,7 +22,7 @@ from job_copilot.copilot.models import (
 from job_copilot.db.database import get_db
 from job_copilot.domain.artifact_enums import ArtifactType
 from job_copilot.domain.browser_worker_enums import BrowserTaskStatus
-from job_copilot.domain.enums import ApplicationStatus
+from job_copilot.domain.enums import ApplicationStatus, ResumeStrategy
 from job_copilot.ingestion.deduplicator import JobDeduplicator
 from job_copilot.ingestion.normalizer import JobNormalizer
 from job_copilot.ingestion.sources.url import UrlJobSource
@@ -79,14 +79,13 @@ def utc_now() -> datetime:
 def normalize_company_display(raw_company: Optional[str]) -> str:
     """
     Sanitize and normalize company name for clean presentation across dashboard views.
-    Preserves raw ingestion data in provenance/debug fields while avoiding anomalies like 'Mastercard We'.
+    Preserves raw ingestion data in provenance/debug fields while avoiding anomalies.
     """
     if not raw_company:
-        return "Target Company"
-    clean = str(raw_company).strip()
-    if clean.lower() == "mastercard we" or clean.lower().startswith("mastercard we"):
-        return "Mastercard"
-    return clean
+        return "Company unavailable"
+    from job_copilot.ingestion.metadata_extractor import JobMetadataExtractor
+    cleaned = JobMetadataExtractor.clean_company_name(raw_company)
+    return cleaned or "Company unavailable"
 
 
 def resolve_canonical_application_state(
@@ -353,12 +352,16 @@ class DashboardService:
 
             if j.recommendation:
                 matched_skills = j.recommendation.strengths[:5]
-                major_gaps = j.recommendation.risks[:3]
+                raw_gaps = j.recommendation.risks or []
+                risk_set = set(j.risk_flags or [])
+                major_gaps = [g for g in raw_gaps if g not in risk_set and not any(r in g for r in risk_set)][:3]
                 if j.recommendation.reasons:
                     primary_reason = j.recommendation.reasons[0]
             elif j.explanation:
                 matched_skills = j.explanation.why_apply[:5]
-                major_gaps = j.explanation.why_not_apply[:3]
+                raw_gaps = j.explanation.why_not_apply or []
+                risk_set = set(j.risk_flags or [])
+                major_gaps = [g for g in raw_gaps if g not in risk_set and not any(r in g for r in risk_set)][:3]
 
             items.append(
                 DashboardQueueItem(
@@ -436,7 +439,7 @@ class DashboardService:
             partial_matches: List[str] = []
             gaps: List[str] = []
             risks: List[str] = []
-            rec_strat = "general_swe"
+            rec_strat = "backend_java"
             strat_reason = "Standard software engineering strategy"
             alt_strats: List[str] = []
             match_score = copilot_job.match_score if copilot_job and copilot_job.match_score is not None else 70.0
@@ -458,12 +461,12 @@ class DashboardService:
                 # 7 Dimensions
                 sb = assessment.score_breakdown
                 dimension_scores = [
-                    MatchDimensionScore(dimension_name="Technical Skills", score=sb.technical_score, weight=0.25, description="Evaluation of mandatory and preferred technologies"),
-                    MatchDimensionScore(dimension_name="Core Responsibilities", score=sb.responsibility_score, weight=0.20, description="Alignment with day-to-day engineering duties"),
+                    MatchDimensionScore(dimension_name="Technical Skills", score=sb.technical_score, weight=0.30, description="Evaluation of mandatory and preferred technologies"),
+                    MatchDimensionScore(dimension_name="Core Responsibilities", score=sb.responsibility_score, weight=0.25, description="Alignment with day-to-day engineering duties"),
                     MatchDimensionScore(dimension_name="Role & Seniority", score=sb.role_score, weight=0.15, description="Match on title hierarchy and expected engineering level"),
                     MatchDimensionScore(dimension_name="Professional Evidence", score=sb.experience_score, weight=0.15, description="Depth of verified production work history"),
-                    MatchDimensionScore(dimension_name="Domain Expertise", score=sb.domain_score, weight=0.10, description="Specialized domain context (e.g. Fintech, Payments, Distributed Systems)"),
-                    MatchDimensionScore(dimension_name="Preferences", score=sb.preference_score, weight=0.10, description="Location, remote work policy, and compensation alignment"),
+                    MatchDimensionScore(dimension_name="Domain Expertise", score=sb.domain_score, weight=0.05, description="Specialized domain context (e.g. Fintech, Payments, Distributed Systems)"),
+                    MatchDimensionScore(dimension_name="Preferences", score=sb.preference_score, weight=0.05, description="Location, remote work policy, and compensation alignment"),
                     MatchDimensionScore(dimension_name="Credentials & Education", score=sb.credential_score, weight=0.05, description="Degree qualifications and verified certifications"),
                 ]
 
@@ -578,17 +581,17 @@ class DashboardService:
                 db_job = job_repo.get_by_job_id(application_id)
 
             job_id = app_model.job_id_str if app_model and app_model.job_id_str else (db_job.job_id if db_job else application_id)
-            raw_comp = app_model.company if app_model and app_model.company else (db_job.company if db_job else "Target Company")
+            raw_comp = app_model.company if app_model and app_model.company else (db_job.company if db_job else None)
             company = normalize_company_display(raw_comp)
-            role = app_model.role if app_model and app_model.role else (db_job.title if db_job else "Software Engineer")
-            source = app_model.source if app_model else (db_job.source if db_job else "unknown")
+            role = app_model.role if app_model and app_model.role else (db_job.title if db_job else "Role unavailable")
+            source = app_model.source if app_model and app_model.source else (db_job.source if db_job and db_job.source else "Source unavailable")
             canonical_url = app_model.canonical_job_url if app_model else (db_job.canonical_url or db_job.url if db_job else None)
             match_score = app_model.match_score if app_model else None
             recommendation = app_model.recommendation if app_model else None
-            selected_strat = app_model.resume_strategy if app_model and app_model.resume_strategy else "general_swe"
-
             # Retrieve prepared package if available on disk/cache
             pkg = self.prep_service.get_application_package(job_id)
+
+            selected_strat = ResumeStrategy.normalize(app_model.resume_strategy if app_model and app_model.resume_strategy else (pkg.selected_resume_strategy if pkg else None))
 
             prepared_answers: List[PreparedAnswerItem] = []
             user_inputs: List[UserInputRequiredItem] = []
@@ -819,6 +822,7 @@ class DashboardService:
             pkg = self.prep_service.prepare_application(
                 job_id_or_text=job_id,
                 strategy_override=strategy_override,
+                db_session=db,
             )
 
             # Update application record if existing
@@ -1108,15 +1112,15 @@ class DashboardService:
                         application_id=db_app.application_id or f"app-{uuid.uuid4().hex[:8]}",
                         job_id=job_id,
                         company=comp_display,
-                        role=db_app.role or "Software Engineer",
+                        role=db_app.role or "Role unavailable",
                         canonical_job_url=db_app.canonical_job_url,
-                        source=db_app.source or "copilot",
+                        source=db_app.source or "Source unavailable",
                         discovered_at=db_app.discovered_at or db_app.created_at,
                         prepared_at=db_app.prepared_at,
                         submitted_at=db_app.submitted_at if target_status == ApplicationLifecycleStatus.SUBMITTED else None,
                         current_status=target_status,
                         current_status_at=db_app.current_status_at or db_app.updated_at or utc_now(),
-                        resume_strategy=db_app.resume_strategy or "general_swe",
+                        resume_strategy=ResumeStrategy.normalize(db_app.resume_strategy),
                         match_score=db_app.match_score or 0.0,
                         recommendation=db_app.recommendation or "UNKNOWN",
                         user_notes=db_app.user_notes or [],

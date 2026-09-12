@@ -81,16 +81,18 @@ class JobService:
             if re.search(r'\b' + re.escape(skill) + r'\b', jd_lower):
                 matching.append(skill.title())
 
-        # Determine strategy suggestion
-        strategy = ResumeStrategy.GENERAL_SWE
-        if any(w in jd_lower for w in ["java", "spring", "backend", "grpc", "microservices"]):
+        # Determine canonical strategy suggestion
+        strategy = ResumeStrategy.BACKEND_JAVA
+        if any(w in jd_lower for w in ["devops", "kubernetes", "terraform", "sre", "reliability"]):
+            strategy = ResumeStrategy.SRE_DEVOPS
+        elif any(w in jd_lower for w in ["aws", "gcp", "azure", "cloud", "docker", "infrastructure"]):
+            strategy = ResumeStrategy.CLOUD_DEVOPS
+        elif any(w in jd_lower for w in ["spark", "data engineer", "etl", "pipeline", "hadoop", "flink"]):
+            strategy = ResumeStrategy.DATA_ENGINEERING
+        elif any(w in jd_lower for w in ["react", "vue", "frontend", "full stack", "fullstack", "typescript"]):
+            strategy = ResumeStrategy.FULL_STACK
+        elif any(w in jd_lower for w in ["java", "spring", "backend", "grpc", "microservices"]):
             strategy = ResumeStrategy.BACKEND_JAVA
-        elif any(w in jd_lower for w in ["aws", "cloud", "data engineer", "spark", "kafka", "pipeline"]):
-            strategy = ResumeStrategy.CLOUD_DATA
-        elif any(w in jd_lower for w in ["devops", "kubernetes", "platform", "terraform", "ci/cd"]):
-            strategy = ResumeStrategy.PLATFORM_DEVOPS
-        elif any(w in jd_lower for w in ["llm", "ai", "machine learning", "rag", "pytorch"]):
-            strategy = ResumeStrategy.AI_BACKEND
 
         # Baseline scoring
         base_score = 65.0
@@ -101,8 +103,8 @@ class JobService:
 
         return JobAnalysisResult(
             job_id=job_id,
-            title=title or "Software Engineer",
-            company=company or "Target Company",
+            title=title or "Role unavailable",
+            company=company or "Company unavailable",
             match_score=round(base_score, 1),
             matching_skills=sorted(matching),
             missing_skills=[],

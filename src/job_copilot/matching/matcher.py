@@ -14,9 +14,6 @@ from job_copilot.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
-CANDIDATE_PROFESSIONAL_YEARS = 2.0
-
-
 class CandidateMatcher:
     """
     Evaluates analyzed job requirements against canonical candidate truth.
@@ -33,10 +30,11 @@ class CandidateMatcher:
     ) -> List[RequirementMatchResult]:
         """Perform deterministic evaluation of all job requirements against candidate profile."""
         skill_index = self._build_candidate_skill_index(profile)
+        verified_years = profile.verified_experience_years
         results: List[RequirementMatchResult] = []
 
         for req in job.technical_requirements:
-            match_res = self._match_single_requirement(req, skill_index)
+            match_res = self._match_single_requirement(req, skill_index, verified_years=verified_years)
             results.append(match_res)
 
         return results
@@ -156,6 +154,7 @@ class CandidateMatcher:
         self,
         req: TechnicalRequirement,
         skill_index: Dict[str, Dict],
+        verified_years: Optional[float] = None,
     ) -> RequirementMatchResult:
         """Evaluate a single requirement against the candidate index."""
         norm_req = req.normalized_name.lower()
@@ -242,18 +241,31 @@ class CandidateMatcher:
 
         # Case 5: Confirmed Professional Experience (HSBC, PaymentsAI)
         if tier == "PROFESSIONAL":
-            if req.years_required and req.years_required > CANDIDATE_PROFESSIONAL_YEARS:
-                return RequirementMatchResult(
-                    requirement=req,
-                    classification=MatchClassification.PARTIAL_MATCH,
-                    candidate_evidence_ids=ev_ids,
-                    candidate_evidence_text=context_str,
-                    confidence=0.9,
-                    reason=(
-                        f"Candidate has confirmed professional experience in '{req.normalized_name}' "
-                        f"({', '.join(ev_ids)}), with ~{CANDIDATE_PROFESSIONAL_YEARS} yrs experience (JD asks for {req.years_required} yrs)."
-                    ),
-                )
+            if req.years_required:
+                if verified_years is not None and req.years_required > verified_years:
+                    return RequirementMatchResult(
+                        requirement=req,
+                        classification=MatchClassification.PARTIAL_MATCH,
+                        candidate_evidence_ids=ev_ids,
+                        candidate_evidence_text=context_str,
+                        confidence=0.9,
+                        reason=(
+                            f"Candidate has confirmed professional experience in '{req.normalized_name}' "
+                            f"({', '.join(ev_ids)}), with {verified_years} yrs verified experience (JD asks for {req.years_required} yrs)."
+                        ),
+                    )
+                elif verified_years is None:
+                    return RequirementMatchResult(
+                        requirement=req,
+                        classification=MatchClassification.PARTIAL_MATCH,
+                        candidate_evidence_ids=ev_ids,
+                        candidate_evidence_text=context_str,
+                        confidence=0.8,
+                        reason=(
+                            f"Candidate has confirmed professional experience in '{req.normalized_name}' "
+                            f"({', '.join(ev_ids)}), but total verified experience duration cannot be confirmed from evidence (JD asks for {req.years_required} yrs)."
+                        ),
+                    )
 
             return RequirementMatchResult(
                 requirement=req,

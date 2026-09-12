@@ -24,8 +24,8 @@ def test_normalize_company_display():
     assert normalize_company_display("Mastercard We (Acquired)") == "Mastercard"
     assert normalize_company_display("Google LLC") == "Google LLC"
     assert normalize_company_display("Stripe") == "Stripe"
-    assert normalize_company_display("") == "Target Company"
-    assert normalize_company_display(None) == "Target Company"
+    assert normalize_company_display("") == "Company unavailable"
+    assert normalize_company_display(None) == "Company unavailable"
 
 
 def test_canonical_state_resolver_for_mastercard_historical_and_unverified(db_session):

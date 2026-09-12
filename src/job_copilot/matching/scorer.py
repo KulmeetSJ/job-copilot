@@ -34,8 +34,8 @@ class FitScorer:
         """Calculate score breakdown across all 7 evaluation dimensions."""
         tech_score = self._score_technical(matches)
         resp_score = self._score_responsibilities(job, profile)
-        role_score = self._score_role_and_seniority(job)
-        exp_score = self._score_professional_experience(matches, job)
+        role_score = self._score_role_and_seniority(job, profile)
+        exp_score = self._score_professional_experience(matches, job, profile)
         domain_score = self._score_domain(job)
         pref_score = self._score_preferences(job)
         cred_score = self._score_credentials(job, profile)
@@ -99,8 +99,8 @@ class FitScorer:
         total = len(job.responsibilities)
         return (matched_count / total) * 100.0 if total > 0 else 80.0
 
-    def _score_role_and_seniority(self, job: AnalyzedJob) -> float:
-        """Score role title relevance and seniority alignment."""
+    def _score_role_and_seniority(self, job: AnalyzedJob, profile: Optional[CandidateProfile] = None) -> float:
+        """Score role title relevance and seniority alignment using candidate truth."""
         title_l = job.title.lower()
 
         # Title alignment
@@ -110,31 +110,54 @@ class FitScorer:
         elif any(w in title_l for w in ["engineer", "developer", "platform"]):
             title_points = 80.0
 
-        # Seniority alignment (Candidate has ~2 years / Mid-Level Software Engineer)
-        seniority_points = 80.0
-        if job.seniority in (JobSeniority.MID_LEVEL, JobSeniority.ENTRY_LEVEL, JobSeniority.JUNIOR):
+        cand_years = profile.verified_experience_years if profile else None
+
+        # Seniority alignment derived from verified candidate experience
+        if job.years_experience_required:
+            if cand_years is not None:
+                if cand_years >= job.years_experience_required:
+                    seniority_points = 100.0
+                else:
+                    gap = job.years_experience_required - cand_years
+                    seniority_points = max(20.0, 100.0 - (gap * 15.0))
+            else:
+                seniority_points = 50.0
+        elif job.seniority in (JobSeniority.MID_LEVEL, JobSeniority.ENTRY_LEVEL, JobSeniority.JUNIOR):
             seniority_points = 100.0
         elif job.seniority == JobSeniority.SENIOR:
-            seniority_points = 75.0
+            seniority_points = 70.0
         elif job.seniority in (JobSeniority.STAFF, JobSeniority.PRINCIPAL, JobSeniority.LEAD):
-            seniority_points = 45.0
+            seniority_points = 40.0
         elif job.seniority == JobSeniority.INTERN:
             seniority_points = 70.0
+        else:
+            seniority_points = 80.0
 
         return (title_points * 0.6) + (seniority_points * 0.4)
 
-    def _score_professional_experience(self, matches: List[RequirementMatchResult], job: AnalyzedJob) -> float:
+    def _score_professional_experience(
+        self,
+        matches: List[RequirementMatchResult],
+        job: AnalyzedJob,
+        profile: Optional[CandidateProfile] = None,
+    ) -> float:
         """Score confirmed professional experience depth vs requirements."""
         confirmed_count = sum(1 for m in matches if m.classification == MatchClassification.MATCH_CONFIRMED)
         total_reqs = len(matches)
 
         base = (confirmed_count / total_reqs * 100.0) if total_reqs > 0 else 70.0
 
-        # Penalty if required years is significantly above candidate experience (2.0 yrs)
-        if job.years_experience_required and job.years_experience_required > 2.0:
-            gap = job.years_experience_required - 2.0
-            penalty = min(35.0, gap * 8.0)
-            base = max(20.0, base - penalty)
+        cand_years = profile.verified_experience_years if profile else None
+
+        # Penalty if required years is significantly above verified candidate experience
+        if job.years_experience_required:
+            if cand_years is not None:
+                if job.years_experience_required > cand_years:
+                    gap = job.years_experience_required - cand_years
+                    penalty = min(50.0, gap * 8.0)
+                    base = max(10.0, base - penalty)
+            else:
+                base = max(10.0, base - 25.0)
 
         return base
 

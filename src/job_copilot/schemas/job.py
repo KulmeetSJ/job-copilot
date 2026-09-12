@@ -75,7 +75,7 @@ class JobAnalysisResult(BaseModel):
     missing_skills: List[str] = Field(default_factory=list)
     strengths: List[str] = Field(default_factory=list)
     potential_concerns: List[str] = Field(default_factory=list)
-    recommended_strategy: ResumeStrategy = Field(default=ResumeStrategy.GENERAL_SWE)
+    recommended_strategy: ResumeStrategy = Field(default=ResumeStrategy.BACKEND_JAVA)
     recommendation: str = Field(
         description="'APPLY', 'CONSIDER', or 'SKIP'"
     )

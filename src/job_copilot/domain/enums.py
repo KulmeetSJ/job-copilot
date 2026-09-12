@@ -1,6 +1,7 @@
 """Domain enumerations for Job Copilot."""
 
 from enum import Enum
+from typing import Optional
 
 
 class ApplicationStatus(str, Enum):
@@ -43,9 +44,30 @@ class SkillProficiency(str, Enum):
 
 
 class ResumeStrategy(str, Enum):
-    """Resume tailoring strategic focus."""
-    GENERAL_SWE = "GENERAL_SWE"
-    BACKEND_JAVA = "BACKEND_JAVA"
-    CLOUD_DATA = "CLOUD_DATA"
-    PLATFORM_DEVOPS = "PLATFORM_DEVOPS"
-    AI_BACKEND = "AI_BACKEND"
+    """Resume tailoring strategic focus (5 locked canonical strategies)."""
+    BACKEND_JAVA = "backend_java"
+    CLOUD_DEVOPS = "cloud_devops"
+    DATA_ENGINEERING = "data_engineering"
+    FULL_STACK = "full_stack"
+    SRE_DEVOPS = "sre_devops"
+
+    @classmethod
+    def normalize(cls, value: Optional[str]) -> str:
+        """Map legacy aliases and normalize to one of the 5 canonical strategies."""
+        if not value:
+            return cls.BACKEND_JAVA.value
+        v = str(value).lower().strip().replace("-", "_")
+        aliases = {
+            "backend_java": cls.BACKEND_JAVA.value,
+            "cloud_devops": cls.CLOUD_DEVOPS.value,
+            "data_engineering": cls.DATA_ENGINEERING.value,
+            "full_stack": cls.FULL_STACK.value,
+            "sre_devops": cls.SRE_DEVOPS.value,
+            # Legacy alias mappings
+            "general_swe": cls.BACKEND_JAVA.value,
+            "cloud_infrastructure": cls.CLOUD_DEVOPS.value,
+            "cloud_data": cls.DATA_ENGINEERING.value,
+            "platform_devops": cls.SRE_DEVOPS.value,
+            "ai_backend": cls.BACKEND_JAVA.value,
+        }
+        return aliases.get(v, cls.BACKEND_JAVA.value)

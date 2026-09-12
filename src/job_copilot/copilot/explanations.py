@@ -7,7 +7,7 @@ from job_copilot.copilot.models import (
     CopilotExplanation,
     EvidenceReference,
 )
-from job_copilot.matching.models import JobAssessment
+from job_copilot.matching.models import JobAssessment, JobSeniority
 from job_copilot.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -39,6 +39,8 @@ class ExplanationEngine:
     def generate_explanation(
         cls,
         assessment: JobAssessment,
+        profile: Optional[Any] = None,
+        verified_experience_years: Optional[float] = None,
         historical_context: Optional[str] = None,
         targeting_context: Optional[str] = None,
     ) -> CopilotExplanation:
@@ -51,6 +53,9 @@ class ExplanationEngine:
         why_not_apply: List[str] = []
         uncertainties: List[str] = []
         evidence_refs: List[EvidenceReference] = []
+
+        if verified_experience_years is None and profile is not None:
+            verified_experience_years = getattr(profile, "verified_experience_years", None)
 
         # 0. Targeting preference notice (if applicable)
         if targeting_context:
@@ -68,7 +73,24 @@ class ExplanationEngine:
             if sb.domain_score >= 80.0:
                 why_apply.append("Strong domain alignment with candidate's fintech/banking background.")
             if sb.role_score >= 80.0:
-                why_apply.append("Seniority level matches candidate's 8+ years experience profile.")
+                job_seniority = assessment.job.seniority if assessment.job else None
+                years_req = assessment.job.years_experience_required if assessment.job else None
+                has_seniority_gap = bool(
+                    (years_req is not None and years_req > 3.0)
+                    or job_seniority in (JobSeniority.STAFF, JobSeniority.PRINCIPAL, JobSeniority.LEAD)
+                )
+                if not has_seniority_gap:
+                    why_apply.append("Target role title and seniority align with candidate's Software Engineer background.")
+                else:
+                    exp_desc = f"{years_req:g}+ years" if years_req is not None else str(job_seniority.value if job_seniority else "senior")
+                    if verified_experience_years is not None:
+                        why_not_apply.append(
+                            f"JD requests {exp_desc} of experience; candidate evidence indicates {verified_experience_years} years of confirmed professional experience."
+                        )
+                    else:
+                        why_not_apply.append(
+                            f"JD requests {exp_desc} of experience; candidate experience cannot be confirmed from available evidence."
+                        )
 
         # Extract Evidence Citations from match_results
         if assessment.match_results:
@@ -94,18 +116,20 @@ class ExplanationEngine:
                 EvidenceReference(
                     claim_id="EXP-HSBC-PAYMENTS-AI-001",
                     claim_type=ClaimType.PROFESSIONAL_EXPERIENCE,
-                    description="Lead Software Engineer, HSBC (Payments AI & Real-Time Processing)",
+                    description="Software Engineer, HSBC (Payments Data Platform & PaymentsAI)",
                 )
             )
 
         # 2. Risks & Missing Skills / Gaps
         if assessment.gaps:
             for g in assessment.gaps[:4]:
-                why_not_apply.append(f"Missing or unconfirmed requirement: {g}")
+                if g not in why_not_apply:
+                    why_not_apply.append(f"Missing requirement: {g}")
 
         if assessment.risks:
             for r in assessment.risks[:4]:
-                why_not_apply.append(f"Risk flag: {r}")
+                if r not in why_not_apply and not any(r in w for w in why_not_apply):
+                    why_not_apply.append(r)
 
         # 3. Uncertainties & Missing Parameters
         uncertainties.append("Visa sponsorship & work authorization requirement is UNKNOWN from JD.")

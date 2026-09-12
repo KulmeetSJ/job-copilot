@@ -147,8 +147,10 @@ class JobAnalyzer:
         clean_text = raw_text.strip()
         lines = [line.strip() for line in clean_text.split("\n") if line.strip()]
 
-        company = self._clean_company_name(company_override) or self._extract_company(lines, clean_text) or "Target Company"
-        title = title_override or self._extract_title(lines, clean_text) or "Software Engineer"
+        from job_copilot.ingestion.metadata_extractor import JobMetadataExtractor
+
+        company = JobMetadataExtractor.clean_company_name(company_override) or self._extract_company(lines, clean_text) or "Company unavailable"
+        title = title_override or self._extract_title(lines, clean_text) or "Role unavailable"
         location = self._extract_location(lines, clean_text)
         remote_policy = self._extract_remote_policy(clean_text)
         seniority = self._extract_seniority(title, clean_text)
@@ -195,8 +197,8 @@ class JobAnalyzer:
 
     def _generate_job_id(self, company: str, title: str, text: str) -> str:
         """Create clean deterministic identifier e.g. stripe-senior-backend-java-a1b2c3."""
-        c_slug = re.sub(r'[^a-zA-Z0-9]+', '-', company.lower()).strip('-')
-        t_slug = re.sub(r'[^a-zA-Z0-9]+', '-', title.lower()).strip('-')
+        c_slug = re.sub(r'[^a-zA-Z0-9]+', '-', company.lower()).strip('-') or "company-unavailable"
+        t_slug = re.sub(r'[^a-zA-Z0-9]+', '-', title.lower()).strip('-') or "role-unavailable"
         text_hash = hashlib.sha256(text.encode('utf-8')).hexdigest()[:6]
         return f"{c_slug}-{t_slug}-{text_hash}"
 
@@ -263,7 +265,7 @@ class JobAnalyzer:
             m = re.search(pat, text, re.IGNORECASE)
             if m:
                 return m.group(1).strip()
-        return lines[0] if lines else "Software Engineer"
+        return lines[0] if lines else "Role unavailable"
 
     def _extract_location(self, lines: List[str], text: str) -> Optional[str]:
         for line in lines[:8]:
@@ -301,7 +303,7 @@ class JobAnalyzer:
         return JobSeniority.MID_LEVEL
 
     def _extract_years_experience(self, text: str) -> Optional[float]:
-        m = re.search(r"(\d+)(?:\+|\s*-\s*\d+)?\s*(?:years|yrs)\s+(?:of\s+)?(?:experience|exp)", text, re.IGNORECASE)
+        m = re.search(r"(\d+)(?:\+|\s*-\s*\d+)?\s*(?:years|yrs)\s+(?:of\s+)?(?:[^.\n]{0,60}?)?(?:experience|exp)", text, re.IGNORECASE)
         if m:
             try:
                 return float(m.group(1))

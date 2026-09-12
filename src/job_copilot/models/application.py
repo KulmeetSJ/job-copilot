@@ -12,6 +12,28 @@ if TYPE_CHECKING:
     from job_copilot.models.job import Job
 
 
+from sqlalchemy import TypeDecorator
+
+
+class ResumeStrategyType(TypeDecorator):
+    """SQLAlchemy column type for ResumeStrategy that safely maps legacy values to canonical strategies."""
+    impl = String(50)
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):
+        if value is None:
+            return ResumeStrategy.BACKEND_JAVA.value
+        if isinstance(value, ResumeStrategy):
+            return value.value
+        return ResumeStrategy.normalize(value)
+
+    def process_result_value(self, value, dialect):
+        if value is None:
+            return ResumeStrategy.BACKEND_JAVA
+        norm = ResumeStrategy.normalize(value)
+        return ResumeStrategy(norm)
+
+
 class Application(Base, TimestampMixin):
     """Represents the candidate's application to a specific job posting."""
     __tablename__ = "applications"
@@ -42,8 +64,8 @@ class Application(Base, TimestampMixin):
         nullable=False,
     )
     strategy_used: Mapped[ResumeStrategy] = mapped_column(
-        Enum(ResumeStrategy, native_enum=False),
-        default=ResumeStrategy.GENERAL_SWE,
+        ResumeStrategyType(),
+        default=ResumeStrategy.BACKEND_JAVA,
         nullable=False,
     )
     resume_strategy: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)

@@ -148,6 +148,45 @@ class DomainExperience(BaseModel):
     evidence_ids: List[str] = Field(default_factory=list, description="Provenance evidence IDs")
 
 
+from datetime import datetime, timezone
+
+
+def calculate_verified_experience_years(profile: Optional['CandidateProfile']) -> Optional[float]:
+    """
+    Calculate verified professional experience years directly from canonical employment records.
+    Returns None if no verified employment records with dates are found.
+    """
+    if not profile or not profile.employment:
+        return None
+
+    total_months = 0
+    now = datetime.now(timezone.utc)
+    for exp in profile.employment:
+        if not exp.start_date:
+            continue
+        try:
+            parts = exp.start_date.split("-")
+            start_year = int(parts[0])
+            start_month = int(parts[1]) if len(parts) > 1 else 1
+
+            if exp.current or not exp.end_date or str(exp.end_date).lower() == "present":
+                end_year = now.year
+                end_month = now.month
+            else:
+                end_parts = exp.end_date.split("-")
+                end_year = int(end_parts[0])
+                end_month = int(end_parts[1]) if len(end_parts) > 1 else 12
+
+            months = max(1, (end_year - start_year) * 12 + (end_month - start_month))
+            total_months += months
+        except (ValueError, IndexError):
+            continue
+
+    if total_months <= 0:
+        return None
+    return round(total_months / 12.0, 1)
+
+
 class CandidateProfile(BaseModel):
     """
     Canonical Master Candidate Profile.
@@ -172,3 +211,8 @@ class CandidateProfile(BaseModel):
     def experience(self) -> List[Experience]:
         """Backward compatibility alias for employment."""
         return self.employment
+
+    @property
+    def verified_experience_years(self) -> Optional[float]:
+        """Derived verified professional experience duration in years."""
+        return calculate_verified_experience_years(self)

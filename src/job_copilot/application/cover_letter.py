@@ -2,7 +2,7 @@
 
 from datetime import datetime
 import re
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 from job_copilot.application.models import (
     ClaimProvenance,
     CoverLetter,
@@ -32,7 +32,7 @@ class CoverLetterEngine:
         title = job.title
         strategy = assessment.recommended_strategy
 
-        text, provenance = self._compose_letter(company, title, strategy, assessment)
+        text, provenance = self._compose_letter(company, title, strategy, assessment, profile=profile)
         word_count = len(re.findall(r"\b\w+\b", text))
 
         # Perform truth-safety validation
@@ -66,7 +66,7 @@ class CoverLetterEngine:
             errors.append("Cover letter contains unverified claim regarding AWS experience.")
 
         if "5+ years" in text_lower or "10+ years" in text_lower:
-            errors.append("Cover letter claims excessive years of experience not supported by ~2 yrs career history.")
+            errors.append("Cover letter claims excessive years of experience not supported by verified career history.")
 
         # Rule 2: Exposure must not become production administration
         if "production kubernetes cluster administration" in text_lower:
@@ -103,21 +103,30 @@ class CoverLetterEngine:
         title: str,
         strategy: str,
         assessment: JobAssessment,
+        profile: Optional[CandidateProfile] = None,
     ) -> Tuple[str, List[ClaimProvenance]]:
         """Synthesize tailored 4-paragraph cover letter based on strategy focus."""
         provenance: List[ClaimProvenance] = []
+
+        exp_years = profile.verified_experience_years if profile else None
+        if exp_years:
+            exp_text = f"With approximately {exp_years:g} years of professional software engineering experience"
+            claim_exp_text = f"Approximately {exp_years:g} years professional software engineering experience at HSBC on GCP"
+        else:
+            exp_text = "With verified professional software engineering experience"
+            claim_exp_text = "Verified professional software engineering experience at HSBC on GCP"
 
         # Opening
         opening = (
             f"Dear Hiring Team at {company},\n\n"
             f"I am writing to express my strong interest in the {title} role at {company}. "
-            f"With over two years of professional software engineering experience at HSBC building cloud-native "
+            f"{exp_text} at HSBC building cloud-native "
             f"backend services, streaming data pipelines, and distributed APIs on Google Cloud Platform, I am eager "
             f"to contribute to {company}'s ongoing engineering initiatives."
         )
         provenance.append(
             ClaimProvenance(
-                claim_text="Over two years professional software engineering experience at HSBC on GCP",
+                claim_text=claim_exp_text,
                 source_type="PROFESSIONAL",
                 source_ref="EXP-HSBC-BEAM-001",
                 context="HSBC employment baseline",

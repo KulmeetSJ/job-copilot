@@ -173,6 +173,7 @@ class CopilotOrchestrator:
 
         explanation = ExplanationEngine.generate_explanation(
             assessment=assessment,
+            profile=self.intelligence_service.profile,
             historical_context=hist_note,
             targeting_context=targeting_note,
         )

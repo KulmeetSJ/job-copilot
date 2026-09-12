@@ -64,7 +64,7 @@ def test_job_service_and_analysis(db_session: Session, temp_profile_file: Path):
     assert analysis.job_id == job.id
     assert analysis.match_score > 70.0
     assert "Python" in analysis.matching_skills or "Fastapi" in analysis.matching_skills
-    assert analysis.recommended_strategy in [ResumeStrategy.GENERAL_SWE, ResumeStrategy.BACKEND_JAVA]
+    assert analysis.recommended_strategy in [ResumeStrategy.BACKEND_JAVA, ResumeStrategy.CLOUD_DEVOPS, ResumeStrategy.FULL_STACK]
 
 
 def test_application_service_lifecycle(db_session: Session):

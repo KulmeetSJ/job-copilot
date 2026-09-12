@@ -264,18 +264,26 @@ export const QueueView: React.FC<QueueViewProps> = ({
                     Requirement Gaps / Flags:
                   </span>
                   <div className="flex flex-wrap gap-1.5">
-                    {job.major_gaps.length === 0 && job.risk_flags.length === 0 ? (
-                      <span className="text-slate-500 italic">No critical risks flagged</span>
-                    ) : (
-                      [...job.major_gaps, ...job.risk_flags].map((gap, idx) => (
+                    {(() => {
+                      const allGaps = Array.from(
+                        new Set(
+                          [...job.major_gaps, ...job.risk_flags]
+                            .map(g => (g || '').replace(/^Risk flag:\s*/i, '').trim())
+                            .filter(Boolean)
+                        )
+                      );
+                      if (allGaps.length === 0) {
+                        return <span className="text-slate-500 italic">No critical risks flagged</span>;
+                      }
+                      return allGaps.map((gap, idx) => (
                         <span 
                           key={idx}
                           className="px-2 py-0.5 rounded bg-amber-500/10 text-amber-300 border border-amber-500/20 font-medium text-[11px]"
                         >
                           ! {gap}
                         </span>
-                      ))
-                    )}
+                      ));
+                    })()}
                   </div>
                 </div>
 

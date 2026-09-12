@@ -13,9 +13,6 @@ from job_copilot.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
-# Approximate confirmed professional years of experience (HSBC July 2024 - Present / approx 2 years with pre-grad projects)
-CANDIDATE_PROFESSIONAL_YEARS = 2.0
-
 
 class CandidateJobMatcher:
     """
@@ -35,6 +32,7 @@ class CandidateJobMatcher:
     ) -> JobMatchResult:
         """Perform deterministic matching between job requirements and candidate profile."""
         skill_index = self._index_candidate_skills(profile)
+        candidate_years = profile.verified_experience_years
         
         matches: List[RequirementMatch] = []
         matched_req = 0
@@ -44,14 +42,14 @@ class CandidateJobMatcher:
 
         # Match Required Skills
         for req in analysis.required_skills:
-            match = self._evaluate_requirement(req, skill_index)
+            match = self._evaluate_requirement(req, skill_index, candidate_years=candidate_years)
             matches.append(match)
             if match.match_status in (MatchStatus.MATCH_CONFIRMED, MatchStatus.MATCH_PARTIAL, MatchStatus.MATCH_PROJECT_ONLY):
                 matched_req += 1
 
         # Match Preferred Skills
         for req in analysis.preferred_skills:
-            match = self._evaluate_requirement(req, skill_index)
+            match = self._evaluate_requirement(req, skill_index, candidate_years=candidate_years)
             matches.append(match)
             if match.match_status in (MatchStatus.MATCH_CONFIRMED, MatchStatus.MATCH_PARTIAL, MatchStatus.MATCH_PROJECT_ONLY):
                 matched_pref += 1
@@ -160,38 +158,37 @@ class CandidateJobMatcher:
         self,
         req: JobRequirement,
         skill_index: Dict[str, Dict],
+        candidate_years: Optional[float] = None,
     ) -> RequirementMatch:
-        """Evaluate a single requirement against the candidate skill index."""
-        norm_req = req.normalized_name.lower()
-        matched_entry = None
+        """Evaluate a single requirement against the indexed profile."""
+        norm_name = req.normalized_name.lower()
+        entry = None
 
-        # Direct match or partial string match
-        if norm_req in skill_index:
-            matched_entry = skill_index[norm_req]
+        if norm_name in skill_index:
+            entry = skill_index[norm_name]
         else:
             for key, val in skill_index.items():
-                if norm_req in key or key in norm_req:
-                    matched_entry = val
+                if norm_name == key or norm_name in key or key in norm_name:
+                    entry = val
                     break
 
-        if not matched_entry:
+        if not entry:
             return RequirementMatch(
                 requirement=req,
                 match_status=MatchStatus.NO_EVIDENCE,
                 candidate_evidence_ids=[],
                 candidate_evidence_text=None,
                 candidate_years=None,
-                notes=f"No evidence in candidate profile for '{req.normalized_name}'.",
+                notes=f"No factual candidate evidence found for '{req.normalized_name}'.",
             )
 
-        status_str = matched_entry["status"]
-        evidence_types = matched_entry["evidence_types"]
-        evidence_ids = matched_entry["evidence_ids"]
-        contexts = matched_entry["contexts"]
-        context_str = "; ".join(contexts[:2]) if contexts else None
+        status = entry["status"]
+        evidence_ids = entry["evidence_ids"]
+        evidence_types = entry["evidence_types"]
+        context_str = "; ".join(entry["contexts"][:2]) if entry["contexts"] else None
 
-        # Check if unconfirmed / needs review
-        if status_str == "NEEDS_REVIEW":
+        # Check if needs review / positioning
+        if status == "NEEDS_REVIEW" or "positioning" in evidence_types:
             return RequirementMatch(
                 requirement=req,
                 match_status=MatchStatus.MATCH_POSITIONING_ONLY,
@@ -214,19 +211,31 @@ class CandidateJobMatcher:
             )
 
         # Confirmed professional skill - check years of experience
-        candidate_years = CANDIDATE_PROFESSIONAL_YEARS
-        if req.years_required and req.years_required > candidate_years:
-            return RequirementMatch(
-                requirement=req,
-                match_status=MatchStatus.MATCH_PARTIAL,
-                candidate_evidence_ids=evidence_ids,
-                candidate_evidence_text=context_str,
-                candidate_years=candidate_years,
-                notes=(
-                    f"Candidate has {candidate_years} yrs confirmed professional experience; "
-                    f"JD requires {req.years_required} yrs."
-                ),
-            )
+        if req.years_required:
+            if candidate_years is not None and req.years_required > candidate_years:
+                return RequirementMatch(
+                    requirement=req,
+                    match_status=MatchStatus.MATCH_PARTIAL,
+                    candidate_evidence_ids=evidence_ids,
+                    candidate_evidence_text=context_str,
+                    candidate_years=candidate_years,
+                    notes=(
+                        f"Candidate has {candidate_years} yrs confirmed professional experience; "
+                        f"JD requires {req.years_required} yrs."
+                    ),
+                )
+            elif candidate_years is None:
+                return RequirementMatch(
+                    requirement=req,
+                    match_status=MatchStatus.MATCH_PARTIAL,
+                    candidate_evidence_ids=evidence_ids,
+                    candidate_evidence_text=context_str,
+                    candidate_years=None,
+                    notes=(
+                        f"Candidate has confirmed professional experience for '{req.normalized_name}'; "
+                        f"total experience duration cannot be confirmed from available evidence (JD requires {req.years_required} yrs)."
+                    ),
+                )
 
         return RequirementMatch(
             requirement=req,

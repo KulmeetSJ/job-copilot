@@ -143,12 +143,8 @@ def migrate_runtime_state_to_db(
 
             # Create application record
             try:
-                strat = ResumeStrategy.GENERAL_SWE
-                if app.resume_strategy:
-                    for s in ResumeStrategy:
-                        if s.value == app.resume_strategy:
-                            strat = s
-                            break
+                strat_val = ResumeStrategy.normalize(app.resume_strategy)
+                strat = ResumeStrategy(strat_val)
 
                 from job_copilot.models.application import Application
                 db_app = Application(

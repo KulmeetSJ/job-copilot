@@ -155,8 +155,8 @@ class ApplicationQAEngine:
         if "redis" in text_l or "rate limiter" in text_l or "project you are proud of" in text_l:
             return self._build_project_answer()
 
-        # Generic factual fallback for technical background
-        return self._build_general_swe_answer(company, title)
+        # Factual fallback for technical background
+        return self._build_backend_general_answer(company, title, profile=profile)
 
     def _build_motivation_answer(self, company: str, title: str, assessment: Optional[JobAssessment]) -> Tuple[str, List[ClaimProvenance]]:
         domain_note = "distributed backend systems, cloud pipelines, and robust APIs"
@@ -178,10 +178,10 @@ class ApplicationQAEngine:
                 metric_type="PRODUCTION",
             ),
             ClaimProvenance(
-                claim_text="Backend services and API engineering on PaymentsAI platform",
+                claim_text="Backend services in Java and Python",
                 source_type="PROFESSIONAL",
                 source_ref="EXP-HSBC-PAYMENTS-AI-001",
-                context="HSBC PaymentsAI architecture",
+                context="HSBC PaymentsAI backend microservices",
                 metric_type="PRODUCTION",
             ),
         ]
@@ -366,15 +366,28 @@ class ApplicationQAEngine:
         ]
         return answer, provenance
 
-    def _build_general_swe_answer(self, company: str, title: str) -> Tuple[str, List[ClaimProvenance]]:
+    def _build_backend_general_answer(
+        self,
+        company: str,
+        title: str,
+        profile: Optional[CandidateProfile] = None,
+    ) -> Tuple[str, List[ClaimProvenance]]:
+        exp_years = profile.verified_experience_years if profile else None
+        if exp_years:
+            exp_text = f"~{exp_years:g} years of"
+            claim_exp_text = f"~{exp_years:g} years software engineering experience at HSBC across backend, cloud, and data platforms"
+        else:
+            exp_text = "verified"
+            claim_exp_text = "Verified software engineering experience at HSBC across backend, cloud, and data platforms"
+
         answer = (
-            f"I bring ~2 years of enterprise software engineering experience from HSBC, specializing in backend services, "
+            f"I bring {exp_text} enterprise software engineering experience from HSBC, specializing in backend services, "
             f"GCP cloud infrastructure, and data platforms. I focus on clean code, automated CI/CD pipelines, and reliable "
             f"architecture aligned with team objectives."
         )
         provenance = [
             ClaimProvenance(
-                claim_text="Software engineering experience at HSBC across backend, cloud, and data platforms",
+                claim_text=claim_exp_text,
                 source_type="PROFESSIONAL",
                 source_ref="EXP-HSBC-BEAM-001",
                 context="HSBC employment baseline",

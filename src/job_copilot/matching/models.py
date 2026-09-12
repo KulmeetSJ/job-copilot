@@ -64,8 +64,8 @@ class AnalyzedJob(BaseModel):
     job_id: str = Field(description="Deterministic unique ID e.g. company-title-hash")
     source: str = Field(default="text_input", description="file, text_input, pasted, url")
     source_url: Optional[str] = None
-    company: str = Field(default="Target Company")
-    title: str = Field(default="Software Engineer")
+    company: str = Field(default="Company unavailable")
+    title: str = Field(default="Role unavailable")
     location: Optional[str] = None
     remote_policy: RemoteStatus = Field(default=RemoteStatus.UNKNOWN)
     employment_type: EmploymentType = Field(default=EmploymentType.FULL_TIME)
