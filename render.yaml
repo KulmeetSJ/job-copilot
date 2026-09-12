@@ -11,7 +11,7 @@ services:
     runtime: docker
     dockerfilePath: Dockerfile
     plan: starter
-    region: oregon
+    region: singapore
     healthCheckPath: /health
     autoDeploy: true
     envVars:
@@ -62,5 +62,4 @@ databases:
     databaseName: job_copilot
     user: job_copilot_user
     plan: starter
-    region: oregon
-
+    region: singapore
