@@ -17,7 +17,8 @@ import {
   Check,
   FileCode,
   ExternalLink,
-  ChevronDown
+  ChevronDown,
+  Loader2
 } from 'lucide-react';
 import { api } from '../api';
 import { ApplicationDetailResponse } from '../types';
@@ -51,6 +52,93 @@ export const ApplicationReviewView: React.FC<ApplicationReviewViewProps> = ({
   const [showSubmissionModal, setShowSubmissionModal] = useState(false);
 
   const [listLoading, setListLoading] = useState(true);
+
+  // Authenticated PDF and Screenshot Blob URLs
+  const [pdfBlobUrl, setPdfBlobUrl] = useState<string | null>(null);
+  const [pdfLoading, setPdfLoading] = useState(false);
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
+  const [screenshotBlobUrl, setScreenshotBlobUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    let createdUrl: string | null = null;
+    if (detail?.application_id && resumeViewMode === 'pdf') {
+      setPdfLoading(true);
+      api.fetchBlobUrl(`/api/dashboard/applications/${detail.application_id}/resume/pdf`)
+        .then(url => {
+          if (active) {
+            createdUrl = url;
+            setPdfBlobUrl(url);
+          } else {
+            URL.revokeObjectURL(url);
+          }
+        })
+        .catch(err => {
+          console.error('Failed to load resume PDF:', err);
+          if (active) setPdfBlobUrl(null);
+        })
+        .finally(() => {
+          if (active) setPdfLoading(false);
+        });
+    }
+    return () => {
+      active = false;
+      if (createdUrl) {
+        URL.revokeObjectURL(createdUrl);
+      }
+    };
+  }, [detail?.application_id, resumeViewMode]);
+
+  useEffect(() => {
+    let active = true;
+    let createdUrl: string | null = null;
+    if (detail?.browser_review?.screenshot_artifact_id) {
+      api.fetchBlobUrl(`/api/dashboard/artifacts/${detail.browser_review.screenshot_artifact_id}/content`)
+        .then(url => {
+          if (active) {
+            createdUrl = url;
+            setScreenshotBlobUrl(url);
+          } else {
+            URL.revokeObjectURL(url);
+          }
+        })
+        .catch(err => {
+          console.error('Failed to load screenshot:', err);
+          if (active) setScreenshotBlobUrl(null);
+        });
+    }
+    return () => {
+      active = false;
+      if (createdUrl) {
+        URL.revokeObjectURL(createdUrl);
+      }
+    };
+  }, [detail?.browser_review?.screenshot_artifact_id]);
+
+  const handleDownloadPdf = async () => {
+    if (!detail?.application_id) return;
+    try {
+      setDownloadingPdf(true);
+      await api.downloadFile(
+        `/api/dashboard/applications/${detail.application_id}/resume/pdf`,
+        `Resume_${detail.company.replace(/\s+/g, '_')}.pdf`
+      );
+    } catch (err: any) {
+      alert(err.message || 'Failed to download resume PDF');
+    } finally {
+      setDownloadingPdf(false);
+    }
+  };
+
+  const handleOpenPdf = async () => {
+    if (!detail?.application_id) return;
+    try {
+      const url = await api.fetchBlobUrl(`/api/dashboard/applications/${detail.application_id}/resume/pdf`);
+      window.open(url, '_blank');
+    } catch (err: any) {
+      alert(err.message || 'Failed to open resume PDF');
+    }
+  };
 
   // Load application list
   useEffect(() => {
@@ -377,37 +465,46 @@ export const ApplicationReviewView: React.FC<ApplicationReviewViewProps> = ({
                         <span>{copiedTex ? 'Copied' : 'Copy'}</span>
                       </button>
                     ) : (
-                      <a
-                        href={`/api/dashboard/applications/${detail.application_id}/resume/pdf`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="p-1.5 rounded-lg text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 text-xs flex items-center space-x-1 border border-slate-700 transition-colors"
+                      <button
+                        onClick={handleOpenPdf}
+                        className="p-1.5 rounded-lg text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 text-xs flex items-center space-x-1 border border-slate-700 transition-colors cursor-pointer"
                         title="Open PDF in new tab"
                       >
                         <ExternalLink className="w-3.5 h-3.5" />
                         <span>Open</span>
-                      </a>
+                      </button>
                     )}
                   </div>
                 </div>
 
                 {resumeViewMode === 'pdf' ? (
                   <div className="space-y-2">
-                    <iframe
-                      src={`/api/dashboard/applications/${detail.application_id}/resume/pdf`}
-                      className="w-full h-[400px] sm:h-[500px] rounded-lg border border-slate-800 bg-slate-950"
-                      title="Compiled Resume PDF"
-                    />
+                    {pdfLoading ? (
+                      <div className="w-full h-[400px] sm:h-[500px] rounded-lg border border-slate-800 bg-slate-950 flex flex-col items-center justify-center space-y-2 text-slate-400 text-xs">
+                        <Loader2 className="w-6 h-6 animate-spin text-blue-400" />
+                        <span>Loading compiled PDF...</span>
+                      </div>
+                    ) : pdfBlobUrl ? (
+                      <iframe
+                        src={pdfBlobUrl}
+                        className="w-full h-[400px] sm:h-[500px] rounded-lg border border-slate-800 bg-slate-950"
+                        title="Compiled Resume PDF"
+                      />
+                    ) : (
+                      <div className="w-full h-[400px] sm:h-[500px] rounded-lg border border-slate-800 bg-slate-950 flex items-center justify-center text-slate-500 text-xs">
+                        Failed to load resume PDF preview.
+                      </div>
+                    )}
                     <div className="flex items-center justify-between text-[11px] text-slate-400 px-1 pt-1">
                       <span>Compiled via Tectonic Engine</span>
-                      <a
-                        href={`/api/dashboard/applications/${detail.application_id}/resume/pdf`}
-                        download={`Resume_${detail.company.replace(/\s+/g, '_')}.pdf`}
-                        className="text-blue-400 hover:underline flex items-center space-x-1 font-semibold"
+                      <button
+                        onClick={handleDownloadPdf}
+                        disabled={downloadingPdf}
+                        className="text-blue-400 hover:underline flex items-center space-x-1 font-semibold cursor-pointer disabled:opacity-50"
                       >
-                        <Download className="w-3.5 h-3.5" />
-                        <span>Download PDF</span>
-                      </a>
+                        {downloadingPdf ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+                        <span>{downloadingPdf ? 'Downloading...' : 'Download PDF'}</span>
+                      </button>
                     </div>
                   </div>
                 ) : (
@@ -591,12 +688,19 @@ export const ApplicationReviewView: React.FC<ApplicationReviewViewProps> = ({
                   {detail.browser_review.has_screenshot && detail.browser_review.screenshot_artifact_id && (
                     <div className="space-y-2">
                       <span className="text-xs font-semibold text-slate-300">Browser Pre-Submission Screenshot:</span>
-                      <div className="rounded-xl overflow-hidden border border-slate-800 max-h-96">
-                        <img 
-                          src={`/api/dashboard/artifacts/${detail.browser_review.screenshot_artifact_id}/content`}
-                          alt="Pre-submission screenshot"
-                          className="w-full object-cover"
-                        />
+                      <div className="rounded-xl overflow-hidden border border-slate-800 max-h-96 bg-slate-950 flex items-center justify-center min-h-[160px]">
+                        {screenshotBlobUrl ? (
+                          <img 
+                            src={screenshotBlobUrl}
+                            alt="Pre-submission screenshot"
+                            className="w-full object-cover"
+                          />
+                        ) : (
+                          <div className="text-slate-500 text-xs flex items-center space-x-2">
+                            <Loader2 className="w-4 h-4 animate-spin text-blue-400" />
+                            <span>Loading screenshot...</span>
+                          </div>
+                        )}
                       </div>
                     </div>
                   )}

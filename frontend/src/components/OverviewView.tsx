@@ -49,6 +49,19 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [analysisResult, setAnalysisResult] = useState<AnalyzeOpportunityResponse | null>(null);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
+  const [isDownloading, setIsDownloading] = useState(false);
+
+  const handleDownloadResume = async () => {
+    if (!analysisResult?.resume_download_url) return;
+    try {
+      setIsDownloading(true);
+      await api.downloadFile(analysisResult.resume_download_url, 'Tailored_Resume.pdf');
+    } catch (err: any) {
+      alert(err.message || 'Failed to download resume');
+    } finally {
+      setIsDownloading(false);
+    }
+  };
 
   const handleAnalyzeOpportunity = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -385,15 +398,14 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
               )}
 
               {analysisResult.resume_download_url && (
-                <a
-                  href={analysisResult.resume_download_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="px-3.5 py-2 text-xs font-semibold bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/30 rounded-lg transition-colors flex items-center space-x-1.5"
+                <button
+                  onClick={handleDownloadResume}
+                  disabled={isDownloading}
+                  className="px-3.5 py-2 text-xs font-semibold bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/30 rounded-lg transition-colors flex items-center space-x-1.5 disabled:opacity-50 cursor-pointer"
                 >
-                  <Download className="w-3.5 h-3.5" />
-                  <span>Download Resume</span>
-                </a>
+                  {isDownloading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+                  <span>{isDownloading ? 'Downloading...' : 'Download Resume'}</span>
+                </button>
               )}
 
               <button

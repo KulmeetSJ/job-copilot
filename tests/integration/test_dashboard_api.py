@@ -184,3 +184,98 @@ def test_api_dashboard_sources_and_sessions(client_with_db):
     # Verify no cookies or storage state is present in payload
     assert "cookies" not in str(sessions_res.json()).lower()
     assert "password" not in str(sessions_res.json()).lower()
+
+
+def test_artifact_download_authentication_enforcement(client_with_db, monkeypatch, tmp_path):
+    """Verify GET /api/dashboard/artifacts/{id}/content enforces authentication, returns 401 without auth, and streams binary on success."""
+    from pathlib import Path
+    from job_copilot.models.artifact import ArtifactModel
+    from job_copilot.domain.artifact_enums import ArtifactType, ArtifactStatus
+    from job_copilot.storage.local_store import LocalArtifactStore
+    from job_copilot.services.artifact_service import ArtifactService
+
+    client, SessionLocal = client_with_db
+    db = SessionLocal()
+
+    # Create test artifact in local store and DB
+    store = LocalArtifactStore(base_dir=tmp_path / "artifacts")
+    service = ArtifactService(db=db, store=store)
+    storage_key = "artifacts/job-api-test-001/app-api-test-001/resume.pdf"
+    store.put(storage_key, b"%PDF-1.4 Fake PDF Content for Test", content_type="application/pdf")
+
+    from job_copilot.domain.artifact_enums import ArtifactType, ArtifactStatus, StorageProvider
+    import hashlib
+
+    raw_pdf = b"%PDF-1.4 Fake PDF Content for Test"
+    art_record = ArtifactModel(
+        artifact_id="art-test-pdf-001",
+        application_id="app-api-test-001",
+        job_id="job-api-test-001",
+        artifact_type=ArtifactType.TAILORED_RESUME_PDF,
+        storage_provider=StorageProvider.LOCAL,
+        storage_key=storage_key,
+        original_filename="Resume_Datadog.pdf",
+        content_type="application/pdf",
+        size_bytes=len(raw_pdf),
+        sha256=hashlib.sha256(raw_pdf).hexdigest(),
+        status=ArtifactStatus.ACTIVE,
+    )
+    db.add(art_record)
+    db.commit()
+
+    # Set mock artifact service on dashboard service dependency if needed, or monkeypatch store
+    monkeypatch.setattr("job_copilot.services.dashboard_service.ArtifactService", lambda db: service)
+
+    # 1. Enforce DASHBOARD_API_KEY
+    from job_copilot.config import settings
+    monkeypatch.setattr(settings, "dashboard_api_key", "secret-test-key-xyz")
+
+    # Without auth header -> 401 Unauthorized
+    res_no_auth = client.get("/api/dashboard/artifacts/art-test-pdf-001/content")
+    assert res_no_auth.status_code == 401
+    assert "Invalid or missing dashboard authentication credentials" in res_no_auth.json()["detail"]
+
+    # With invalid auth header -> 401 Unauthorized
+    res_bad_auth = client.get(
+        "/api/dashboard/artifacts/art-test-pdf-001/content",
+        headers={"X-API-Key": "wrong-key"}
+    )
+    assert res_bad_auth.status_code == 401
+
+    # With valid auth header -> 200 OK
+    res_auth = client.get(
+        "/api/dashboard/artifacts/art-test-pdf-001/content",
+        headers={"X-API-Key": "secret-test-key-xyz"}
+    )
+    assert res_auth.status_code == 200
+    assert res_auth.content == b"%PDF-1.4 Fake PDF Content for Test"
+    assert res_auth.headers["content-type"] == "application/pdf"
+    assert 'filename="Resume_Datadog.pdf"' in res_auth.headers["content-disposition"]
+
+    # 2. Non-existent artifact ID -> 404
+    res_404 = client.get(
+        "/api/dashboard/artifacts/non-existent-artifact-id/content",
+        headers={"X-API-Key": "secret-test-key-xyz"}
+    )
+    assert res_404.status_code == 404
+
+
+def test_no_secrets_in_compiled_frontend_bundle():
+    """Verify that the compiled frontend static bundle never contains API keys or cloud credentials."""
+    from pathlib import Path
+    static_dir = Path("src/job_copilot/static")
+    if not static_dir.exists():
+        pytest.skip("Frontend bundle not yet built")
+
+    js_files = list(static_dir.glob("**/*.js"))
+    assert len(js_files) > 0, "Expected at least one JS bundle in static assets"
+
+    for js_file in js_files:
+        content = js_file.read_text(encoding="utf-8")
+        assert "VITE_DASHBOARD_API_KEY" not in content
+        assert "S3_SECRET_ACCESS_KEY" not in content
+        assert "AWS_SECRET_ACCESS_KEY" not in content
+        assert "AKIAIOSFODNN7EXAMPLE" not in content
+        assert "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY" not in content
+
+

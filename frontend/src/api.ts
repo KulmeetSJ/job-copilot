@@ -171,5 +171,60 @@ export const api = {
     });
     return handleResponse<AnalyzeOpportunityResponse>(res);
   },
+
+  // Authenticated File Download & Binary Content
+  async downloadFile(url: string, defaultFilename?: string): Promise<void> {
+    const res = await fetch(url, { headers: getHeaders() });
+    if (!res.ok) {
+      let errorMsg = `HTTP Error ${res.status}: ${res.statusText}`;
+      try {
+        const data = await res.json();
+        if (data.detail) {
+          errorMsg = typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail);
+        }
+      } catch {
+        // ignore
+      }
+      throw new Error(errorMsg);
+    }
+
+    let filename = defaultFilename || 'download';
+    const disposition = res.headers.get('Content-Disposition');
+    if (disposition && disposition.includes('filename=')) {
+      const match = disposition.match(/filename="?([^";]+)"?/);
+      if (match && match[1]) {
+        filename = match[1].trim();
+      }
+    }
+
+    const blob = await res.blob();
+    const objectUrl = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = objectUrl;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(objectUrl);
+  },
+
+  async fetchBlobUrl(url: string): Promise<string> {
+    const res = await fetch(url, { headers: getHeaders() });
+    if (!res.ok) {
+      let errorMsg = `HTTP Error ${res.status}: ${res.statusText}`;
+      try {
+        const data = await res.json();
+        if (data.detail) {
+          errorMsg = typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail);
+        }
+      } catch {
+        // ignore
+      }
+      throw new Error(errorMsg);
+    }
+    const blob = await res.blob();
+    return window.URL.createObjectURL(blob);
+  },
 };
+
 
