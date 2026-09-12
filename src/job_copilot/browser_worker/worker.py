@@ -39,14 +39,29 @@ class BrowserWorker:
         self._processed_count = 0
 
     async def process_next_task(self, db: Session) -> Optional[BrowserTaskModel]:
-        """Fetch and execute the next available QUEUED task."""
+        """Fetch and execute the next available SUBMISSION_AUTHORIZED or QUEUED task."""
         repo = BrowserTaskRepository(db)
+
+        # 1. Prioritize authorized submissions
+        auth_tasks = repo.list_by_status(BrowserTaskStatus.SUBMISSION_AUTHORIZED, limit=1)
+        if auth_tasks:
+            task = auth_tasks[0]
+            logger.info(f"Worker '{self.worker_id}' claimed SUBMISSION_AUTHORIZED task '{task.task_id}'")
+            task.attempt_count += 1
+            task.worker_id = self.worker_id
+            db.commit()
+            executor = BrowserTaskExecutor(db=db)
+            result = await executor.execute_submission_task(task.task_id)
+            self._processed_count += 1
+            return result
+
+        # 2. Process queued preparation tasks
         queued_tasks = repo.list_by_status(BrowserTaskStatus.QUEUED, limit=1)
         if not queued_tasks:
             return None
 
         task = queued_tasks[0]
-        logger.info(f"Worker '{self.worker_id}' claimed task '{task.task_id}' for URL: {task.target_url}")
+        logger.info(f"Worker '{self.worker_id}' claimed QUEUED task '{task.task_id}' for URL: {task.target_url}")
 
         # Check attempt limits
         if task.attempt_count >= task.max_attempts:

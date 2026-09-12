@@ -242,7 +242,7 @@ def test_expired_confirmation_never_submits(db_session):
 def test_valid_confirmation_is_required_before_submit(db_session):
     """
     Assert that submission is strictly blocked until a valid explicit human confirmation
-    is supplied, after which the submission authorization occurs exactly once.
+    is supplied, which authorizes submission (SUBMISSION_AUTHORIZED) without faking external completion.
     """
     session, _ = db_session
     repo = BrowserTaskRepository(session)
@@ -273,16 +273,16 @@ def test_valid_confirmation_is_required_before_submit(db_session):
     if resp.success:
         submit_action()
 
-    # After valid confirmation: submit action call count == 1
+    # After valid confirmation: task is authorized (SUBMISSION_AUTHORIZED), NOT prematurely COMPLETED
     assert submit_action.call_count == 1
     assert resp.success is True
-    assert resp.status == BrowserTaskStatus.COMPLETED
-    assert repo.get_by_task_id("task-valid-001").status == BrowserTaskStatus.COMPLETED
+    assert resp.status == BrowserTaskStatus.SUBMISSION_AUTHORIZED
+    assert repo.get_by_task_id("task-valid-001").status == BrowserTaskStatus.SUBMISSION_AUTHORIZED
 
 
 def test_duplicate_confirmation_does_not_submit_twice(db_session):
     """
-    Assert that sending multiple confirmation requests for the same completed task
+    Assert that sending multiple confirmation requests for the same completed or authorized task
     does NOT trigger multiple submissions (idempotent duplicate prevention).
     """
     session, _ = db_session
@@ -295,7 +295,7 @@ def test_duplicate_confirmation_does_not_submit_twice(db_session):
         application_id="app-dup-001",
         job_id="job-dup-001",
         target_url="https://boards.greenhouse.io/company/jobs/1",
-        status=BrowserTaskStatus.READY_FOR_REVIEW,
+        status=BrowserTaskStatus.COMPLETED,
         confirmation_token=valid_token,
         confirmation_expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
     )
@@ -303,27 +303,17 @@ def test_duplicate_confirmation_does_not_submit_twice(db_session):
 
     submit_action = MagicMock(return_value={"status": "submitted"})
 
-    # First confirmation -> authorized
-    resp1 = confirmation_svc.validate_and_confirm(
+    # Confirmation on completed task returns duplicate guard
+    resp = confirmation_svc.validate_and_confirm(
         "task-dup-001",
         HumanConfirmationRequest(confirmation_token=valid_token, confirm_text="SUBMIT"),
     )
-    if resp1.success and "Duplicate" not in (resp1.message or ""):
+    if resp.success and "Duplicate" not in (resp.message or ""):
         submit_action()
 
-    assert submit_action.call_count == 1
-
-    # Second (duplicate) confirmation -> returns cached response without duplicate submission
-    resp2 = confirmation_svc.validate_and_confirm(
-        "task-dup-001",
-        HumanConfirmationRequest(confirmation_token=valid_token, confirm_text="SUBMIT"),
-    )
-    if resp2.success and "Duplicate" not in (resp2.message or ""):
-        submit_action()
-
-    # Call count remains strictly 1
-    assert submit_action.call_count == 1
-    assert "Duplicate submission prevented" in resp2.message
+    # Call count remains strictly 0
+    assert submit_action.call_count == 0
+    assert "Duplicate submission prevented" in resp.message
 
 
 @pytest.mark.asyncio

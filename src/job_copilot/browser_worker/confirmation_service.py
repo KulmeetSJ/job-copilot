@@ -101,20 +101,30 @@ class HumanConfirmationService:
                 message="Application already submitted previously. Duplicate submission prevented.",
             )
 
-        # 4. Verify task state is READY_FOR_REVIEW
+        if task.status in (BrowserTaskStatus.SUBMISSION_AUTHORIZED, BrowserTaskStatus.SUBMISSION_RUNNING):
+            logger.info(f"Task '{task_id}' submission is already authorized or running.")
+            return HumanConfirmationResponse(
+                task_id=task_id,
+                application_id=task.application_id,
+                success=True,
+                status=task.status,
+                message="Application submission already authorized and currently processing. Duplicate submission prevented.",
+            )
+
+        # 5. Verify task state is READY_FOR_REVIEW
         if task.status != BrowserTaskStatus.READY_FOR_REVIEW:
             raise SubmissionSafetyError(
                 f"Cannot confirm submission for task in '{task.status.value}' state. Task must be in READY_FOR_REVIEW state."
             )
 
-        # 5. Validate confirmation token
+        # 6. Validate confirmation token
         if not task.confirmation_token:
             raise SubmissionSafetyError("Task has no active confirmation token.")
 
         if not hmac.compare_digest(task.confirmation_token, request.confirmation_token.strip()):
             raise SubmissionSafetyError("Invalid confirmation token provided.")
 
-        # 6. Check token expiration
+        # 7. Check token expiration
         now = datetime.now(timezone.utc)
         expires_at = task.confirmation_expires_at
         if expires_at is not None:
@@ -124,34 +134,31 @@ class HumanConfirmationService:
                 self.task_repo.update_status(task_id, BrowserTaskStatus.EXPIRED, failure_reason="Confirmation token expired")
                 raise SubmissionSafetyError("Confirmation token has expired. Please regenerate review package.")
 
-        # 7. Execute authorized submission transition
-        ref_id = f"REF-{secrets.token_hex(4).upper()}"
-        self.task_repo.update_status(task_id, BrowserTaskStatus.COMPLETED)
+        # 8. Execute authorized submission transition (AUTHORIZATION ONLY - NOT FAKE SUBMIT)
+        ref_id = f"AUTH-{secrets.token_hex(4).upper()}"
+        self.task_repo.update_status(task_id, BrowserTaskStatus.SUBMISSION_AUTHORIZED)
         self.task_repo.append_audit_event(
             task_id,
             {
-                "event": "submission_confirmed",
+                "event": "human_submission_authorized",
                 "reference": ref_id,
                 "timestamp": now.isoformat(),
                 "user_notes": request.user_notes,
             },
         )
 
-        # Update application tracking if linked
+        # Record human authorization event in application tracking
         if task.application_id:
             try:
                 app = self.app_repo.get_by_application_id(task.application_id) or self.app_repo.get_by_job_id_str(task.job_id or task.application_id)
                 if app:
-                    app.status = ApplicationStatus.APPLIED
-                    app.submitted_at = now
-                    app.applied_at = now
                     self.app_repo.append_event(
                         application_id=task.application_id,
                         job_id=task.job_id or task.application_id,
-                        event_type="SUBMITTED",
+                        event_type="SUBMISSION_AUTHORIZED",
                         event_id=f"evt-{uuid.uuid4().hex[:8]}",
-                        source="HUMAN_CONFIRMED_WORKER",
-                        notes=f"Confirmed via task {task_id} with ref {ref_id}",
+                        source="HUMAN_OPERATOR",
+                        notes=f"Submission authorized by operator (ref: {ref_id})",
                     )
                     self.db.commit()
             except Exception as e:
@@ -162,8 +169,8 @@ class HumanConfirmationService:
             task_id=task_id,
             application_id=task.application_id,
             success=True,
-            status=BrowserTaskStatus.COMPLETED,
+            status=BrowserTaskStatus.SUBMISSION_AUTHORIZED,
             submission_reference=ref_id,
             submitted_at=now,
-            message="Application submission successfully confirmed by human operator.",
+            message="Application submission successfully authorized by human operator. Browser worker is executing submission.",
         )

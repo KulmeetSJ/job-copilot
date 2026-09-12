@@ -52,6 +52,10 @@ class BrowserSessionAdapter:
         """Retrieve current page URL."""
         return await self.adapter.get_current_url()
 
+    async def get_page_content(self) -> str:
+        """Retrieve current page text content."""
+        return await self.adapter.get_page_content()
+
     async def inspect_fields(self) -> List[BrowserField]:
         """Inspect and return detected form fields."""
         return await self.adapter.inspect_page()

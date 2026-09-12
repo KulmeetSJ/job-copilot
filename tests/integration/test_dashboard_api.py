@@ -220,7 +220,7 @@ def test_api_dashboard_confirm_flow(client_with_db, monkeypatch):
     assert good_res.status_code == 200
     data = good_res.json()
     assert data["success"] is True
-    assert data["status"] == "COMPLETED"
+    assert data["status"] == "SUBMISSION_AUTHORIZED"
     assert data["submission_reference"] is not None
 
     # 6. Duplicate submission returns idempotent prevention message

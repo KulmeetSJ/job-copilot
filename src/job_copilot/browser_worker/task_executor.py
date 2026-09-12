@@ -2,8 +2,10 @@
 
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+import secrets
 import tempfile
 from typing import List, Optional, Tuple
+import uuid
 from sqlalchemy.orm import Session
 
 from job_copilot.browser.classifier import FieldClassifier
@@ -382,6 +384,253 @@ class BrowserTaskExecutor:
 
         finally:
             await self.browser_manager.close()
+
+    async def execute_submission_task(self, task_id: str) -> BrowserTaskModel:
+        """
+        Execute actual Playwright employer submission after explicit human confirmation.
+        Enforces strict safety checks:
+        1. Task MUST be in SUBMISSION_AUTHORIZED state.
+        2. Domain security and job identity are verified.
+        3. Blockers (CAPTCHA, Login, MFA, unmapped sensitive inputs) transition to HUMAN_ACTION_REQUIRED.
+        4. Employer submit action is executed via Playwright.
+        5. Waits for response and verifies genuine success signal.
+        6. Captures post-submit evidence screenshot -> ArtifactService.
+        7. On verified success: COMPLETED + APPLIED + tracking registered.
+        8. On ambiguous/unverified response: SUBMISSION_UNVERIFIED (does NOT mark APPLIED).
+        """
+        task = self.task_repo.get_by_task_id(task_id)
+        if not task:
+            raise ValueError(f"Browser task '{task_id}' not found.")
+
+        if task.status != BrowserTaskStatus.SUBMISSION_AUTHORIZED:
+            logger.warning(f"Task '{task_id}' is in '{task.status.value}', expected SUBMISSION_AUTHORIZED.")
+            return task
+
+        # 1. Update status to SUBMISSION_RUNNING
+        self.task_repo.update_status(task_id, BrowserTaskStatus.SUBMISSION_RUNNING)
+        self.task_repo.append_audit_event(
+            task_id,
+            {"event": "submission_running", "timestamp": datetime.now(timezone.utc).isoformat()}
+        )
+
+        try:
+            adapter = self.adapter_registry.get_adapter(source=task.source, target_url=task.target_url)
+        except DomainSecurityError as dse:
+            self.task_repo.update_status(task_id, BrowserTaskStatus.BLOCKED, pause_reason=str(dse))
+            return self.task_repo.get_by_task_id(task_id)
+
+        # Active session restoration if any
+        storage_state_path = None
+        active_session = self.session_manager.get_active_session_for_source(adapter.source_name)
+        if active_session:
+            sess_path = self.session_store.get_session_path(active_session.session_id)
+            if sess_path.exists():
+                storage_state_path = str(sess_path)
+
+        browser_adapter = await self.browser_manager.get_adapter(storage_state_path=storage_state_path)
+        session = BrowserSessionAdapter(browser_adapter)
+
+        try:
+            # Navigate / check page
+            await session.navigate(task.target_url)
+            await session.wait_for_idle()
+
+            # Blocker checks: CAPTCHA
+            if await adapter.detect_captcha(session):
+                self.task_repo.update_status(
+                    task_id,
+                    BrowserTaskStatus.CAPTCHA_REQUIRED,
+                    pause_reason="CAPTCHA challenge detected during submission. Human action required.",
+                )
+                self.task_repo.append_audit_event(
+                    task_id,
+                    {
+                        "event": "human_action_required",
+                        "blocker_type": "CAPTCHA",
+                        "message": "CAPTCHA challenge detected. Please solve it in the browser session and resume.",
+                        "resume_allowed": True,
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    }
+                )
+                return self.task_repo.get_by_task_id(task_id)
+
+            # Blocker checks: Login
+            if await adapter.detect_login(session):
+                self.task_repo.update_status(
+                    task_id,
+                    BrowserTaskStatus.LOGIN_REQUIRED,
+                    pause_reason="Authentication login wall detected during submission. Human action required.",
+                )
+                self.task_repo.append_audit_event(
+                    task_id,
+                    {
+                        "event": "human_action_required",
+                        "blocker_type": "LOGIN",
+                        "message": "Login required. Please authenticate in the browser session and resume.",
+                        "resume_allowed": True,
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    }
+                )
+                return self.task_repo.get_by_task_id(task_id)
+
+            # Blocker checks: MFA / OTP
+            page_text = (await session.get_page_content() or "").lower()
+            if any(w in page_text for w in ["enter otp", "two-factor authentication", "verification code", "security code", "mfa"]):
+                self.task_repo.update_status(
+                    task_id,
+                    BrowserTaskStatus.MFA_REQUIRED,
+                    pause_reason="MFA / OTP verification code required. Human action required.",
+                )
+                self.task_repo.append_audit_event(
+                    task_id,
+                    {
+                        "event": "human_action_required",
+                        "blocker_type": "MFA",
+                        "message": "MFA / OTP verification code required. Please enter it and resume.",
+                        "resume_allowed": True,
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    }
+                )
+                return self.task_repo.get_by_task_id(task_id)
+
+            # Execute Submit Click
+            submit_selectors = [
+                "button[type='submit']",
+                "input[type='submit']",
+                "button:has-text('Submit Application')",
+                "button:has-text('Submit application')",
+                "button:has-text('Submit')",
+                "button:has-text('Apply')",
+                "button:has-text('Send Application')",
+                "form button",
+            ]
+            clicked = False
+            for sel in submit_selectors:
+                if await session.click_element(sel):
+                    clicked = True
+                    break
+
+            # Wait for network idle and DOM changes
+            await session.wait_for_idle(timeout_ms=3000)
+            final_url = await session.get_current_url()
+            post_submit_text = (await session.get_page_content() or "").lower()
+
+            # Capture post-submit screenshot
+            post_submit_art_id = await self._capture_and_store_screenshot(
+                session, task_id, task.application_id, "post_submit_evidence.png"
+            )
+
+            # Evaluate success signals
+            success_indicators = [
+                "application submitted",
+                "thank you for applying",
+                "application received",
+                "we have received your application",
+                "your application has been submitted",
+                "submission confirmed",
+                "thanks for your interest",
+                "successfully applied",
+                "application confirmation",
+                "thank you for your submission",
+            ]
+            url_success = any(kw in (final_url or "").lower() for kw in ["/submitted", "/thank-you", "/thankyou", "/success", "/confirmation", "/applied"])
+            text_success = any(ind in post_submit_text for ind in success_indicators)
+            is_verified = (url_success or text_success) and clicked
+
+            now = datetime.now(timezone.utc)
+
+            if is_verified:
+                ref_id = f"SUB-{secrets.token_hex(4).upper()}"
+                self.task_repo.update_status(task_id, BrowserTaskStatus.COMPLETED)
+                task.completed_at = now
+                self.db.commit()
+
+                self.task_repo.append_audit_event(
+                    task_id,
+                    {
+                        "event": "submission_verified",
+                        "reference": ref_id,
+                        "final_url": final_url,
+                        "screenshot_artifact_id": post_submit_art_id,
+                        "timestamp": now.isoformat(),
+                    }
+                )
+
+                # Transition Application to APPLIED
+                if task.application_id:
+                    app = self.app_repo.get_by_application_id(task.application_id) or self.app_repo.get_by_job_id_str(task.job_id or task.application_id)
+                    if app:
+                        app.status = ApplicationStatus.APPLIED
+                        app.submitted_at = now
+                        app.applied_at = now
+                        self.app_repo.append_event(
+                            application_id=task.application_id,
+                            job_id=task.job_id or task.application_id,
+                            event_type="SUBMITTED",
+                            event_id=f"evt-{uuid.uuid4().hex[:8]}",
+                            source="BROWSER_SUBMISSION_VERIFIED",
+                            notes=f"Submission verified on employer portal (ref: {ref_id}, url: {final_url})",
+                        )
+                        self.db.commit()
+
+                logger.info(f"Submission successfully executed and verified for task '{task_id}' (ref: {ref_id})")
+                return self.task_repo.get_by_task_id(task_id)
+
+            else:
+                # Ambiguous or unverified outcome
+                self.task_repo.update_status(
+                    task_id,
+                    BrowserTaskStatus.SUBMISSION_UNVERIFIED,
+                    pause_reason="Submission was attempted, but employer confirmation could not be verified.",
+                )
+                self.task_repo.append_audit_event(
+                    task_id,
+                    {
+                        "event": "submission_unverified",
+                        "final_url": final_url,
+                        "screenshot_artifact_id": post_submit_art_id,
+                        "timestamp": now.isoformat(),
+                    }
+                )
+                logger.warning(f"Submission attempted for task '{task_id}', but confirmation could not be verified.")
+                return self.task_repo.get_by_task_id(task_id)
+
+        except Exception as e:
+            logger.error(f"Submission execution failed for task '{task_id}': {e}")
+            self.task_repo.update_status(task_id, BrowserTaskStatus.FAILED, failure_reason=str(e))
+            self.task_repo.append_audit_event(
+                task_id,
+                {"event": "submission_failed", "error": str(e), "timestamp": datetime.now(timezone.utc).isoformat()}
+            )
+            return self.task_repo.get_by_task_id(task_id)
+        finally:
+            await self.browser_manager.close()
+
+    async def resume_task(self, task_id: str) -> BrowserTaskModel:
+        """
+        Resume a task that was paused for human action (CAPTCHA, Login, MFA, User Input).
+        Transitions back to appropriate running state.
+        """
+        task = self.task_repo.get_by_task_id(task_id)
+        if not task:
+            raise ValueError(f"Browser task '{task_id}' not found.")
+
+        # Check if task was paused during submission or preparation
+        has_auth_event = any(e.get("event") == "human_submission_authorized" for e in (task.audit_events or []))
+        if has_auth_event:
+            self.task_repo.update_status(task_id, BrowserTaskStatus.SUBMISSION_AUTHORIZED, pause_reason=None)
+            self.task_repo.append_audit_event(
+                task_id,
+                {"event": "task_resumed_by_user", "target": "submission", "timestamp": datetime.now(timezone.utc).isoformat()}
+            )
+            return await self.execute_submission_task(task_id)
+        else:
+            self.task_repo.update_status(task_id, BrowserTaskStatus.QUEUED, pause_reason=None)
+            self.task_repo.append_audit_event(
+                task_id,
+                {"event": "task_resumed_by_user", "target": "preparation", "timestamp": datetime.now(timezone.utc).isoformat()}
+            )
+            return await self.execute_task(task_id)
 
     async def _capture_and_store_screenshot(
         self,

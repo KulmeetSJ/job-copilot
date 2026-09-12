@@ -338,14 +338,9 @@ class TrackingService:
         Create or update tracked ApplicationRecord, freeze immutable historical snapshot,
         and append the SUBMITTED event upon successful browser submission.
         """
-        # Load package if omitted
+        # Load package if omitted (read-only from disk, never synchronously regenerate)
         if not package:
             package = self.prep_service.get_application_package(job_id)
-            if not package:
-                try:
-                    package = self.prep_service.prepare_application(job_id_or_text=job_id)
-                except Exception as e:
-                    logger.debug(f"Application package on-demand prep notice for '{job_id}': {e}")
 
         # Check existing record
         app = self.store.get_application_by_job_id(job_id)

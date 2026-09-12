@@ -750,9 +750,9 @@ class DashboardService:
         application_id: Optional[str] = None,
     ) -> SubmissionConfirmResponse:
         """
-        Gated submission path delegating directly to the authoritative HumanConfirmationService.
+        Gated submission authorization path delegating to HumanConfirmationService.
         Enforces confirm_text='SUBMIT' and valid confirmation_token.
-        Synchronizes both ApplicationRepository and Phase 8 TrackingStore.
+        Transitions task to SUBMISSION_AUTHORIZED without faking external completion.
         """
         db, should_close = self._get_db_session()
         try:
@@ -770,25 +770,6 @@ class DashboardService:
                 application_id=application_id,
             )
 
-            # Synchronize with Phase 8 Tracking Store
-            task_repo = BrowserTaskRepository(db)
-            task = task_repo.get_by_task_id(payload.task_id)
-            job_id = (task.job_id if task and task.job_id else (result.application_id or payload.task_id))
-
-            try:
-                from job_copilot.browser.models import SubmissionResult
-                sub_res = SubmissionResult(
-                    success=True,
-                    confirmation_reference=result.submission_reference,
-                    final_url=task.target_url if task else None,
-                )
-                self.tracking_service.register_submission(
-                    job_id=job_id,
-                    submission_result=sub_res,
-                )
-            except Exception as e:
-                logger.warning(f"Notice while registering submission in tracking store: {e}")
-
             return SubmissionConfirmResponse(
                 success=result.success,
                 application_id=result.application_id,
@@ -801,6 +782,52 @@ class DashboardService:
         except SubmissionSafetyError as sse:
             logger.warning(f"Submission confirmation blocked: {sse}")
             raise
+        finally:
+            if should_close:
+                db.close()
+
+    def resume_application(self, application_id: str) -> ApplicationDetailResponse:
+        """
+        Resume an application that paused for human action (CAPTCHA, Login, MFA, User Input).
+        """
+        db, should_close = self._get_db_session()
+        try:
+            app_repo = ApplicationRepository(db)
+            app = app_repo.get_by_application_id(application_id) or app_repo.get_by_job_id_str(application_id)
+            if not app:
+                raise ValueError(f"Application '{application_id}' not found.")
+
+            task_repo = BrowserTaskRepository(db)
+            task = task_repo.get_by_application_or_job_id(
+                application_id=app.application_id,
+                job_id=app.job_id_str,
+            )
+            if not task:
+                raise ValueError(f"No browser task found for application '{application_id}'.")
+
+            # Check if task is in a resumable pause state
+            if task.status in (
+                BrowserTaskStatus.CAPTCHA_REQUIRED,
+                BrowserTaskStatus.LOGIN_REQUIRED,
+                BrowserTaskStatus.MFA_REQUIRED,
+                BrowserTaskStatus.HUMAN_ACTION_REQUIRED,
+                BrowserTaskStatus.USER_INPUT_REQUIRED,
+            ):
+                # Reset pause reason and transition back to QUEUED or SUBMISSION_AUTHORIZED
+                has_auth_event = any(e.get("event") == "human_submission_authorized" for e in (task.audit_events or []))
+                next_status = BrowserTaskStatus.SUBMISSION_AUTHORIZED if has_auth_event else BrowserTaskStatus.QUEUED
+                task_repo.update_status(task.task_id, next_status, pause_reason=None)
+                task_repo.append_audit_event(
+                    task.task_id,
+                    {
+                        "event": "task_resumed_by_user",
+                        "status": next_status.value,
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    }
+                )
+                db.commit()
+
+            return self.get_application_detail(application_id)
         finally:
             if should_close:
                 db.close()

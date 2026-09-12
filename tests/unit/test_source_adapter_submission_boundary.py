@@ -150,7 +150,7 @@ async def test_all_source_adapters_halt_at_ready_for_review_without_submitting(
 
     # Exactly 1 submission authorized
     assert mock_external_submit_handler.call_count == 1
-    assert confirm_resp.status == BrowserTaskStatus.COMPLETED
+    assert confirm_resp.status == BrowserTaskStatus.SUBMISSION_AUTHORIZED
 
     # 3. Duplicate confirmation check
     dup_resp = confirmation_svc.validate_and_confirm(

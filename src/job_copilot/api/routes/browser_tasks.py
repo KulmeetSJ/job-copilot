@@ -116,6 +116,44 @@ def confirm_browser_task_submission(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(sse))
 
 
+@router.post("/{task_id}/submit", response_model=BrowserTaskResponse)
+async def submit_browser_task(
+    task_id: str,
+    db: Session = Depends(get_db),
+) -> BrowserTaskResponse:
+    """Execute actual Playwright employer submission for an explicitly SUBMISSION_AUTHORIZED task."""
+    repo = BrowserTaskRepository(db)
+    task = repo.get_by_task_id(task_id)
+    if not task:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Task '{task_id}' not found.")
+
+    if task.status != BrowserTaskStatus.SUBMISSION_AUTHORIZED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Task '{task_id}' is in '{task.status.value}' state. Must be 'SUBMISSION_AUTHORIZED' before submitting.",
+        )
+
+    executor = BrowserTaskExecutor(db=db)
+    result = await executor.execute_submission_task(task_id)
+    return _format_task_response(result)
+
+
+@router.post("/{task_id}/resume", response_model=BrowserTaskResponse)
+async def resume_browser_task(
+    task_id: str,
+    db: Session = Depends(get_db),
+) -> BrowserTaskResponse:
+    """Resume a browser task that was paused for human action (CAPTCHA, Login, MFA, User Input)."""
+    repo = BrowserTaskRepository(db)
+    task = repo.get_by_task_id(task_id)
+    if not task:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Task '{task_id}' not found.")
+
+    executor = BrowserTaskExecutor(db=db)
+    result = await executor.resume_task(task_id)
+    return _format_task_response(result)
+
+
 @router.post("/{task_id}/cancel", response_model=BrowserTaskResponse)
 def cancel_browser_task(
     task_id: str,
@@ -129,3 +167,4 @@ def cancel_browser_task(
 
     updated = repo.update_status(task_id, BrowserTaskStatus.FAILED, failure_reason="Cancelled by operator")
     return _format_task_response(updated)
+

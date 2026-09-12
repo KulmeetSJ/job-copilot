@@ -222,7 +222,7 @@ def test_human_confirmation_gate_strictly_enforces_safety(db_session):
         HumanConfirmationRequest(confirmation_token=valid_token, confirm_text="SUBMIT", user_notes="Approved by candidate"),
     )
     assert resp.success is True
-    assert resp.status == BrowserTaskStatus.COMPLETED
+    assert resp.status == BrowserTaskStatus.SUBMISSION_AUTHORIZED
     assert resp.submission_reference is not None
 
     # 5. Duplicate confirmation guard

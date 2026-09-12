@@ -230,6 +230,23 @@ def confirm_application_submission(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 
+@router.post("/applications/{application_id}/resume", response_model=ApplicationDetailResponse)
+def resume_application(
+    application_id: str,
+    service: DashboardService = Depends(get_dashboard_service),
+) -> ApplicationDetailResponse:
+    """
+    Resume automation for an application that paused for human action (CAPTCHA, Login, MFA).
+    """
+    try:
+        return service.resume_application(application_id=application_id)
+    except ValueError as ve:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(ve))
+    except Exception as e:
+        logger.error(f"Unexpected error during application resume: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+
 # ==============================================================================
 # Analytics, Sources, Sessions, Activity, Artifact Content
 # ==============================================================================
