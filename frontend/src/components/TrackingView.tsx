@@ -27,19 +27,24 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ onSelectApplication 
   }, []);
 
   const columns = [
-    { id: 'DISCOVERED', label: 'Discovered & Recommended', statuses: ['DISCOVERED', 'RECOMMENDED'] },
-    { id: 'PREPARED', label: 'Prepared & Review', statuses: ['PREPARED', 'READY_FOR_REVIEW', 'WAITING_FOR_USER'] },
+    { id: 'DISCOVERED', label: 'Discovered & Recommended', statuses: ['DISCOVERED', 'RECOMMENDED', 'SHORTLISTED'] },
+    { id: 'PREPARED', label: 'Prepared & Review', statuses: ['PREPARED', 'READY_FOR_REVIEW', 'READY_TO_APPLY', 'WAITING_FOR_USER', 'PREPARING'] },
     { id: 'SUBMITTED', label: 'Submitted & Sent', statuses: ['SUBMITTED', 'APPLIED', 'ACKNOWLEDGED'] },
-    { id: 'IN_PROGRESS', label: 'Response & Assessment', statuses: ['RECRUITER_RESPONSE', 'ASSESSMENT'] },
+    { id: 'IN_PROGRESS', label: 'Response & Assessment', statuses: ['RECRUITER_RESPONSE', 'ASSESSMENT', 'OA'] },
     { id: 'INTERVIEW', label: 'Interviewing', statuses: ['INTERVIEW', 'FINAL_ROUND'] },
     { id: 'OFFER', label: 'Offer & Decision', statuses: ['OFFER', 'ACCEPTED'] },
     { id: 'ARCHIVED', label: 'Closed / Rejected', statuses: ['REJECTED', 'WITHDRAWN', 'EXPIRED', 'CLOSED'] },
   ];
 
+  const getAppStatus = (app: any): string => {
+    return (app.current_status || app.status || 'DISCOVERED').toString().toUpperCase();
+  };
+
   const filtered = applications.filter((app) => {
     if (!filterQuery) return true;
     const q = filterQuery.toLowerCase();
-    return `${app.company} ${app.role} ${app.status}`.toLowerCase().includes(q);
+    const st = getAppStatus(app);
+    return `${app.company || ''} ${app.role || ''} ${st}`.toLowerCase().includes(q);
   });
 
   return (
@@ -76,7 +81,7 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ onSelectApplication 
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-7 gap-3.5 overflow-x-auto min-w-[1000px] pb-4">
           {columns.map((col) => {
-            const colApps = filtered.filter((a) => col.statuses.includes(a.status));
+            const colApps = filtered.filter((a) => col.statuses.includes(getAppStatus(a)));
             return (
               <div 
                 key={col.id}
@@ -96,7 +101,7 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ onSelectApplication 
                     colApps.map((app) => (
                       <div
                         key={app.application_id || app.id}
-                        onClick={() => onSelectApplication(app.application_id || app.job_id_str || app.id.toString())}
+                        onClick={() => onSelectApplication(app.application_id || app.job_id_str || app.job_id || app.id?.toString())}
                         className="p-3 rounded-lg bg-[#0c1322] border border-slate-800 hover:border-blue-500/40 cursor-pointer transition-all shadow-sm space-y-2"
                       >
                         <div className="space-y-0.5">
@@ -111,7 +116,7 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ onSelectApplication 
                         <div className="flex items-center justify-between text-[10px] text-slate-500 pt-1 border-t border-slate-800/60">
                           <span className="capitalize">{app.source}</span>
                           <span className="px-1.5 py-0.2 rounded font-mono text-[9px] bg-blue-500/10 text-blue-300">
-                            {app.status}
+                            {getAppStatus(app)}
                           </span>
                         </div>
                       </div>

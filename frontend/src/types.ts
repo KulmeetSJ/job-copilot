@@ -187,6 +187,7 @@ export interface BrowserReviewSummary {
   has_screenshot: boolean;
   screenshot_artifact_id?: string;
   has_confirmation_token: boolean;
+  confirmation_token?: string;
   is_ready_for_review: boolean;
   pause_reason?: string;
   failure_reason?: string;

@@ -227,6 +227,7 @@ class BrowserReviewSummary(BaseModel):
     has_screenshot: bool = False
     screenshot_artifact_id: Optional[str] = None
     has_confirmation_token: bool = False
+    confirmation_token: Optional[str] = None
     is_ready_for_review: bool = False
     pause_reason: Optional[str] = None
     failure_reason: Optional[str] = None

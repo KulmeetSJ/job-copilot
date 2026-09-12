@@ -342,7 +342,10 @@ class TrackingService:
         if not package:
             package = self.prep_service.get_application_package(job_id)
             if not package:
-                raise ValueError(f"Application package for job '{job_id}' not found.")
+                try:
+                    package = self.prep_service.prepare_application(job_id_or_text=job_id)
+                except Exception as e:
+                    logger.debug(f"Application package on-demand prep notice for '{job_id}': {e}")
 
         # Check existing record
         app = self.store.get_application_by_job_id(job_id)
@@ -356,9 +359,10 @@ class TrackingService:
         # Extract scores and assessment breakdown safely
         match_score = 0.0
         recommendation = "UNKNOWN"
+        strategy = package.selected_resume_strategy if package else (app.resume_strategy if app else "general_swe")
         tech_m = resp_m = sen_m = prof_m = dom_m = pref_m = cred_m = 0.0
 
-        if package.assessment:
+        if package and package.assessment:
             recommendation = package.assessment.recommendation.value
             if package.assessment.score_breakdown:
                 sb = package.assessment.score_breakdown
@@ -370,6 +374,9 @@ class TrackingService:
                 dom_m = sb.domain_score
                 pref_m = sb.preference_score
                 cred_m = sb.credential_score
+        elif app:
+            match_score = app.match_score or 0.0
+            recommendation = app.recommendation or "UNKNOWN"
 
         # 1. Freeze Historical Snapshot (Immutable)
         # If snapshot already exists, preserve it without mutation
@@ -377,7 +384,7 @@ class TrackingService:
             application_id=app_id,
             job_id=job_id,
             timestamp=now,
-            resume_strategy=package.selected_resume_strategy,
+            resume_strategy=strategy,
             match_score=match_score,
             recommendation=recommendation,
             technical_match=tech_m,
@@ -387,8 +394,12 @@ class TrackingService:
             domain_match=dom_m,
             preference_match=pref_m,
             credential_match=cred_m,
-            job_source=package.assessment.job.source if (package.assessment and package.assessment.job) else (app.source if app else "unknown"),
-            resume_pdf_path=package.resume_pdf_path,
+            job_source=(
+                package.assessment.job.source
+                if (package and package.assessment and package.assessment.job)
+                else (app.source if app else "unknown")
+            ),
+            resume_pdf_path=package.resume_pdf_path if package else None,
             cover_letter_path=str(Path(self.prep_service.applications_data_dir) / job_id / "cover_letter.md"),
             applied_via="Playwright Browser" if browser_session else "Direct",
         )
@@ -404,7 +415,7 @@ class TrackingService:
                 event_type=ApplicationLifecycleStatus.PREPARED,
                 timestamp=now,
                 source=EventSource.SYSTEM,
-                notes=f"Application prepared with strategy '{package.selected_resume_strategy}'.",
+                notes=f"Application prepared with strategy '{strategy}'.",
             )
             events_to_add.append(prep_event)
 
@@ -429,8 +440,8 @@ class TrackingService:
             app = ApplicationRecord(
                 application_id=app_id,
                 job_id=job_id,
-                company=package.company,
-                role=package.job_title,
+                company=package.company if package else "Target Company",
+                role=package.job_title if package else "Software Engineer",
                 canonical_job_url=browser_session.application_url if browser_session else None,
                 source=snapshot.job_source,
                 discovered_at=now,
@@ -439,7 +450,7 @@ class TrackingService:
                 submitted_at=now if is_submitted else None,
                 current_status=ApplicationLifecycleStatus.SUBMITTED if is_submitted else ApplicationLifecycleStatus.PREPARED,
                 current_status_at=now,
-                resume_strategy=package.selected_resume_strategy,
+                resume_strategy=strategy,
                 match_score=match_score,
                 recommendation=recommendation,
                 package_path=str(Path(self.prep_service.applications_data_dir) / job_id),

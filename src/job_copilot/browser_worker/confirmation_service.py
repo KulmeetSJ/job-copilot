@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 import hmac
 import secrets
 from typing import Optional, Tuple
+import uuid
 from sqlalchemy.orm import Session
 
 from job_copilot.browser_worker.exceptions import SubmissionSafetyError
@@ -102,15 +103,20 @@ class HumanConfirmationService:
         # Update application tracking if linked
         if task.application_id:
             try:
-                app = self.app_repo.get_by_application_id(task.application_id)
+                app = self.app_repo.get_by_application_id(task.application_id) or self.app_repo.get_by_job_id_str(task.job_id or task.application_id)
                 if app:
+                    app.status = ApplicationStatus.APPLIED
+                    app.submitted_at = now
+                    app.applied_at = now
                     self.app_repo.append_event(
                         application_id=task.application_id,
                         job_id=task.job_id or task.application_id,
                         event_type="SUBMITTED",
+                        event_id=f"evt-{uuid.uuid4().hex[:8]}",
                         source="HUMAN_CONFIRMED_WORKER",
                         notes=f"Confirmed via task {task_id} with ref {ref_id}",
                     )
+                    self.db.commit()
             except Exception as e:
                 logger.warning(f"Notice while appending application event: {e}")
 

@@ -96,7 +96,7 @@ def list_applications(
     """List tracked job applications across all lifecycle stages."""
     strat_filter = strategy if strategy else None
     stat_filter = status if status else None
-    return service.tracking_service.list_applications(status=stat_filter, strategy=strat_filter)
+    return service.list_applications(status=stat_filter, strategy=strat_filter)
 
 
 @router.get("/applications/{application_id}", response_model=ApplicationDetailResponse)
@@ -266,3 +266,26 @@ def get_artifact_binary(
     except Exception as e:
         logger.error(f"Failed to fetch artifact content for '{artifact_id}': {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+
+@router.get("/applications/{application_id}/resume/pdf")
+def get_application_resume_pdf(
+    application_id: str,
+    service: DashboardService = Depends(get_dashboard_service),
+):
+    """Serve the compiled PDF for an application resume directly for inline viewing."""
+    try:
+        data, content_type, filename = service.get_application_resume_pdf(application_id)
+        return Response(
+            content=data,
+            media_type=content_type,
+            headers={
+                "Content-Disposition": f'inline; filename="{filename}"',
+            },
+        )
+    except FileNotFoundError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Compiled PDF not found for application '{application_id}'.")
+    except Exception as e:
+        logger.error(f"Failed to fetch resume PDF for '{application_id}': {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+

@@ -198,6 +198,17 @@ export const SubmissionModal: React.FC<SubmissionModalProps> = ({
               />
             </div>
 
+            {/* Error Message */}
+            {error && (
+              <div className="p-3.5 rounded-xl bg-rose-500/15 border border-rose-500/30 flex items-start space-x-2.5 text-xs text-rose-300">
+                <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5 text-rose-400" />
+                <div className="space-y-0.5">
+                  <div className="font-bold text-rose-200">Submission Authorization Blocked</div>
+                  <div className="text-[11px] leading-relaxed">{error}</div>
+                </div>
+              </div>
+            )}
+
             {/* Modal Actions */}
             <div className="flex items-center justify-between pt-2">
               <button

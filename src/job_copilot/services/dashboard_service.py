@@ -1,6 +1,6 @@
 """High-level Dashboard Service coordinating human review, queue, match evidence, and control workflows."""
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -55,7 +55,7 @@ from job_copilot.services.artifact_service import ArtifactService
 from job_copilot.services.copilot_service import CopilotService
 from job_copilot.services.job_intelligence_service import JobIntelligenceService
 from job_copilot.services.tracking_service import TrackingService
-from job_copilot.tracking.models import ApplicationLifecycleStatus
+from job_copilot.tracking.models import ApplicationLifecycleStatus, ApplicationRecord
 from job_copilot.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -525,6 +525,30 @@ class DashboardService:
             # Browser Worker Review Package
             task_repo = BrowserTaskRepository(db)
             browser_task = task_repo.get_by_application_id(application_id) or task_repo.get_by_application_id(job_id)
+
+            if pkg and not browser_task:
+                task_id = f"task-bw-{uuid.uuid4().hex[:8]}"
+                confirm_token = HumanConfirmationService.generate_confirmation_token()
+                expires_at = datetime.now(timezone.utc) + timedelta(hours=24)
+                review_pkg_json = {
+                    "detected_fields": [a.question_text for a in pkg.answers],
+                    "filled_fields": [a.question_text for a in pkg.answers if not a.requires_user_input],
+                    "unresolved_fields": [u.question_text for u in pkg.user_inputs_required],
+                    "warnings": [],
+                }
+                browser_task = BrowserTaskModel(
+                    task_id=task_id,
+                    application_id=app_model.application_id if app_model else application_id,
+                    job_id=job_id,
+                    source=source or "manual",
+                    target_url=canonical_url or f"https://jobs.example.com/apply/{job_id}",
+                    status=BrowserTaskStatus.READY_FOR_REVIEW,
+                    confirmation_token=confirm_token,
+                    confirmation_expires_at=expires_at,
+                    review_package_json=review_pkg_json,
+                )
+                task_repo.create(browser_task)
+
             browser_review: Optional[BrowserReviewSummary] = None
 
             if browser_task:
@@ -545,6 +569,7 @@ class DashboardService:
                     has_screenshot=has_ss,
                     screenshot_artifact_id=rp.get("screenshot_artifact_id"),
                     has_confirmation_token=bool(browser_task.confirmation_token),
+                    confirmation_token=browser_task.confirmation_token,
                     is_ready_for_review=(browser_task.status == BrowserTaskStatus.READY_FOR_REVIEW),
                     pause_reason=browser_task.pause_reason,
                     failure_reason=browser_task.failure_reason,
@@ -629,6 +654,38 @@ class DashboardService:
                 )
                 db.commit()
 
+            # Create or update browser worker task in READY_FOR_REVIEW
+            task_repo = BrowserTaskRepository(db)
+            existing_task = task_repo.get_by_application_id(app.application_id if app else application_id) or task_repo.get_by_application_id(job_id)
+            review_pkg_json = {
+                "detected_fields": [a.question_text for a in pkg.answers],
+                "filled_fields": [a.question_text for a in pkg.answers if not a.requires_user_input],
+                "unresolved_fields": [u.question_text for u in pkg.user_inputs_required],
+                "warnings": [],
+            }
+            if not existing_task:
+                task_id = f"task-bw-{uuid.uuid4().hex[:8]}"
+                confirm_token = HumanConfirmationService.generate_confirmation_token()
+                expires_at = datetime.now(timezone.utc) + timedelta(hours=24)
+                new_task = BrowserTaskModel(
+                    task_id=task_id,
+                    application_id=app.application_id if app else application_id,
+                    job_id=job_id,
+                    source=app.source if app else "manual",
+                    target_url=(app.canonical_job_url if app and app.canonical_job_url else f"https://jobs.example.com/apply/{job_id}"),
+                    status=BrowserTaskStatus.READY_FOR_REVIEW,
+                    confirmation_token=confirm_token,
+                    confirmation_expires_at=expires_at,
+                    review_package_json=review_pkg_json,
+                )
+                task_repo.create(new_task)
+            elif existing_task.status != BrowserTaskStatus.COMPLETED:
+                existing_task.status = BrowserTaskStatus.READY_FOR_REVIEW
+                existing_task.confirmation_token = HumanConfirmationService.generate_confirmation_token()
+                existing_task.confirmation_expires_at = datetime.now(timezone.utc) + timedelta(hours=24)
+                existing_task.review_package_json = review_pkg_json
+                db.commit()
+
             return self.get_application_detail(application_id)
         finally:
             if should_close:
@@ -701,6 +758,7 @@ class DashboardService:
         """
         Gated submission path delegating directly to the authoritative HumanConfirmationService.
         Enforces confirm_text='SUBMIT' and valid confirmation_token.
+        Synchronizes both ApplicationRepository and Phase 8 TrackingStore.
         """
         db, should_close = self._get_db_session()
         try:
@@ -717,6 +775,25 @@ class DashboardService:
                 request=confirm_req,
             )
 
+            # Synchronize with Phase 8 Tracking Store
+            task_repo = BrowserTaskRepository(db)
+            task = task_repo.get_by_task_id(payload.task_id)
+            job_id = (task.job_id if task and task.job_id else (result.application_id or payload.task_id))
+
+            try:
+                from job_copilot.browser.models import SubmissionResult
+                sub_res = SubmissionResult(
+                    success=True,
+                    confirmation_reference=result.submission_reference,
+                    final_url=task.target_url if task else None,
+                )
+                self.tracking_service.register_submission(
+                    job_id=job_id,
+                    submission_result=sub_res,
+                )
+            except Exception as e:
+                logger.warning(f"Notice while registering submission in tracking store: {e}")
+
             return SubmissionConfirmResponse(
                 success=result.success,
                 application_id=result.application_id,
@@ -729,6 +806,86 @@ class DashboardService:
         except SubmissionSafetyError as sse:
             logger.warning(f"Submission confirmation blocked: {sse}")
             raise
+        finally:
+            if should_close:
+                db.close()
+
+    def list_applications(
+        self,
+        status: Optional[Any] = None,
+        strategy: Optional[str] = None,
+    ) -> List[ApplicationRecord]:
+        """
+        List unified tracked applications merging Phase 8 TrackingStore
+        and DB ApplicationRepository for the Kanban board and lifecycle ledger.
+        """
+        tracking_apps = self.tracking_service.list_applications(strategy=strategy)
+        app_by_job: Dict[str, ApplicationRecord] = {a.job_id: a for a in tracking_apps}
+        app_by_id: Dict[str, ApplicationRecord] = {a.application_id: a for a in tracking_apps}
+
+        db, should_close = self._get_db_session()
+        try:
+            app_repo = ApplicationRepository(db)
+            db_apps = app_repo.list_applications(limit=500)
+
+            status_map = {
+                ApplicationStatus.DISCOVERED: ApplicationLifecycleStatus.DISCOVERED,
+                ApplicationStatus.SHORTLISTED: ApplicationLifecycleStatus.RECOMMENDED,
+                ApplicationStatus.PREPARING: ApplicationLifecycleStatus.PREPARED,
+                ApplicationStatus.READY_TO_APPLY: ApplicationLifecycleStatus.READY_FOR_REVIEW,
+                ApplicationStatus.APPLIED: ApplicationLifecycleStatus.SUBMITTED,
+                ApplicationStatus.OA: ApplicationLifecycleStatus.ASSESSMENT,
+                ApplicationStatus.INTERVIEW: ApplicationLifecycleStatus.INTERVIEW,
+                ApplicationStatus.OFFER: ApplicationLifecycleStatus.OFFER,
+                ApplicationStatus.REJECTED: ApplicationLifecycleStatus.REJECTED,
+                ApplicationStatus.WITHDRAWN: ApplicationLifecycleStatus.WITHDRAWN,
+            }
+
+            for db_app in db_apps:
+                job_id = db_app.job_id_str or str(db_app.job_id or db_app.application_id)
+                target_status = status_map.get(db_app.status, ApplicationLifecycleStatus.DISCOVERED)
+
+                if job_id in app_by_job:
+                    existing = app_by_job[job_id]
+                    if db_app.status == ApplicationStatus.APPLIED and existing.current_status != ApplicationLifecycleStatus.SUBMITTED:
+                        existing.current_status = ApplicationLifecycleStatus.SUBMITTED
+                        existing.submitted_at = db_app.submitted_at or db_app.applied_at or utc_now()
+                elif db_app.application_id in app_by_id:
+                    existing = app_by_id[db_app.application_id]
+                    if db_app.status == ApplicationStatus.APPLIED and existing.current_status != ApplicationLifecycleStatus.SUBMITTED:
+                        existing.current_status = ApplicationLifecycleStatus.SUBMITTED
+                        existing.submitted_at = db_app.submitted_at or db_app.applied_at or utc_now()
+                else:
+                    rec = ApplicationRecord(
+                        application_id=db_app.application_id or f"app-{uuid.uuid4().hex[:8]}",
+                        job_id=job_id,
+                        company=db_app.company or "Company",
+                        role=db_app.role or "Software Engineer",
+                        canonical_job_url=db_app.canonical_job_url,
+                        source=db_app.source or "copilot",
+                        discovered_at=db_app.discovered_at or db_app.created_at,
+                        prepared_at=db_app.prepared_at,
+                        submitted_at=db_app.submitted_at or db_app.applied_at,
+                        current_status=target_status,
+                        current_status_at=db_app.current_status_at or db_app.updated_at or utc_now(),
+                        resume_strategy=db_app.resume_strategy or "general_swe",
+                        match_score=db_app.match_score or 0.0,
+                        recommendation=db_app.recommendation or "UNKNOWN",
+                        user_notes=db_app.user_notes or [],
+                        created_at=db_app.created_at or utc_now(),
+                        updated_at=db_app.updated_at or utc_now(),
+                    )
+                    tracking_apps.append(rec)
+                    app_by_job[job_id] = rec
+                    app_by_id[rec.application_id] = rec
+
+            if status:
+                stat_val = status.value if hasattr(status, "value") else str(status)
+                tracking_apps = [a for a in tracking_apps if a.current_status.value == stat_val or a.current_status == status]
+            if strategy:
+                tracking_apps = [a for a in tracking_apps if a.resume_strategy == strategy]
+
+            return tracking_apps
         finally:
             if should_close:
                 db.close()
@@ -830,3 +987,45 @@ class DashboardService:
         data, meta = self.artifact_service.get_artifact(artifact_id)
         filename = meta.original_filename or f"{artifact_id}.bin"
         return data, meta.content_type, filename
+
+    def get_application_resume_pdf(self, application_id: str) -> Tuple[bytes, str, str]:
+        """Fetch binary PDF for an application resume for inline viewing."""
+        db, should_close = self._get_db_session()
+        try:
+            app_repo = ApplicationRepository(db)
+            app = app_repo.get_by_application_id(application_id) or app_repo.get_by_job_id_str(application_id)
+            job_id = app.job_id_str if app and app.job_id_str else application_id
+
+            # 1. Check Phase 10A Artifacts
+            artifacts = self.artifact_service.list_artifacts(application_id=application_id, job_id=job_id)
+            for art in artifacts:
+                if art.artifact_type.value == "TAILORED_RESUME_PDF" or art.content_type == "application/pdf":
+                    data, meta = self.artifact_service.get_artifact(art.artifact_id)
+                    return data, "application/pdf", meta.original_filename or f"resume_{job_id}.pdf"
+
+            # 2. Check application package or generated output
+            pkg = self.prep_service.get_application_package(job_id)
+            if pkg and pkg.resume_pdf_path and Path(pkg.resume_pdf_path).exists():
+                data = Path(pkg.resume_pdf_path).read_bytes()
+                return data, "application/pdf", f"resume_{job_id}.pdf"
+
+            # 3. Check strategy default generated path
+            strat = pkg.selected_resume_strategy if pkg else "backend_java"
+            pdf_path = Path(f"data/generated/{strat}/latest.pdf")
+            if pdf_path.exists():
+                return pdf_path.read_bytes(), "application/pdf", f"resume_{job_id}.pdf"
+
+            # 4. Check if tex exists and compile on demand
+            tex_path = Path(f"data/generated/{strat}/latest.tex")
+            if tex_path.exists():
+                from job_copilot.resume.renderer import LaTeXResumeRenderer
+                renderer = LaTeXResumeRenderer()
+                compiled_path, err, _ = renderer.compile_pdf(tex_path)
+                if compiled_path and compiled_path.exists():
+                    return compiled_path.read_bytes(), "application/pdf", f"resume_{job_id}.pdf"
+
+            raise FileNotFoundError(f"Compiled PDF not found for application '{application_id}'.")
+        finally:
+            if should_close:
+                db.close()
+
