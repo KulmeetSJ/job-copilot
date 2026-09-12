@@ -146,20 +146,50 @@ def test_api_dashboard_human_input(client_with_db):
     assert any("visa_status='No'" in note for note in data["user_notes"])
 
 
-def test_api_dashboard_confirm_flow(client_with_db):
-    """Ensure POST /api/dashboard/applications/{id}/confirm enforces exact SUBMIT keyword."""
-    client, _ = client_with_db
+def test_api_dashboard_confirm_flow(client_with_db, monkeypatch):
+    """Ensure POST /api/dashboard/applications/{id}/confirm enforces auth, ownership, token, and exact SUBMIT keyword."""
+    client, SessionLocal = client_with_db
 
-    # 1. Invalid keyword fails
+    # 1. Invalid keyword fails with 400 Bad Request
     bad_payload = {
         "task_id": "task-bw-confirm-001",
         "confirmation_token": "CONFIRM-VALID-TEST-TOKEN-12345",
         "confirm_text": "APPROVE",  # NOT SUBMIT
     }
     bad_res = client.post("/api/dashboard/applications/app-api-test-001/confirm", json=bad_payload)
-    assert bad_res.status_code in (400, 403)
+    assert bad_res.status_code == 400
+    assert "SUBMIT" in bad_res.json()["detail"]
 
-    # 2. Valid SUBMIT keyword succeeds
+    # 2. Missing or empty task_id fails with 403 Forbidden
+    missing_task_payload = {
+        "task_id": "",
+        "confirmation_token": "CONFIRM-VALID-TEST-TOKEN-12345",
+        "confirm_text": "SUBMIT",
+    }
+    res_no_task = client.post("/api/dashboard/applications/app-api-test-001/confirm", json=missing_task_payload)
+    assert res_no_task.status_code == 403
+
+    # 3. Mismatched application_id (task belongs to another application) fails with 403 Forbidden
+    mismatched_app_payload = {
+        "task_id": "task-bw-confirm-001",
+        "confirmation_token": "CONFIRM-VALID-TEST-TOKEN-12345",
+        "confirm_text": "SUBMIT",
+    }
+    res_mismatch = client.post("/api/dashboard/applications/app-other-unrelated-002/confirm", json=mismatched_app_payload)
+    assert res_mismatch.status_code == 403
+    assert "does not belong" in res_mismatch.json()["detail"]
+
+    # 4. Invalid confirmation token fails with 403 Forbidden
+    bad_token_payload = {
+        "task_id": "task-bw-confirm-001",
+        "confirmation_token": "WRONG-TOKEN-ABC",
+        "confirm_text": "SUBMIT",
+    }
+    res_bad_token = client.post("/api/dashboard/applications/app-api-test-001/confirm", json=bad_token_payload)
+    assert res_bad_token.status_code == 403
+    assert "Invalid confirmation token" in res_bad_token.json()["detail"]
+
+    # 5. Valid SUBMIT keyword and valid token succeeds with 200 OK
     valid_payload = {
         "task_id": "task-bw-confirm-001",
         "confirmation_token": "CONFIRM-VALID-TEST-TOKEN-12345",
@@ -171,6 +201,13 @@ def test_api_dashboard_confirm_flow(client_with_db):
     data = good_res.json()
     assert data["success"] is True
     assert data["status"] == "COMPLETED"
+    assert data["submission_reference"] is not None
+
+    # 6. Duplicate submission returns idempotent prevention message
+    dup_res = client.post("/api/dashboard/applications/app-api-test-001/confirm", json=valid_payload)
+    assert dup_res.status_code == 200
+    assert "Duplicate submission prevented" in dup_res.json()["message"]
+
 
 
 def test_api_dashboard_sources_and_sessions(client_with_db):

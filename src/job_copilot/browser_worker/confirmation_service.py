@@ -39,21 +39,38 @@ class HumanConfirmationService:
         self,
         task_id: str,
         request: HumanConfirmationRequest,
+        application_id: Optional[str] = None,
     ) -> HumanConfirmationResponse:
         """
         Validate explicit human confirmation and transition task to COMPLETED / SUBMITTED.
         Rejects invalid tokens, stale tokens, mismatched applications, or duplicate submissions.
         """
         # 1. Verify confirmation keyword
-        if request.confirm_text.strip().upper() != "SUBMIT":
+        if not request.confirm_text or request.confirm_text.strip().upper() != "SUBMIT":
             raise SubmissionSafetyError("Explicit confirmation keyword 'SUBMIT' is required.")
 
+        if not task_id or not task_id.strip():
+            raise SubmissionSafetyError("Browser task ID is required for confirmation.")
+
         # 2. Retrieve task
-        task = self.task_repo.get_by_task_id(task_id)
+        task = self.task_repo.get_by_task_id(task_id.strip())
         if not task:
             raise SubmissionSafetyError(f"Browser task '{task_id}' not found.")
 
-        # 3. Check duplicate submission guard
+        # 3. Verify task ownership against application_id if provided
+        if application_id:
+            clean_app_id = application_id.strip()
+            matches_app = (task.application_id == clean_app_id or task.job_id == clean_app_id)
+            if not matches_app:
+                app = self.app_repo.get_by_application_id(clean_app_id) or self.app_repo.get_by_job_id_str(clean_app_id)
+                if app and (app.application_id == task.application_id or app.job_id_str == task.job_id):
+                    matches_app = True
+            if not matches_app:
+                raise SubmissionSafetyError(
+                    f"Browser task '{task_id}' does not belong to application '{application_id}'."
+                )
+
+        # 4. Check duplicate submission guard
         if task.status == BrowserTaskStatus.COMPLETED:
             logger.info(f"Task '{task_id}' was already submitted. Returning existing submission record.")
             return HumanConfirmationResponse(

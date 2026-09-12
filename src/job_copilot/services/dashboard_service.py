@@ -765,7 +765,11 @@ class DashboardService:
             if should_close:
                 db.close()
 
-    def confirm_submission(self, payload: SubmissionConfirmPayload) -> SubmissionConfirmResponse:
+    def confirm_submission(
+        self,
+        payload: SubmissionConfirmPayload,
+        application_id: Optional[str] = None,
+    ) -> SubmissionConfirmResponse:
         """
         Gated submission path delegating directly to the authoritative HumanConfirmationService.
         Enforces confirm_text='SUBMIT' and valid confirmation_token.
@@ -784,6 +788,7 @@ class DashboardService:
             result = confirm_service.validate_and_confirm(
                 task_id=payload.task_id,
                 request=confirm_req,
+                application_id=application_id,
             )
 
             # Synchronize with Phase 8 Tracking Store

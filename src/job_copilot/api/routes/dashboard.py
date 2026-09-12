@@ -221,7 +221,7 @@ def confirm_application_submission(
             detail="Confirmation keyword must match exact word 'SUBMIT'.",
         )
     try:
-        return service.confirm_submission(payload)
+        return service.confirm_submission(payload, application_id=application_id)
     except SubmissionSafetyError as sse:
         logger.warning(f"Submission confirmation blocked for application '{application_id}': {sse}")
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(sse))
