@@ -70,6 +70,7 @@ def test_migration_upgrade_and_downgrade():
             "application_snapshots",
             "applications",
             "artifacts",
+            "browser_sessions",
             "browser_tasks",
             "copilot_queue",
             "job_provenance",

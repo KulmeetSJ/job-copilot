@@ -1,0 +1,779 @@
+# ==============================================================================
+# Job Copilot - Canonical Master Candidate Profile
+# ==============================================================================
+# Strictly factual, evidence-backed candidate profile.
+# Contains only facts explicitly supported by supplied source resumes or confirmed
+# by the candidate. Subjective adjectives, unverified proficiencies, and inferred
+# dates have been removed. Every record links to evidence in evidence.yaml.
+# ==============================================================================
+
+version: "1.0.0"
+last_updated: "2026-09-09"
+
+personal_info:
+  full_name: "Kulmeet Singh Jaggi"
+  email: "singhkulmeet3@gmail.com"
+  phone: "+91-7906490585"
+  location: "Pune, India"
+  headline: "Software Engineer"
+  summary: null  # Positioning summaries generated dynamically during resume tailoring
+  links:
+    - label: "Portfolio"
+      url: "https://portfolio-one-ashen-c8e7anc8i0.vercel.app/"
+      evidence_ids: ["PI-LINK-PORT-001"]
+    - label: "LinkedIn"
+      url: "https://linkedin.com/in/kulmeet-singh"
+      evidence_ids: ["PI-LINK-LI-001"]
+    - label: "GitHub"
+      url: "https://github.com/KulmeetSJ"
+      evidence_ids: ["PI-LINK-GH-001"]
+    - label: "LeetCode"
+      url: null  # LeetCode profile handle pending verification
+      evidence_ids: ["PI-LINK-LC-001"]
+  evidence_ids:
+    - "PI-NAME-001"
+    - "PI-EMAIL-001"
+    - "PI-PHONE-001"
+    - "PI-LOC-PUNE-001"
+
+work_authorization:
+  current_country: "India"
+  current_work_authorization: null  # Unverified until explicitly confirmed
+  international_sponsorship_required: true  # Required for international destinations
+  notes: "Open to international opportunities requiring visa sponsorship."
+
+education:
+  - institution: "Graphic Era Deemed to be University"
+    degree: "B.Tech"
+    field_of_study: "Computer Science and Engineering"
+    location: "Dehradun, India"
+    start_date: "2020-08"
+    end_date: "2024-06"
+    gpa: "8.81"
+    coursework: []
+    honors: []
+    evidence_ids:
+      - "EDU-BTECH-001"
+      - "EDU-CGPA-001"
+  - institution: "Grace Academy"
+    degree: "CBSE - Class 12th"
+    field_of_study: "Science (PCM)"
+    location: "Dehradun, India"
+    start_date: "2018-05"
+    end_date: "2020-07"
+    gpa: "85.85%"
+    coursework: []
+    honors: []
+    evidence_ids:
+      - "EDU-C12-001"
+
+employment:
+  - company: "HSBC"
+    role: "Software Engineer"
+    canonical_role: "Software Engineer"
+    historical_titles:
+      - "Software Engineer (Cloud & DevOps – Payments Data Platform)"
+      - "Software Engineer (Cloud & DevOps)"
+      - "Software Engineer"
+      - "Software Engineer – Full Stack (Java & React)"
+      - "Software Engineer (Backend & Payment Systems)"
+      - "Site Reliability Engineer (DevOps)"
+      - "Cloud Infrastructure Engineer"
+      - "Data Engineer (Data Platform & Analytics)"
+      - "Frontend Engineer (Full Stack)"
+      - "Processing Implementation Specialist"
+    team: "Payments Data Platform"
+    location: "Pune, India"
+    remote_status: null
+    start_date: "2024-07"
+    end_date: null
+    current: true
+    description: "Payments Data Platform team at HSBC"
+    domain: "Fintech & Electronic Payment Systems"
+    technologies:
+      - "GCP (Pub/Sub, BigQuery, Dataflow, Cloud Composer, GCS, IAM, Cloud Monitoring)"
+      - "Terraform"
+      - "Java (Spring Boot)"
+      - "Apache Beam"
+      - "Apache Airflow"
+      - "Jenkins"
+      - "Python"
+      - "Groovy"
+      - "SonarQube"
+      - "Checkmarx"
+      - "Nexus"
+    responsibilities:
+      - "Provisioned and managed GCP infrastructure using Terraform IaC modules."
+      - "Developed Apache Beam pipelines in Java (Spring Boot) for payment transaction ingestion into BigQuery via Dataflow."
+      - "Implemented Jenkins CI/CD automation for Cloud Composer (Airflow) DAG deployments."
+      - "Implemented GCP Cloud Monitoring dashboards and alerts for Dataflow and Airflow pipelines."
+      - "Developed automated scheduled shutdown/restart cycles for Dataflow jobs."
+    achievements:
+      - description: "Provisioned 2,000+ GCP resources using Terraform IaC modules (Pub/Sub, BigQuery, GCS, IAM)."
+        claim_type: "PROFESSIONAL"
+        metrics:
+          - "2,000+ GCP resources"
+          - "60% provisioning acceleration"
+        technologies:
+          - "Terraform"
+          - "GCP"
+          - "IAM"
+          - "Pub/Sub"
+          - "BigQuery"
+        impact: "Enforced consistent infrastructure provisioning"
+        evidence_ids:
+          - "EXP-HSBC-TF-001"
+          - "MET-001"
+          - "MET-002"
+      - description: "Built real-time Apache Beam pipelines in Java (Spring Boot) ingesting 10M+ daily payment transactions from GPP, POL, HUB sources into BigQuery via GCP Dataflow."
+        claim_type: "PROFESSIONAL"
+        metrics:
+          - "10M+ daily payment transactions"
+          - "99.9% uptime for Beam streaming pipeline"
+        technologies:
+          - "Java"
+          - "Spring Boot"
+          - "Apache Beam"
+          - "GCP Dataflow"
+          - "BigQuery"
+        impact: "Sub-second ingestion latency for payment transactions"
+        evidence_ids:
+          - "EXP-HSBC-BEAM-001"
+          - "MET-003"
+          - "MET-004"
+      - description: "Integrated static analysis (SonarQube, Checkmarx) and artifact management (Nexus) into Jenkins CI/CD for Cloud Composer (Apache Airflow) DAG deployments."
+        claim_type: "PROFESSIONAL"
+        metrics:
+          - "100+ Cloud Composer DAG workflows"
+        technologies:
+          - "Jenkins"
+          - "Apache Airflow"
+          - "Cloud Composer"
+          - "SonarQube"
+          - "Checkmarx"
+          - "Nexus"
+        impact: "Automated DAG deployments replacing legacy VM schedulers"
+        evidence_ids:
+          - "EXP-HSBC-CICD-001"
+          - "MET-007"
+      - description: "Automated weekend shutdown and restart cycles for Dataflow pipelines via Jenkins."
+        claim_type: "PROFESSIONAL"
+        metrics:
+          - "30% compute cost reduction"
+          - "$150K+ annual savings"
+        technologies:
+          - "Jenkins"
+          - "GCP Dataflow"
+        impact: "Reduced compute costs during non-production/weekend periods"
+        evidence_ids:
+          - "EXP-HSBC-COST-001"
+          - "MET-005"
+          - "MET-006"
+      - description: "Implemented GCP Cloud Monitoring dashboards and alerting policies."
+        claim_type: "PROFESSIONAL"
+        metrics:
+          - "40% MTTR / incident detection speedup"
+        technologies:
+          - "GCP Cloud Monitoring"
+        impact: "Faster incident detection for payment pipelines"
+        evidence_ids:
+          - "EXP-HSBC-OBS-001"
+          - "MET-008"
+      - description: "Contributed to PaymentsAI platform development across frontend, backend, orchestration service, and platform setup/configuration changes."
+        claim_type: "PROFESSIONAL"
+        metrics: []
+        technologies:
+          - "PaymentsAI"
+          - "Orchestration Service"
+          - "Google Kubernetes Engine (GKE)"
+          - "Helm"
+          - "Google ADK"
+        impact: "Platform setup and orchestration service development for payments platform"
+        evidence_ids:
+          - "EXP-HSBC-PAYMENTS-AI-001"
+    evidence_ids:
+      - "EXP-HSBC-001"
+      - "EXP-HSBC-TITLES-001"
+
+projects:
+  - name: "MCP Diagnostic Tools for Data Pipelines"
+    description: "Built MCP servers integrating Claude AI with GCP diagnostic tools for BigQuery data validation, Service Account access checks, and Dataflow lag detection."
+    claim_type: "PERSONAL_PROJECT"
+    deployment_status: "PORTFOLIO_DEMO"
+    technologies:
+      - "Model Context Protocol (MCP)"
+      - "Claude API"
+      - "Python"
+      - "GCP BigQuery"
+      - "GCP Dataflow"
+    architecture: "MCP Server integration with LLM agent"
+    responsibilities:
+      - "Built MCP servers connecting Claude AI with GCP diagnostic endpoints."
+      - "Implemented diagnostic checks for BigQuery data validation and Dataflow pipeline metrics."
+    achievements:
+      - description: "Built intelligent diagnostic system auto-identifying connectivity issues, data anomalies, and access problems."
+        claim_type: "PERSONAL_PROJECT"
+        metrics:
+          - "70% reduction in troubleshooting time"
+          - "95%+ diagnostic accuracy"
+        technologies:
+          - "MCP"
+          - "Claude API"
+          - "Python"
+        impact: "Automated root cause analysis in demo environment"
+        evidence_ids:
+          - "PRJ-MCP-001"
+          - "MET-011"
+          - "MET-012"
+    metrics:
+      - "70% reduction in troubleshooting time"
+      - "95%+ diagnostic accuracy"
+    links: []
+    start_date: null
+    end_date: null
+    evidence_ids:
+      - "PRJ-MCP-001"
+
+  - name: "Terraform Log Summarizer & Shift-Left Compliance Checker"
+    description: "Built Python-based compliance tool in Jenkins enforcing IAM role boundaries and summarizing Terraform execution plans."
+    claim_type: "PERSONAL_PROJECT"
+    deployment_status: "PORTFOLIO_DEMO"
+    technologies:
+      - "Python"
+      - "Groovy"
+      - "Jenkins"
+      - "Terraform"
+    architecture: "CI/CD pre-deployment validation stage"
+    responsibilities:
+      - "Enforced IAM role boundaries preventing non-privileged AD groups from restricted roles (OWNER/WRITER)."
+      - "Generated JSON summaries of infrastructure schema updates and IAM role additions."
+    achievements:
+      - description: "Caught critical misconfigurations early in the pipeline."
+        claim_type: "PERSONAL_PROJECT"
+        metrics:
+          - "12+ critical misconfigurations caught"
+          - "35% code review time reduction"
+        technologies:
+          - "Python"
+          - "Jenkins"
+          - "Terraform"
+        impact: "Early detection of IAM permission errors"
+        evidence_ids:
+          - "EXP-HSBC-SEC-001"
+          - "PRJ-TF-001"
+          - "MET-009"
+          - "MET-010"
+    metrics:
+      - "12+ critical misconfigurations caught"
+      - "35% code review time reduction"
+    links: []
+    start_date: null
+    end_date: null
+    evidence_ids:
+      - "PRJ-TF-001"
+
+  - name: "Smart Data Storage Pipeline"
+    description: "Engineered ETL pipeline in Python converting BigQuery table data into Parquet format with serverless Cloud Function lifecycle management."
+    claim_type: "PERSONAL_PROJECT"
+    deployment_status: "PORTFOLIO_DEMO"
+    technologies:
+      - "Python"
+      - "Google Cloud"
+      - "BigQuery"
+      - "Parquet"
+      - "Cloud Functions"
+      - "Google Cloud Storage"
+    architecture: "ETL with columnar storage and serverless lifecycle triggers"
+    responsibilities:
+      - "Engineered Python pipeline converting BigQuery data to Parquet."
+      - "Implemented Cloud Function to transition GCS files to Nearline/Coldline storage based on access timestamps."
+    achievements:
+      - description: "Converted BigQuery data to Parquet format to optimize storage costs."
+        claim_type: "PERSONAL_PROJECT"
+        metrics:
+          - "1TB+ BigQuery data converted"
+          - "55% query performance improvement"
+          - "50K+ files tiered to Coldline"
+        technologies:
+          - "Python"
+          - "BigQuery"
+          - "Cloud Functions"
+        impact: "Reduced storage footprint in project context"
+        evidence_ids:
+          - "PRJ-STORAGE-001"
+          - "MET-013"
+          - "MET-014"
+          - "MET-015"
+    metrics:
+      - "1TB+ BigQuery data converted"
+      - "55% query performance improvement"
+      - "50K+ files tiered to Coldline"
+    links: []
+    start_date: null
+    end_date: null
+    evidence_ids:
+      - "PRJ-STORAGE-001"
+
+  - name: "GuruGranthi – Services Marketplace"
+    description: "Built full-stack marketplace connecting families with verified religious service providers with multi-language support and Row Level Security."
+    claim_type: "PERSONAL_PROJECT"
+    deployment_status: "PORTFOLIO_DEMO"
+    technologies:
+      - "Next.js"
+      - "React"
+      - "TypeScript"
+      - "Supabase"
+      - "PostgreSQL"
+      - "Tailwind CSS"
+      - "shadcn/ui"
+    architecture: "Full-stack web application with Supabase backend and PostgreSQL RLS"
+    responsibilities:
+      - "Built responsive React UI (Tailwind CSS, shadcn/ui) supporting 3 languages."
+      - "Designed Row Level Security (RLS) policies for role-based access (Guest, Provider, Admin)."
+      - "Built event-driven notification system."
+      - "Owned system design, database schema, auth, and UI end-to-end."
+    achievements:
+      - description: "Built and verified multi-language marketplace supporting 3 languages with responsive UI."
+        claim_type: "PERSONAL_PROJECT"
+        metrics:
+          - "3 languages supported"
+        technologies:
+          - "React"
+          - "TypeScript"
+          - "Supabase"
+        impact: "Community marketplace platform"
+        evidence_ids:
+          - "PRJ-GG-001"
+    metrics:
+      - "3 languages supported"
+    links: []
+    start_date: null
+    end_date: null
+    evidence_ids:
+      - "PRJ-GG-001"
+
+  - name: "AI-Powered RFP Management System"
+    description: "Engineered platform transforming unstructured procurement text into structured RFPs using LLMs with vendor management and proposal parsing APIs."
+    claim_type: "PERSONAL_PROJECT"
+    deployment_status: "PORTFOLIO_DEMO"
+    technologies:
+      - "Next.js"
+      - "Node.js"
+      - "PostgreSQL"
+      - "LLM APIs"
+    architecture: "Next.js frontend, Node.js REST API, PostgreSQL database"
+    responsibilities:
+      - "Engineered platform to transform unstructured procurement text into structured RFPs."
+      - "Created APIs for vendor management, proposal parsing, and AI scoring."
+    achievements:
+      - description: "Automated RFP creation workflows."
+        claim_type: "PERSONAL_PROJECT"
+        metrics:
+          - "80% RFP drafting time reduction"
+        technologies:
+          - "Next.js"
+          - "Node.js"
+          - "LLM APIs"
+        impact: "Automated RFP drafting in project context"
+        evidence_ids:
+          - "PRJ-RFP-001"
+          - "MET-016"
+    metrics:
+      - "80% RFP drafting time reduction"
+    links: []
+    start_date: null
+    end_date: null
+    evidence_ids:
+      - "PRJ-RFP-001"
+
+  - name: "Distributed Rate Limiter Service"
+    description: "Built rate limiter service using token bucket algorithm with Redis and PostgreSQL."
+    claim_type: "BENCHMARK"
+    deployment_status: "PORTFOLIO_DEMO"
+    technologies:
+      - "Java"
+      - "Spring Boot"
+      - "Redis"
+      - "PostgreSQL"
+    architecture: "Microservice with Redis token bucket algorithm"
+    responsibilities:
+      - "Designed REST API with unit/integration testing."
+      - "Implemented token bucket rate limiter with Redis."
+    achievements:
+      - description: "Rate limiter service benchmarked for high throughput."
+        claim_type: "BENCHMARK"
+        metrics:
+          - "100K+ RPS benchmark"
+        technologies:
+          - "Java"
+          - "Spring Boot"
+          - "Redis"
+        impact: "Personal benchmark for high-throughput rate limiting"
+        evidence_ids:
+          - "PRJ-RL-001"
+          - "MET-017"
+    metrics:
+      - "100K+ RPS benchmark"
+    links: []
+    start_date: null
+    end_date: null
+    evidence_ids:
+      - "PRJ-RL-001"
+
+skills:
+  - category: "Languages"
+    skills:
+      - name: "Java"
+        status: "CONFIRMED"
+        evidence:
+          - type: "professional"
+            source_file: "Kulmeet_Singh_Resume.pdf"
+            source_section: "Work Experience - HSBC"
+            context: "Architected real-time Apache Beam pipelines in Java (Spring Boot)"
+            evidence_id: "EXP-HSBC-BEAM-001"
+          - type: "project"
+            source_file: "Kulmeet_Resume_Mastercard_Backend_Engineer.pdf"
+            source_section: "Projects - Rate Limiter"
+            context: "Built rate limiter in Java (Spring Boot)"
+            evidence_id: "PRJ-RL-001"
+
+      - name: "Python"
+        status: "CONFIRMED"
+        evidence:
+          - type: "professional"
+            source_file: "Kulmeet_Singh_Resume.pdf"
+            source_section: "Projects - Terraform Compliance Checker"
+            context: "Built Python-based shift-left security tool in Jenkins"
+            evidence_id: "PRJ-TF-001"
+          - type: "project"
+            source_file: "Kulmeet_Singh_Resume.pdf"
+            source_section: "Projects - MCP Diagnostics"
+            context: "Built MCP servers in Python integrating Claude AI with GCP"
+            evidence_id: "PRJ-MCP-001"
+
+      - name: "SQL"
+        status: "CONFIRMED"
+        evidence:
+          - type: "professional"
+            source_file: "Kulmeet_Singh_Resume.pdf"
+            source_section: "Work Experience - HSBC"
+            context: "Querying and ingesting payment transaction records into BigQuery"
+            evidence_id: "EXP-HSBC-BEAM-001"
+
+      - name: "JavaScript / TypeScript"
+        status: "CONFIRMED"
+        evidence:
+          - type: "project"
+            source_file: "Kulmeet_Resume_Java_React_FullStack.pdf"
+            source_section: "Projects - GuruGranthi"
+            context: "Built full-stack marketplace in React, Next.js, and TypeScript"
+            evidence_id: "PRJ-GG-001"
+
+      - name: "Groovy"
+        status: "CONFIRMED"
+        evidence:
+          - type: "professional"
+            source_file: "Kulmeet_Singh_Resume_2.pdf"
+            source_section: "Projects - Terraform Compliance Checker"
+            context: "Added two stages to Jenkins pipeline using Groovy"
+            evidence_id: "PRJ-TF-001"
+
+  - category: "Cloud & Infrastructure"
+    skills:
+      - name: "Google Cloud Platform (GCP)"
+        status: "CONFIRMED"
+        evidence:
+          - type: "professional"
+            source_file: "Kulmeet_Singh_Resume.pdf"
+            source_section: "Work Experience - HSBC"
+            context: "Managed GCP resources across Pub/Sub, BigQuery, GCS, IAM, Dataflow, Cloud Composer"
+            evidence_id: "EXP-HSBC-TF-001"
+
+      - name: "Terraform"
+        status: "CONFIRMED"
+        evidence:
+          - type: "professional"
+            source_file: "Kulmeet_Singh_Resume.pdf"
+            source_section: "Work Experience - HSBC"
+            context: "Authored reusable Terraform IaC modules to provision and manage 2,000+ GCP resources"
+            evidence_id: "EXP-HSBC-TF-001"
+
+      - name: "Docker"
+        status: "CONFIRMED"
+        evidence:
+          - type: "professional"
+            source_file: "Kulmeet_Singh_Resume.pdf"
+            source_section: "Technical Skills & Work Experience"
+            context: "Containerized service deployments and tooling"
+            evidence_id: "EXP-HSBC-001"
+
+      - name: "Google Kubernetes Engine (GKE)"
+        status: "CONFIRMED"
+        evidence:
+          - type: "training_exposure"
+            source_file: "candidate_confirmation_20260909"
+            source_section: "Professional Context"
+            context: "Training and hands-on exposure in GKE and cluster setup"
+            evidence_id: "SKL-GKE-001"
+
+      - name: "Helm Charts"
+        status: "CONFIRMED"
+        evidence:
+          - type: "training_exposure"
+            source_file: "candidate_confirmation_20260909"
+            source_section: "Professional Context"
+            context: "Training and hands-on exposure in Helm chart configuration"
+            evidence_id: "SKL-HELM-001"
+
+      - name: "AWS (EC2, S3, IAM)"
+        status: "NEEDS_REVIEW"
+        evidence:
+          - type: "skills_section"
+            source_file: "Kulmeet_Resume_JPMorgan_DevOps.pdf"
+            source_section: "Technical Skills"
+            context: "AWS (EC2, S3, IAM -- core services)"
+            evidence_id: null
+
+  - category: "Data Engineering & Messaging"
+    skills:
+      - name: "Apache Beam"
+        status: "CONFIRMED"
+        evidence:
+          - type: "professional"
+            source_file: "Kulmeet_Singh_Resume.pdf"
+            source_section: "Work Experience - HSBC"
+            context: "Architected real-time Apache Beam pipelines in Java"
+            evidence_id: "EXP-HSBC-BEAM-001"
+
+      - name: "GCP Dataflow"
+        status: "CONFIRMED"
+        evidence:
+          - type: "professional"
+            source_file: "Kulmeet_Singh_Resume.pdf"
+            source_section: "Work Experience - HSBC"
+            context: "Real-time streaming ingestion into BigQuery via Dataflow"
+            evidence_id: "EXP-HSBC-BEAM-001"
+
+      - name: "GCP BigQuery"
+        status: "CONFIRMED"
+        evidence:
+          - type: "professional"
+            source_file: "Kulmeet_Singh_Resume.pdf"
+            source_section: "Work Experience - HSBC"
+            context: "BigQuery datasets and ingestion from payment sources"
+            evidence_id: "EXP-HSBC-BEAM-001"
+
+      - name: "Apache Airflow / Cloud Composer"
+        status: "CONFIRMED"
+        evidence:
+          - type: "professional"
+            source_file: "Kulmeet_Singh_Resume_Final.pdf"
+            source_section: "Work Experience - HSBC"
+            context: "Cloud Composer DAG deployments replacing legacy VM schedulers"
+            evidence_id: "EXP-HSBC-CICD-001"
+
+      - name: "Google Cloud Pub/Sub"
+        status: "CONFIRMED"
+        evidence:
+          - type: "professional"
+            source_file: "Kulmeet_Singh_Resume.pdf"
+            source_section: "Work Experience - HSBC"
+            context: "Pub/Sub resource provisioning and event-driven data streaming"
+            evidence_id: "EXP-HSBC-TF-001"
+
+      - name: "Apache Kafka"
+        status: "NEEDS_REVIEW"
+        evidence:
+          - type: "skills_section"
+            source_file: "Kulmeet_Resume_Backend_v2.pdf"
+            source_section: "Technical Skills"
+            context: "Listed in Technical Skills"
+            evidence_id: null
+
+  - category: "Backend Frameworks & Databases"
+    skills:
+      - name: "Spring Boot"
+        status: "CONFIRMED"
+        evidence:
+          - type: "professional"
+            source_file: "Kulmeet_Singh_Resume.pdf"
+            source_section: "Work Experience - HSBC"
+            context: "Beam pipelines and backend services written in Java (Spring Boot)"
+            evidence_id: "EXP-HSBC-BEAM-001"
+
+      - name: "FastAPI"
+        status: "CONFIRMED"
+        evidence:
+          - type: "project"
+            source_file: "Kulmeet_Singh_Resume.pdf"
+            source_section: "Projects / Backend"
+            context: "REST API services and Python tools"
+            evidence_id: "PRJ-MCP-001"
+
+      - name: "PostgreSQL"
+        status: "CONFIRMED"
+        evidence:
+          - type: "project"
+            source_file: "Kulmeet_Resume_Java_React_FullStack.pdf"
+            source_section: "Projects - GuruGranthi"
+            context: "PostgreSQL database with Supabase Row Level Security"
+            evidence_id: "PRJ-GG-001"
+
+      - name: "Redis"
+        status: "CONFIRMED"
+        evidence:
+          - type: "project"
+            source_file: "Kulmeet_Resume_Mastercard_Backend_Engineer.pdf"
+            source_section: "Projects - Rate Limiter"
+            context: "Distributed token bucket rate limiter implementation in Redis"
+            evidence_id: "PRJ-RL-001"
+
+  - category: "CI/CD, DevOps & Security"
+    skills:
+      - name: "Jenkins"
+        status: "CONFIRMED"
+        evidence:
+          - type: "professional"
+            source_file: "Kulmeet_Singh_Resume_Final.pdf"
+            source_section: "Work Experience - HSBC"
+            context: "Jenkins CI/CD for Cloud Composer DAG releases and Dataflow automation"
+            evidence_id: "EXP-HSBC-CICD-001"
+
+      - name: "SonarQube"
+        status: "CONFIRMED"
+        evidence:
+          - type: "professional"
+            source_file: "Kulmeet_Singh_Resume_Final.pdf"
+            source_section: "Work Experience - HSBC"
+            context: "SonarQube static analysis integrated into Jenkins pipeline"
+            evidence_id: "EXP-HSBC-CICD-001"
+
+      - name: "Checkmarx"
+        status: "CONFIRMED"
+        evidence:
+          - type: "professional"
+            source_file: "Kulmeet_Singh_Resume_Final.pdf"
+            source_section: "Work Experience - HSBC"
+            context: "Checkmarx security scans integrated into Jenkins pipeline"
+            evidence_id: "EXP-HSBC-CICD-001"
+
+      - name: "Nexus"
+        status: "CONFIRMED"
+        evidence:
+          - type: "professional"
+            source_file: "Kulmeet_Singh_Resume_Final.pdf"
+            source_section: "Work Experience - HSBC"
+            context: "Nexus artifact management integrated into Jenkins pipeline"
+            evidence_id: "EXP-HSBC-CICD-001"
+
+      - name: "GCP Cloud Monitoring"
+        status: "CONFIRMED"
+        evidence:
+          - type: "professional"
+            source_file: "Kulmeet_Resume_JPMorgan_DevOps.pdf"
+            source_section: "Work Experience - HSBC"
+            context: "Cloud Monitoring dashboards, metrics, and alerting policies"
+            evidence_id: "EXP-HSBC-OBS-001"
+
+  - category: "AI & Developer Tooling"
+    skills:
+      - name: "Model Context Protocol (MCP)"
+        status: "CONFIRMED"
+        evidence:
+          - type: "project"
+            source_file: "Kulmeet_Singh_Resume.pdf"
+            source_section: "Projects - MCP Diagnostics"
+            context: "Built MCP servers integrating Claude AI with GCP diagnostic tools"
+            evidence_id: "PRJ-MCP-001"
+
+      - name: "Claude API"
+        status: "CONFIRMED"
+        evidence:
+          - type: "project"
+            source_file: "Kulmeet_Singh_Resume.pdf"
+            source_section: "Projects - MCP Diagnostics"
+            context: "Claude API integration for LLM-driven root cause analysis"
+            evidence_id: "PRJ-MCP-001"
+
+      - name: "Google ADK (Agent Development Kit)"
+        status: "CONFIRMED"
+        evidence:
+          - type: "training_exposure"
+            source_file: "candidate_confirmation_20260909"
+            source_section: "Professional Context"
+            context: "Training and hands-on exposure in Google ADK for PaymentsAI development"
+            evidence_id: "SKL-ADK-001"
+
+  - category: "Frontend"
+    skills:
+      - name: "React"
+        status: "CONFIRMED"
+        evidence:
+          - type: "project"
+            source_file: "Kulmeet_Resume_Java_React_FullStack.pdf"
+            source_section: "Projects - GuruGranthi"
+            context: "Built responsive React UI supporting 3 languages"
+            evidence_id: "PRJ-GG-001"
+
+      - name: "Next.js"
+        status: "CONFIRMED"
+        evidence:
+          - type: "project"
+            source_file: "Kulmeet_Resume_Java_React_FullStack.pdf"
+            source_section: "Projects - GuruGranthi"
+            context: "Built GuruGranthi services marketplace in Next.js"
+            evidence_id: "PRJ-GG-001"
+
+      - name: "Tailwind CSS"
+        status: "CONFIRMED"
+        evidence:
+          - type: "project"
+            source_file: "Kulmeet_Resume_Java_React_FullStack.pdf"
+            source_section: "Projects - GuruGranthi"
+            context: "Tailwind CSS and shadcn/ui component styling"
+            evidence_id: "PRJ-GG-001"
+
+certifications:
+  - name: "Google Cloud Professional Cloud Architect"
+    issuer: "Google Cloud"
+    issue_date: null
+    expiration_date: null
+    credential_id: null
+    credential_url: null
+    evidence_ids:
+      - "CERT-GCP-001"
+
+awards:
+  - title: "Pat on the Back Award Q1, 2026"
+    issuer: "HSBC Technology India (Vikram Kulkarni, Head HSBC Tech India & CIO MSS Operations)"
+    date: "2026-Q1"
+    description: "Official HSBC leadership award"
+    verified_document: "Kulmeet Singh Jaggi_Pat on the Back.pdf"
+    evidence_ids:
+      - "AWD-PATB-001"
+
+  - title: "Pat on the Back Award Q2, 2026"
+    issuer: "HSBC Technology India"
+    date: "2026-Q2"
+    description: "Official HSBC leadership award"
+    verified_document: null
+    evidence_ids:
+      - "AWD-PATB-002"
+
+  - title: "Flipkart Grid 5.0 – National Semi-Finalist"
+    issuer: "Flipkart"
+    date: "2023"
+    description: "National engineering competition semi-finalist"
+    verified_document: null
+    evidence_ids:
+      - "AWD-FLIPKART-001"
+
+domain_experience:
+  - domain: "Fintech & Electronic Payment Processing"
+    highlights:
+      - "Real-time payment transaction ingestion from GPP, POL, HUB host sources"
+      - "High-throughput, sub-second latency SLA requirements (10M+ daily transactions)"
+      - "Event-driven financial messaging with Google Cloud Pub/Sub"
+    evidence_ids:
+      - "EXP-HSBC-BEAM-001"
+      - "EXP-HSBC-TF-001"

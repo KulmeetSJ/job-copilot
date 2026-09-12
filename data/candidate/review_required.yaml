@@ -1,0 +1,184 @@
+# ==============================================================================
+# Job Copilot - Candidate Review & Decision Log
+# ==============================================================================
+# This file tracks all architectural and factual review decisions.
+# Resolved items preserve their decision history for auditability.
+# ==============================================================================
+
+decisions:
+  # ----------------------------------------------------------------------------
+  # A. Official Employment Title
+  # ----------------------------------------------------------------------------
+  - id: "DEC-TITLE-001"
+    section: "A. Official Employment Title"
+    topic: "Corporate HR Title at HSBC"
+    context: "10 historical positioning titles were found across resumes."
+    variants_in_resumes:
+      - "Software Engineer (Cloud & DevOps – Payments Data Platform)"
+      - "Software Engineer (Cloud & DevOps)"
+      - "Software Engineer"
+      - "Software Engineer – Full Stack (Java & React)"
+      - "Software Engineer (Backend & Payment Systems)"
+      - "Site Reliability Engineer (DevOps)"
+      - "Cloud Infrastructure Engineer"
+      - "Data Engineer (Data Platform & Analytics)"
+      - "Frontend Engineer (Full Stack)"
+      - "Processing Implementation Specialist"
+    question: "What is your official corporate job title at HSBC for canonical employment records?"
+    candidate_answer: "Software Engineer"
+    status: "RESOLVED"
+    resolution_notes: >-
+      Canonical role is locked as 'Software Engineer'. Historical variants are preserved
+      as positioning references only and must never overwrite the official HR title.
+
+  # ----------------------------------------------------------------------------
+  # B. Metrics Approval
+  # ----------------------------------------------------------------------------
+  - id: "DEC-MET-001"
+    section: "B. Metrics Approval"
+    topic: "HSBC Production Infrastructure Metrics"
+    metrics_reviewed:
+      - metric_id: "MET-001"
+        claim: "2,000+ GCP resources provisioned using Terraform"
+        status: "CONFIRMED"
+        metric_type: "PRODUCTION"
+      - metric_id: "MET-002"
+        claim: "60% infrastructure provisioning acceleration"
+        status: "CONFIRMED"
+        metric_type: "PRODUCTION"
+      - metric_id: "MET-003"
+        claim: "10M+ daily payment transactions ingested via Apache Beam"
+        status: "CONFIRMED"
+        metric_type: "PRODUCTION"
+      - metric_id: "MET-004"
+        claim: "99.9% uptime for Beam streaming pipeline"
+        status: "CONFIRMED"
+        metric_type: "PRODUCTION"
+        restriction: "Preserved strictly for the payment data streaming pipeline, not HSBC-wide."
+      - metric_id: "MET-005"
+        claim: "30% compute cost reduction (Dataflow weekend automation)"
+        status: "CONFIRMED"
+        metric_type: "PRODUCTION"
+      - metric_id: "MET-006"
+        claim: "$150K+ annual compute savings"
+        status: "CONFIRMED"
+        metric_type: "ESTIMATE"
+        restriction: "Annualized estimated impact associated with the 30% compute cost reduction."
+      - metric_id: "MET-007"
+        claim: "100+ Cloud Composer DAG deployments automated via Jenkins"
+        status: "CONFIRMED"
+        metric_type: "PRODUCTION"
+      - metric_id: "MET-008"
+        claim: "40% MTTR / incident detection speedup"
+        status: "CONFIRMED"
+        metric_type: "PRODUCTION"
+        restriction: "Tied strictly to the relevant monitoring/incident-response workflow."
+      - metric_id: "MET-009"
+        claim: "12+ critical misconfigurations caught by shift-left security tool"
+        status: "CONFIRMED"
+        metric_type: "PRODUCTION"
+      - metric_id: "MET-010"
+        claim: "35% code review time reduction via Terraform plan summarizer"
+        status: "CONFIRMED"
+        metric_type: "PRODUCTION"
+    candidate_answer: "Approved all metrics subject to stated context restrictions."
+    status: "RESOLVED"
+
+  - id: "DEC-MET-002"
+    section: "B. Metrics Approval"
+    topic: "Project Metrics"
+    metrics_reviewed:
+      - metric_id: "MET-011"
+        claim: "70% troubleshooting time reduction (MCP Diagnostics)"
+        status: "CONFIRMED"
+        metric_type: "PROJECT"
+      - metric_id: "MET-012"
+        claim: "95%+ diagnostic accuracy (MCP Diagnostics)"
+        status: "CONFIRMED"
+        metric_type: "PROJECT"
+        restriction: "Measured/claimed performance in demo context; not organization-wide production accuracy."
+      - metric_id: "MET-013"
+        claim: "1TB+ BigQuery data converted to Parquet (Smart Storage)"
+        status: "CONFIRMED"
+        metric_type: "PROJECT"
+      - metric_id: "MET-014"
+        claim: "55% query performance improvement (Parquet ETL)"
+        status: "CONFIRMED"
+        metric_type: "PROJECT"
+      - metric_id: "MET-015"
+        claim: "50K+ files tiered to Coldline (Smart Storage)"
+        status: "CONFIRMED"
+        metric_type: "PROJECT"
+      - metric_id: "MET-016"
+        claim: "80% RFP drafting time reduction (RFP Management)"
+        status: "CONFIRMED"
+        metric_type: "PROJECT"
+      - metric_id: "MET-017"
+        claim: "100K+ RPS benchmark (Distributed Rate Limiter)"
+        status: "CONFIRMED"
+        metric_type: "BENCHMARK"
+        restriction: "Personal project benchmark only. Never characterize as HSBC / production traffic."
+    candidate_answer: "Approved with benchmark/project constraints."
+    status: "RESOLVED"
+
+  # ----------------------------------------------------------------------------
+  # C. Technologies Needing Confirmation
+  # ----------------------------------------------------------------------------
+  - id: "DEC-TECH-001"
+    section: "C. Technologies Needing Confirmation"
+    topic: "Technologies appearing only in skills sections or specific resumes"
+    items:
+      - technology: "AWS (EC2, S3, IAM)"
+        decision: "Keep as NEEDS_REVIEW / POSITIONING_ONLY. Not confirmed professional experience."
+      - technology: "Kubernetes (GKE)"
+        decision: "Keep as NEEDS_REVIEW. Not confirmed HSBC professional experience."
+      - technology: "Apache Kafka"
+        decision: "Keep as NEEDS_REVIEW. Google Cloud Pub/Sub is the confirmed messaging broker."
+    candidate_answer: "Retain unconfirmed technologies as NEEDS_REVIEW / positioning only."
+    status: "RESOLVED"
+
+  # ----------------------------------------------------------------------------
+  # D. Project Context
+  # ----------------------------------------------------------------------------
+  - id: "DEC-PRJ-001"
+    section: "D. Project Context"
+    topic: "Origins & Deployment Status of Projects"
+    items:
+      - project: "MCP Diagnostic Tools for Data Pipelines"
+        deployment_status: "PORTFOLIO_DEMO"
+        notes: "Demo project, not an HSBC production system."
+      - project: "GuruGranthi – Services Marketplace"
+        deployment_status: "PORTFOLIO_DEMO"
+        notes: "Portfolio project. Confirmed tech/features preserved; unverified conversion metrics omitted."
+      - project: "Distributed Rate Limiter Service"
+        deployment_status: "PORTFOLIO_DEMO"
+        notes: "Personal project benchmarked at 100K+ RPS."
+    candidate_answer: "Confirmed all projects as PORTFOLIO_DEMO."
+    status: "RESOLVED"
+
+  # ----------------------------------------------------------------------------
+  # E. Certification Verification
+  # ----------------------------------------------------------------------------
+  - id: "DEC-CERT-001"
+    section: "E. Certification Verification"
+    topic: "Google Cloud Professional Cloud Architect"
+    decision: "Certification confirmed. Dates and credential verification URL left null until explicitly supplied."
+    candidate_answer: "Confirmed certification existence; left credential details null."
+    status: "RESOLVED"
+
+  # ----------------------------------------------------------------------------
+  # F. Personal & Job-Search Preferences
+  # ----------------------------------------------------------------------------
+  - id: "DEC-PREF-001"
+    section: "F. Personal/Job-Search Preferences"
+    topic: "Work Authorization & Search Parameters"
+    decisions:
+      - primary_location: "Pune, India"
+      - current_country: "India"
+      - current_work_authorization: null  # Awaiting explicit confirmation
+      - international_sponsorship_required: true  # For international destinations
+      - target_salary_min: null
+      - target_salary_currency: "INR"
+      - leetcode_url: "NEEDS_REVIEW (URL left null until verified)"
+    candidate_answer: "Configured preferences and work authorization parameters."
+    status: "RESOLVED"

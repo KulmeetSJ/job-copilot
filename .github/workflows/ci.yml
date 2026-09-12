@@ -26,6 +26,11 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
 
+      - name: Install System Dependencies (Tectonic LaTeX)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y tectonic libasound2 libgbm1
+
       - name: Install Playwright Browsers
         run: |
           playwright install --with-deps chromium

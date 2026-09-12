@@ -63,15 +63,19 @@ class PlaywrightBrowserAdapter(BrowserAdapter):
         self._context = None
         self._page = None
 
-    async def launch(self, headless: bool = True) -> None:
-        """Launch Playwright browser instance."""
+    async def launch(self, headless: bool = True, storage_state_path: Optional[str] = None) -> None:
+        """Launch Playwright browser instance, optionally restoring authenticated session state."""
         from playwright.async_api import async_playwright
         self._playwright = await async_playwright().start()
         self._browser = await self._playwright.chromium.launch(headless=headless)
-        self._context = await self._browser.new_context(
-            viewport={"width": 1280, "height": 900},
-            user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 JobCopilot/1.0",
-        )
+        context_kwargs = {
+            "viewport": {"width": 1280, "height": 900},
+            "user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 JobCopilot/1.0",
+        }
+        if storage_state_path and Path(storage_state_path).exists():
+            context_kwargs["storage_state"] = str(storage_state_path)
+
+        self._context = await self._browser.new_context(**context_kwargs)
         self._page = await self._context.new_page()
 
     async def navigate(self, url: str) -> str:

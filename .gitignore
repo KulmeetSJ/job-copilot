@@ -73,17 +73,20 @@ test-results/
 data/downloads/
 data/test_screenshots/
 
-# Sensitive Candidate Truth & Dynamic Runtime Stores
-data/candidate/
+# Sensitive Dynamic Runtime Stores & Artifacts
 data/jobs/
 data/applications/
 data/tracking/
 data/copilot/
 data/generated/
 data/resumes/
+data/artifacts/
+data/browser_sessions/
 data/extracted_raw_resumes.json
 
-# Explicitly track safe repository configurations and strategies
+# Explicitly track safe repository configurations, candidate truth fixtures, and strategies
+!data/candidate/
+!data/candidate/*.yaml
 !data/config/
 !data/config/*.yaml
 !data/resume_strategies/

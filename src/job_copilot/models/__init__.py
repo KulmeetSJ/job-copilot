@@ -13,6 +13,7 @@ from job_copilot.models.copilot import (
     SourceHealthRecord,
 )
 from job_copilot.models.artifact import ArtifactModel
+from job_copilot.models.browser_session import BrowserSessionModel
 from job_copilot.models.browser_task import BrowserTaskModel
 
 __all__ = [

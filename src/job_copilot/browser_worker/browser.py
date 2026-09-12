@@ -18,11 +18,11 @@ class BrowserManager:
         self.headless = headless
         self._adapter: Optional[PlaywrightBrowserAdapter] = None
 
-    async def get_adapter(self) -> PlaywrightBrowserAdapter:
-        """Initialize and return active Playwright browser adapter."""
+    async def get_adapter(self, storage_state_path: Optional[str] = None) -> PlaywrightBrowserAdapter:
+        """Initialize and return active Playwright browser adapter with optional session state."""
         if self._adapter is None:
             self._adapter = PlaywrightBrowserAdapter()
-            await self._adapter.launch(headless=self.headless)
+            await self._adapter.launch(headless=self.headless, storage_state_path=storage_state_path)
             logger.debug("BrowserManager launched Playwright browser instance.")
         return self._adapter
 

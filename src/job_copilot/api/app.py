@@ -9,6 +9,7 @@ from job_copilot import __version__
 from job_copilot.api.routes.analytics import router as analytics_router
 from job_copilot.api.routes.application_prep import router as application_prep_router
 from job_copilot.api.routes.browser import router as browser_router
+from job_copilot.api.routes.browser_sessions import router as browser_sessions_router
 from job_copilot.api.routes.browser_tasks import router as browser_tasks_router
 from job_copilot.api.routes.copilot import router as copilot_router
 from job_copilot.api.routes.discovery import router as discovery_router
@@ -40,8 +41,9 @@ app = FastAPI(
 
 app.include_router(analytics_router)
 app.include_router(application_prep_router)
-app.include_router(browser_router)
+app.include_router(browser_sessions_router)
 app.include_router(browser_tasks_router)
+app.include_router(browser_router)
 app.include_router(copilot_router)
 app.include_router(discovery_router)
 app.include_router(job_intelligence_router)

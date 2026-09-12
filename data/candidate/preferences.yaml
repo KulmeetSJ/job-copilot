@@ -1,0 +1,99 @@
+# ==============================================================================
+# Job Copilot - Candidate Preferences & Resume Positioning Strategies
+# ==============================================================================
+# This file stores candidate search parameters, career aspirations, and target
+# positioning strategies. These are NOT factual historical evidence; they guide
+# which facts future resume generation and job application workflows prioritize.
+#
+# IMPORTANT PRINCIPLE:
+# FACTS NEVER CHANGE BASED ON THE JOB.
+# POSITIONING CHANGES BASED ON THE JOB.
+# ==============================================================================
+
+preferences:
+  target_roles:
+    - "Software Engineer"
+    - "Backend Engineer"
+    - "Cloud Engineer"
+    - "DevOps / SRE"
+    - "Data Engineer"
+    - "Full Stack Engineer"
+  preferred_locations:
+    - "Pune, India"
+    - "Bangalore, India"
+    - "Hyderabad, India"
+    - "Remote"
+  target_salary_min: null  # Candidate to specify if desired
+  target_salary_currency: "INR"
+  remote_preference: "HYBRID"
+  open_to_relocation: true
+
+career_goals: >-
+  Advance as a Senior Backend / Cloud / Platform Engineer architecting resilient distributed systems,
+  cloud-native data platforms, and agentic AI developer tools.
+
+resume_positioning:
+  cloud_devops:
+    title: "Software Engineer | Cloud & DevOps"
+    tagline: "GCP Infrastructure as Code (Terraform), Jenkins CI/CD, Cloud Composer, and Dataflow pipelines."
+    prioritized_skills:
+      - "GCP"
+      - "Terraform"
+      - "Jenkins"
+      - "Apache Airflow / Cloud Composer"
+      - "Docker"
+      - "Python"
+
+  backend_java:
+    title: "Software Engineer | Backend & Distributed Systems"
+    tagline: "Java Spring Boot, high-throughput distributed systems, Redis caching, and PostgreSQL."
+    prioritized_skills:
+      - "Java"
+      - "Spring Boot"
+      - "PostgreSQL"
+      - "Redis"
+      - "REST APIs"
+      - "Microservices"
+
+  devops_sre:
+    title: "Site Reliability Engineer (DevOps)"
+    tagline: "CI/CD automation, DevSecOps, observability (Cloud Monitoring, Prometheus), and self-healing infrastructure."
+    prioritized_skills:
+      - "Jenkins"
+      - "Terraform"
+      - "DevSecOps"
+      - "SonarQube"
+      - "Checkmarx"
+      - "Cloud Monitoring"
+
+  data_engineer:
+    title: "Software Engineer | Data Platform"
+    tagline: "Apache Beam streaming pipelines, BigQuery data modeling, Parquet ETL, and Airflow orchestration."
+    prioritized_skills:
+      - "Apache Beam"
+      - "BigQuery"
+      - "Dataflow"
+      - "Apache Airflow"
+      - "Python"
+      - "SQL"
+
+  full_stack:
+    title: "Full Stack Software Engineer"
+    tagline: "React/Next.js frontends paired with Java Spring Boot / Node.js backend services and Supabase."
+    prioritized_skills:
+      - "React"
+      - "Next.js"
+      - "TypeScript"
+      - "Java"
+      - "Spring Boot"
+      - "Supabase"
+
+  fintech_specialist:
+    title: "Processing Implementation Specialist"
+    tagline: "Electronic payment processing architecture, API integration testing, and financial messaging standards."
+    prioritized_skills:
+      - "Payment Processing"
+      - "API Testing"
+      - "PostgreSQL"
+      - "Java"
+      - "Event-Driven Architecture"

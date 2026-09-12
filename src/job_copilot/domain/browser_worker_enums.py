@@ -25,3 +25,14 @@ class FieldAction(str, Enum):
     REQUIRES_USER_INPUT = "REQUIRES_USER_INPUT"
     DO_NOT_FILL = "DO_NOT_FILL"
     UNKNOWN = "UNKNOWN"
+
+
+class AuthenticatedSessionStatus(str, Enum):
+    """Status lifecycle for source-authenticated browser sessions."""
+
+    NOT_CONFIGURED = "NOT_CONFIGURED"
+    LOGIN_REQUIRED = "LOGIN_REQUIRED"
+    ACTIVE = "ACTIVE"
+    EXPIRED = "EXPIRED"
+    INVALID = "INVALID"
+    REVOKED = "REVOKED"

@@ -9,6 +9,8 @@ from sqlalchemy.orm import Session
 from job_copilot.browser.classifier import FieldClassifier
 from job_copilot.browser.mapper import FieldMapper
 from job_copilot.browser.models import BrowserElementType, BrowserField, FieldClassification
+from job_copilot.browser_worker.adapters import SourceAdapterRegistry
+from job_copilot.browser_worker.adapters.base import JobSourceBrowserAdapter
 from job_copilot.browser_worker.browser import BrowserManager, BrowserSessionAdapter
 from job_copilot.browser_worker.confirmation_service import HumanConfirmationService
 from job_copilot.browser_worker.exceptions import (
@@ -27,9 +29,13 @@ from job_copilot.browser_worker.safety import (
     mask_sensitive_value,
     validate_target_domain,
 )
+from job_copilot.browser_worker.session_manager import AuthenticatedSessionManager
+from job_copilot.browser_worker.session_store import BrowserSessionStore
 from job_copilot.domain.artifact_enums import ArtifactType
 from job_copilot.domain.browser_worker_enums import BrowserTaskStatus, FieldAction
+from job_copilot.domain.enums import ApplicationStatus
 from job_copilot.models.browser_task import BrowserTaskModel
+from job_copilot.repositories.application_repository import ApplicationRepository
 from job_copilot.repositories.browser_task_repository import BrowserTaskRepository
 from job_copilot.schemas.candidate import CandidateProfile
 from job_copilot.services.artifact_service import ArtifactService
@@ -40,7 +46,7 @@ logger = get_logger(__name__)
 
 class BrowserTaskExecutor:
     """
-    Executes browser automation tasks with strict safety constraints.
+    Executes browser automation tasks with strict safety constraints and source adapters.
     Reaches READY_FOR_REVIEW as a terminal preparation state and NEVER autonomously submits.
     """
 
@@ -50,12 +56,18 @@ class BrowserTaskExecutor:
         artifact_service: Optional[ArtifactService] = None,
         browser_manager: Optional[BrowserManager] = None,
         candidate_profile: Optional[CandidateProfile] = None,
+        adapter_registry: Optional[SourceAdapterRegistry] = None,
+        session_store: Optional[BrowserSessionStore] = None,
     ):
         self.db = db
         self.task_repo = BrowserTaskRepository(db)
+        self.app_repo = ApplicationRepository(db)
         self.artifact_service = artifact_service or ArtifactService(db=db)
         self.browser_manager = browser_manager or BrowserManager(headless=True)
         self.candidate_profile = candidate_profile or self._load_default_profile()
+        self.adapter_registry = adapter_registry or SourceAdapterRegistry()
+        self.session_store = session_store or BrowserSessionStore()
+        self.session_manager = AuthenticatedSessionManager(db=db, session_store=self.session_store)
         self.classifier = FieldClassifier()
         self.mapper = FieldMapper
 
@@ -87,9 +99,9 @@ class BrowserTaskExecutor:
         if not task:
             raise ValueError(f"Browser task '{task_id}' not found.")
 
-        # 1. Domain & URL Safety Validation
+        # 1. Resolve Source Adapter & Validate Domain
         try:
-            validate_target_domain(task.target_url)
+            adapter = self.adapter_registry.get_adapter(source=task.source, target_url=task.target_url)
         except DomainSecurityError as dse:
             logger.warning(f"Domain security check failed for task '{task_id}': {dse}")
             self.task_repo.update_status(
@@ -99,28 +111,62 @@ class BrowserTaskExecutor:
             )
             return self.task_repo.get_by_task_id(task_id)
 
-        # 2. Mark task as RUNNING
+        # 2. Check Duplicate Application Guard (Phase 8 Tracking)
+        if task.application_id:
+            try:
+                app = self.app_repo.get_by_application_id(task.application_id)
+                if app and app.status in (ApplicationStatus.APPLIED, ApplicationStatus.OFFER, ApplicationStatus.REJECTED, ApplicationStatus.WITHDRAWN):
+                    logger.warning(
+                        f"Task '{task_id}' targets already {app.status.value} application '{task.application_id}'. Blocking duplicate preparation."
+                    )
+                    self.task_repo.update_status(
+                        task_id,
+                        BrowserTaskStatus.BLOCKED,
+                        pause_reason=f"DUPLICATE_APPLICATION: Application '{task.application_id}' is already {app.status.value}",
+                    )
+                    self.task_repo.append_audit_event(
+                        task_id,
+                        {
+                            "event": "duplicate_application_blocked",
+                            "application_status": app.status.value,
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                        },
+                    )
+                    return self.task_repo.get_by_task_id(task_id)
+            except Exception as e:
+                logger.debug(f"Notice while checking application status: {e}")
+
+        # 3. Mark task as RUNNING
         self.task_repo.update_status(task_id, BrowserTaskStatus.RUNNING)
         self.task_repo.append_audit_event(
             task_id,
-            {"event": "task_started", "target_url": task.target_url, "timestamp": datetime.now(timezone.utc).isoformat()},
+            {"event": "task_started", "source": adapter.source_name, "target_url": task.target_url, "timestamp": datetime.now(timezone.utc).isoformat()},
         )
 
-        adapter = await self.browser_manager.get_adapter()
-        session = BrowserSessionAdapter(adapter)
+        # 4. Check for active authenticated session state
+        storage_state_path = None
+        active_session = self.session_manager.get_active_session_for_source(adapter.source_name)
+        if active_session:
+            sess_path = self.session_store.get_session_path(active_session.session_id)
+            if sess_path.exists():
+                storage_state_path = str(sess_path)
+                logger.info(f"Restoring authenticated session '{active_session.session_id}' for '{adapter.source_name}'")
+
+        browser_adapter = await self.browser_manager.get_adapter(storage_state_path=storage_state_path)
+        session = BrowserSessionAdapter(browser_adapter)
 
         try:
-            # 3. Navigation
+            # 5. Navigation
             await session.navigate(task.target_url)
             await session.wait_for_idle()
 
-            # 4. Initial Screenshot -> ArtifactService
+            # 6. Initial Screenshot -> ArtifactService
             initial_screenshot_art_id = await self._capture_and_store_screenshot(
                 session, task_id, task.application_id, "initial_page.png"
             )
 
-            # 5. Check Anti-Bot / CAPTCHA
-            if await session.is_captcha_present():
+            # 7. Check Anti-Bot / CAPTCHA via Adapter
+            if await adapter.detect_captcha(session):
                 logger.warning(f"CAPTCHA challenge detected on '{task.target_url}'. Pausing task '{task_id}'.")
                 self.task_repo.update_status(
                     task_id,
@@ -132,21 +178,37 @@ class BrowserTaskExecutor:
                 )
                 return self.task_repo.get_by_task_id(task_id)
 
-            # 6. Check Login Wall
-            if await session.is_login_required():
+            # 8. Check Login Wall via Adapter
+            if await adapter.detect_login(session):
                 logger.info(f"Login authentication required on '{task.target_url}'. Pausing task '{task_id}'.")
                 self.task_repo.update_status(
                     task_id,
                     BrowserTaskStatus.LOGIN_REQUIRED,
                     pause_reason="Authentication login wall detected",
                 )
+                if active_session:
+                    self.session_manager.mark_login_required(active_session.session_id)
                 self.task_repo.append_audit_event(
                     task_id, {"event": "login_required", "timestamp": datetime.now(timezone.utc).isoformat()}
                 )
                 return self.task_repo.get_by_task_id(task_id)
 
-            # 7. Form Inspection & Field Classification
-            fields = await session.inspect_fields()
+            # 9. Verify Job Identity (Wrong-Job Protection)
+            id_matched, id_reason = await adapter.verify_job_identity(session, expected_company=task.job_id, expected_title=task.application_id)
+            if not id_matched:
+                logger.warning(f"Job identity mismatch for task '{task_id}': {id_reason}")
+                self.task_repo.update_status(
+                    task_id,
+                    BrowserTaskStatus.BLOCKED,
+                    pause_reason=f"JOB_IDENTITY_MISMATCH: {id_reason}",
+                )
+                self.task_repo.append_audit_event(
+                    task_id, {"event": "job_identity_mismatch", "reason": id_reason, "timestamp": datetime.now(timezone.utc).isoformat()}
+                )
+                return self.task_repo.get_by_task_id(task_id)
+
+            # 10. Form Inspection & Field Classification via Adapter
+            fields = await adapter.inspect_form(session)
             fields_summary: List[DetectedFieldInfo] = []
             requires_user_input = False
             pause_reason = None
