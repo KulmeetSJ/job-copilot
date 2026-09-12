@@ -50,14 +50,23 @@ export const ApplicationReviewView: React.FC<ApplicationReviewViewProps> = ({
   // Submission Modal state
   const [showSubmissionModal, setShowSubmissionModal] = useState(false);
 
+  const [listLoading, setListLoading] = useState(true);
+
   // Load application list
   useEffect(() => {
-    api.listApplications().then((apps) => {
-      setApplications(apps);
-      if (!selectedAppId && apps.length > 0) {
-        setSelectedAppId(apps[0].application_id || apps[0].job_id_str || apps[0].id.toString());
-      }
-    });
+    setListLoading(true);
+    api.listApplications()
+      .then((apps) => {
+        setApplications(apps);
+        if (!selectedAppId && apps.length > 0) {
+          setSelectedAppId(apps[0].application_id || apps[0].job_id_str || apps[0].id.toString());
+        }
+        setListLoading(false);
+      })
+      .catch((err) => {
+        console.error(err);
+        setListLoading(false);
+      });
   }, []);
 
   // Update selected app if prop changes
@@ -172,19 +181,25 @@ export const ApplicationReviewView: React.FC<ApplicationReviewViewProps> = ({
           <select
             value={selectedAppId}
             onChange={(e) => setSelectedAppId(e.target.value)}
-            className="flex-1 md:flex-initial px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-blue-500 md:max-w-xs"
+            disabled={applications.length === 0}
+            className="flex-1 md:flex-initial px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-blue-500 md:max-w-xs disabled:opacity-50"
           >
-            {applications.map((app) => (
-              <option key={app.application_id || app.job_id_str} value={app.application_id || app.job_id_str}>
-                {app.company} — {app.role} ({app.status})
-              </option>
-            ))}
+            {applications.length === 0 ? (
+              <option value="">No applications prepared</option>
+            ) : (
+              applications.map((app) => (
+                <option key={app.application_id || app.job_id_str} value={app.application_id || app.job_id_str}>
+                  {app.company} — {app.role} ({app.status})
+                </option>
+              ))
+            )}
           </select>
 
           <button
             onClick={handlePrepareAgain}
+            disabled={applications.length === 0}
             title="Reprepare application materials"
-            className="px-3 py-2 text-xs font-semibold bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/30 rounded-lg transition-colors flex items-center space-x-1.5 shrink-0"
+            className="px-3 py-2 text-xs font-semibold bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/30 rounded-lg transition-colors flex items-center space-x-1.5 shrink-0 disabled:opacity-40"
           >
             <Sparkles className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Reprepare</span>
@@ -192,9 +207,34 @@ export const ApplicationReviewView: React.FC<ApplicationReviewViewProps> = ({
         </div>
       </div>
 
-      {loading || !detail ? (
+      {listLoading || (selectedAppId && loading) ? (
         <div className="flex items-center justify-center min-h-[350px]">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+        </div>
+      ) : applications.length === 0 ? (
+        <div className="glass-panel p-8 sm:p-12 rounded-xl text-center space-y-4 max-w-xl mx-auto border border-slate-800 my-6">
+          <div className="w-12 h-12 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20 flex items-center justify-center mx-auto">
+            <FileText className="w-6 h-6" />
+          </div>
+          <div className="space-y-1.5">
+            <h3 className="text-base font-bold text-white">No Applications Prepared for Review Yet</h3>
+            <p className="text-xs text-slate-400 max-w-sm mx-auto leading-relaxed">
+              When you find a high-fit role in your <b>Priority Queue</b>, click <b>"Prepare Application"</b> to tailor your resume, generate answers grounded in verified evidence, and review everything here.
+            </p>
+          </div>
+          <div className="pt-2">
+            <button
+              onClick={() => onNavigateTab('queue')}
+              className="px-5 py-2.5 text-xs font-semibold bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white rounded-lg transition-colors shadow-sm inline-flex items-center space-x-2"
+            >
+              <span>Explore Priority Queue</span>
+              <ExternalLink className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      ) : !detail ? (
+        <div className="glass-panel p-8 rounded-xl text-center text-slate-400 my-6">
+          <p>Please select an application to review.</p>
         </div>
       ) : (
         <div className="space-y-4 sm:space-y-6">
