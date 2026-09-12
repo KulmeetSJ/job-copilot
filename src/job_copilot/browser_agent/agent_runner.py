@@ -137,12 +137,17 @@ class LocalBrowserAgentRunner:
         task_id = task["task_id"]
         source = task.get("source", "generic")
         target_url = task["target_url"]
-        status = task.get("status", "QUEUED")
+        action = task.get("action", "")
+        is_submission = (
+            action == "EXECUTE_SUBMISSION"
+            or status in ("SUBMISSION_AUTHORIZED", "SUBMISSION_RUNNING")
+        )
 
         print(f"\n>>> [TASK CLAIMED] ID: {task_id}")
         print(f"    Source:     {source}")
         print(f"    Target URL: {target_url}")
         print(f"    Status:     {status}")
+        print(f"    Action:     {'EXECUTE_SUBMISSION' if is_submission else 'PREPARE_APPLICATION'}")
 
         # 1. Local defense-in-depth URL security validation (SSRF / local network / scheme protection)
         try:
@@ -168,7 +173,8 @@ class LocalBrowserAgentRunner:
                 self._active_session_adapter = BrowserSessionAdapter(self._active_adapter)
 
             sess = self._active_session_adapter
-            await self.client.update_task_status(task_id=task_id, status="RUNNING")
+            if not is_submission:
+                await self.client.update_task_status(task_id=task_id, status="RUNNING")
 
             # 3. Navigate if not already on target page
             current_url = await sess.get_current_url()
@@ -219,8 +225,8 @@ class LocalBrowserAgentRunner:
                 # No blockers detected
                 break
 
-            # 5. Execute Form Preparation or Final Submission based on status
-            if status == "SUBMISSION_AUTHORIZED":
+            # 5. Execute Form Preparation or Final Submission based on status / action
+            if is_submission:
                 # User has confirmed submission in dashboard with 'SUBMIT' keyword!
                 await self._execute_authorized_submission(sess, source_adapter, task_id)
             else:
