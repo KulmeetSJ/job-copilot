@@ -166,16 +166,42 @@ def test_dynamic_port_configuration():
     assert s_api_port.api_port == 9000
 
 
-def test_dockerignore_candidate_data_isolation():
-    """Verify that .dockerignore excludes sensitive candidate data and runtime artifacts."""
+def test_dockerignore_and_dockerfile_data_isolation():
+    """Verify that .dockerignore excludes ephemeral runtime artifacts while Dockerfile includes candidate truth."""
     root = Path.cwd()
     dockerignore = root / ".dockerignore"
     assert dockerignore.exists(), ".dockerignore must exist"
     di_content = dockerignore.read_text(encoding="utf-8")
-    assert "data/candidate/" in di_content
     assert "data/applications/" in di_content
     assert "data/jobs/" in di_content
     assert "data/tracking/" in di_content
     assert "data/copilot/" in di_content
+    assert "data/artifacts/" in di_content
     assert ".env" in di_content
+
+    dockerfile = root / "Dockerfile"
+    assert dockerfile.exists(), "Dockerfile must exist"
+    df_content = dockerfile.read_text(encoding="utf-8")
+    assert "COPY data/candidate/ ./data/candidate/" in df_content
+    assert "COPY data/resume_strategies/ ./data/resume_strategies/" in df_content
+
+
+def test_candidate_truth_not_accessible_via_web_routes(client):
+    """Verify candidate truth is strictly internal and never accessible via HTTP/static routes."""
+    # 1. /static should not serve candidate files
+    r_static = client.get("/static/data/candidate/master_profile.yaml")
+    assert r_static.status_code == 404
+
+    # 2. /assets should not serve candidate files
+    r_assets = client.get("/assets/data/candidate/master_profile.yaml")
+    assert r_assets.status_code in (404, 405)
+
+    # 3. Path traversal attempts against static routes
+    r_traversal = client.get("/static/../data/candidate/master_profile.yaml")
+    assert r_traversal.status_code in (400, 404)
+
+    # 4. Artifact content route rejects unauthenticated or arbitrary candidate file requests
+    r_artifact = client.get("/api/dashboard/artifacts/master_profile.yaml/content")
+    assert r_artifact.status_code in (401, 404)
+
 

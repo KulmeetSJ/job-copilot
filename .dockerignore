@@ -22,8 +22,7 @@ htmlcov/
 .env.*
 !.env.example
 
-# Sensitive Candidate Truth & Dynamic Runtime Stores
-data/candidate/
+# Dynamic Runtime Stores & Ephemeral Artifacts
 data/jobs/
 data/applications/
 data/tracking/

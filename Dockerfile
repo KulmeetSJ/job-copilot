@@ -46,6 +46,7 @@ WORKDIR /app
 # Copy dependency definition and source code
 COPY pyproject.toml README.md ./
 COPY src/ ./src/
+COPY data/candidate/ ./data/candidate/
 COPY data/config/ ./data/config/
 COPY data/resume_strategies/ ./data/resume_strategies/
 COPY data/sample_jds/ ./data/sample_jds/
