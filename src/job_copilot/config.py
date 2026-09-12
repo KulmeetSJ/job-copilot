@@ -57,10 +57,14 @@ class Settings(BaseSettings):
         default="http://localhost:11434", alias="OLLAMA_BASE_URL"
     )
 
-    # Dashboard Security (Phase 11)
+    # Dashboard Security & CORS (Phase 11 / Phase 12)
     dashboard_api_key: Optional[str] = Field(
         default=None,
         alias="DASHBOARD_API_KEY",
+    )
+    cors_allowed_origins: str = Field(
+        default="http://localhost:3000,http://localhost:5173,http://127.0.0.1:3000,http://127.0.0.1:5173",
+        alias="CORS_ALLOWED_ORIGINS",
     )
 
     # Artifact Storage (Phase 10A)
@@ -96,6 +100,23 @@ class Settings(BaseSettings):
         default=50 * 1024 * 1024,  # 50MB
         alias="ARTIFACT_MAX_SIZE_BYTES",
     )
+
+    @property
+    def is_production(self) -> bool:
+        """Check if running in production mode."""
+        return self.app_env.lower() in ("production", "prod")
+
+    @property
+    def is_development(self) -> bool:
+        """Check if running in development mode."""
+        return self.app_env.lower() in ("development", "dev", "local")
+
+    @property
+    def parsed_cors_origins(self) -> list[str]:
+        """Return list of parsed CORS origins."""
+        raw = self.cors_allowed_origins or ""
+        origins = [o.strip() for o in raw.split(",") if o.strip()]
+        return origins
 
     @property
     def is_sqlite(self) -> bool:

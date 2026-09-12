@@ -3,10 +3,15 @@
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Dict
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI, HTTPException, Request, status
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import Response
 import uvicorn
 
 from job_copilot import __version__
+from job_copilot.api.auth import require_dashboard_auth
 from job_copilot.api.routes.analytics import router as analytics_router
 from job_copilot.api.routes.application_prep import router as application_prep_router
 from job_copilot.api.routes.browser import router as browser_router
@@ -25,6 +30,40 @@ from job_copilot.utils.logging import get_logger
 logger = get_logger(__name__)
 
 
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """
+    Attach standard defensive HTTP security headers to all HTTP responses.
+    """
+
+    async def dispatch(self, request: Request, call_next):
+        response: Response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "geolocation=(), camera=(), microphone=()"
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-inline'; "
+            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+            "font-src 'self' https://fonts.gstatic.com data:; "
+            "img-src 'self' data: blob:; "
+            "connect-src 'self'; "
+            "frame-ancestors 'none'; "
+            "object-src 'none'; "
+            "base-uri 'self';"
+        )
+        # Apply HSTS on HTTPS requests or in production
+        is_https = (
+            request.url.scheme == "https"
+            or request.headers.get("x-forwarded-proto", "").lower() == "https"
+        )
+        if is_https or settings.is_production:
+            response.headers["Strict-Transport-Security"] = (
+                "max-age=31536000; includeSubDomains"
+            )
+        return response
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan context for startup and shutdown events."""
@@ -41,17 +80,64 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# 1. Security Headers Middleware
+app.add_middleware(SecurityHeadersMiddleware)
+
+# 2. CORS Middleware with safe origin parsing and production protection
+cors_origins = settings.parsed_cors_origins
+if settings.is_production:
+    if "*" in cors_origins:
+        logger.warning(
+            "Wildcard origin '*' is unsafe for production with credentials. Removing '*' from allowed origins."
+        )
+        cors_origins = [o for o in cors_origins if o != "*"]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=cors_origins if cors_origins else ["http://localhost:3000", "http://localhost:5173"],
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+    allow_headers=["*"],
+)
+
+
+# 3. Global exception handler to mask internal stack traces in production
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    if isinstance(exc, HTTPException):
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"detail": exc.detail},
+            headers=getattr(exc, "headers", None),
+        )
+
+    logger.error(
+        f"Unhandled exception during {request.method} {request.url.path}: {exc}",
+        exc_info=True,
+    )
+    if settings.is_production or not settings.debug:
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"detail": "An internal server error occurred."},
+        )
+    return JSONResponse(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content={"detail": str(exc)},
+    )
+
+
+# 4. Include feature routers with require_dashboard_auth protection
 app.include_router(dashboard_router)
-app.include_router(analytics_router)
-app.include_router(application_prep_router)
-app.include_router(browser_sessions_router)
-app.include_router(browser_tasks_router)
-app.include_router(browser_router)
-app.include_router(copilot_router)
-app.include_router(discovery_router)
-app.include_router(job_intelligence_router)
-app.include_router(resume_router)
-app.include_router(tracking_router)
+app.include_router(analytics_router, dependencies=[Depends(require_dashboard_auth)])
+app.include_router(application_prep_router, dependencies=[Depends(require_dashboard_auth)])
+app.include_router(browser_sessions_router, dependencies=[Depends(require_dashboard_auth)])
+app.include_router(browser_tasks_router, dependencies=[Depends(require_dashboard_auth)])
+app.include_router(browser_router, dependencies=[Depends(require_dashboard_auth)])
+app.include_router(copilot_router, dependencies=[Depends(require_dashboard_auth)])
+app.include_router(discovery_router, dependencies=[Depends(require_dashboard_auth)])
+app.include_router(job_intelligence_router, dependencies=[Depends(require_dashboard_auth)])
+app.include_router(resume_router, dependencies=[Depends(require_dashboard_auth)])
+app.include_router(tracking_router, dependencies=[Depends(require_dashboard_auth)])
 
 
 @app.get("/health", summary="Health Check")
@@ -63,8 +149,6 @@ def health_check() -> Dict[str, str]:
 @app.get("/ready", summary="Readiness Check")
 def readiness_check() -> Dict[str, str]:
     """Readiness probe checking database connectivity without leaking credentials."""
-    from fastapi import HTTPException, status
-
     db_healthy = check_db_connection()
     if not db_healthy:
         raise HTTPException(

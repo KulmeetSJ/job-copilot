@@ -1,6 +1,7 @@
 """High-level Dashboard Service coordinating human review, queue, match evidence, and control workflows."""
 
 from datetime import datetime, timedelta, timezone
+import ipaddress
 import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -283,6 +284,9 @@ class DashboardService:
             job_repo = JobRepository(db)
             job_model = job_repo.get_by_job_id(job_id)
             copilot_job = self.copilot_service.get_job(job_id)
+
+            if not job_model and not copilot_job:
+                raise FileNotFoundError(f"Job '{job_id}' not found.")
 
             # Retrieve or compute assessment
             assessment: Optional[JobAssessment] = None
@@ -1016,8 +1020,12 @@ class DashboardService:
                 data = Path(pkg.resume_pdf_path).read_bytes()
                 return data, "application/pdf", f"resume_{job_id}.pdf"
 
-            # 3. Check strategy default generated path
-            strat = pkg.selected_resume_strategy if pkg else "backend_java"
+            # 3. Check strategy default generated path with locked strategy whitelist
+            LOCKED_STRATEGIES = {"backend_java", "cloud_devops", "data_engineering", "full_stack", "sre_devops"}
+            strat = pkg.selected_resume_strategy if (pkg and pkg.selected_resume_strategy in LOCKED_STRATEGIES) else "backend_java"
+            if strat not in LOCKED_STRATEGIES:
+                strat = "backend_java"
+
             pdf_path = Path(f"data/generated/{strat}/latest.pdf")
             if pdf_path.exists():
                 return pdf_path.read_bytes(), "application/pdf", f"resume_{job_id}.pdf"
@@ -1059,8 +1067,33 @@ class DashboardService:
         if not hostname:
             raise ValueError("Target URL has no valid hostname.")
 
-        # SSRF Safeguards: reject loopback, internal, and private IPs
-        blocked_hosts = {"localhost", "127.0.0.1", "0.0.0.0", "::1", "test.local"}
+        # Check IP literal directly (IPv4 and IPv6)
+        try:
+            ip_obj = ipaddress.ip_address(hostname.strip("[]"))
+            if (
+                ip_obj.is_private
+                or ip_obj.is_loopback
+                or ip_obj.is_link_local
+                or ip_obj.is_reserved
+                or ip_obj.is_multicast
+                or ip_obj.is_unspecified
+            ):
+                raise ValueError("Unsafe URL: Local and private network addresses are not permitted.")
+        except ValueError as ip_err:
+            if "Unsafe URL" in str(ip_err):
+                raise
+            # Hostname is a domain name, proceed to domain checks
+
+        # SSRF Safeguards: reject loopback, internal, metadata, and private hostnames
+        blocked_hosts = {
+            "localhost",
+            "127.0.0.1",
+            "0.0.0.0",
+            "::1",
+            "test.local",
+            "metadata.google.internal",
+            "instance-data",
+        }
         if (
             hostname in blocked_hosts
             or hostname.startswith("127.")
@@ -1069,6 +1102,7 @@ class DashboardService:
             or hostname.startswith("169.254.")
             or hostname.endswith(".local")
             or hostname.endswith(".internal")
+            or hostname.endswith(".localhost")
         ):
             raise ValueError("Unsafe URL: Local and private network addresses are not permitted.")
 

@@ -30,6 +30,8 @@ data/tracking/
 data/copilot/
 data/generated/
 data/resumes/
+data/artifacts/
+data/browser_sessions/
 data/downloads/
 data/test_screenshots/
 data/*.sqlite
