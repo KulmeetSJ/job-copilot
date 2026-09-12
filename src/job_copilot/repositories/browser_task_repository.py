@@ -2,7 +2,7 @@
 
 from datetime import datetime, timezone
 from typing import List, Optional
-from sqlalchemy import or_, select
+from sqlalchemy import and_, or_, select, update
 from sqlalchemy.orm import Session
 
 from job_copilot.domain.browser_worker_enums import BrowserTaskStatus
@@ -60,11 +60,20 @@ class BrowserTaskRepository:
         )
         return self.db.scalars(stmt).first()
 
-    def list_by_status(self, status: BrowserTaskStatus, limit: int = 50) -> List[BrowserTaskModel]:
-        """List tasks matching a given state."""
+    def list_by_status(
+        self,
+        status: BrowserTaskStatus,
+        execution_mode: Optional[str] = None,
+        limit: int = 50,
+    ) -> List[BrowserTaskModel]:
+        """List tasks matching a given state and optional execution mode."""
+        clauses = [BrowserTaskModel.status == status]
+        if execution_mode is not None:
+            clauses.append(BrowserTaskModel.execution_mode == execution_mode)
+
         stmt = (
             select(BrowserTaskModel)
-            .where(BrowserTaskModel.status == status)
+            .where(and_(*clauses))
             .order_by(BrowserTaskModel.created_at.asc())
             .limit(limit)
         )
@@ -139,19 +148,24 @@ class BrowserTaskRepository:
         expected_status: BrowserTaskStatus,
         new_status: BrowserTaskStatus,
         worker_id: str,
+        expected_execution_mode: Optional[str] = None,
     ) -> bool:
         """
-        Atomically claim a task by comparing expected status.
-        Guarantees that multiple concurrent workers cannot claim the same task.
+        Atomically claim a task by comparing expected status and execution mode.
+        Guarantees that multiple concurrent workers / local agents cannot claim the same task.
         """
         from sqlalchemy import update
         now = datetime.now(timezone.utc)
+        where_clauses = [
+            BrowserTaskModel.task_id == task_id,
+            BrowserTaskModel.status == expected_status,
+        ]
+        if expected_execution_mode is not None:
+            where_clauses.append(BrowserTaskModel.execution_mode == expected_execution_mode)
+
         stmt = (
             update(BrowserTaskModel)
-            .where(
-                BrowserTaskModel.task_id == task_id,
-                BrowserTaskModel.status == expected_status,
-            )
+            .where(and_(*where_clauses))
             .values(
                 status=new_status,
                 worker_id=worker_id,

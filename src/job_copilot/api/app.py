@@ -12,6 +12,7 @@ import uvicorn
 
 from job_copilot import __version__
 from job_copilot.api.auth import require_dashboard_auth
+from job_copilot.api.routes.agent_protocol import router as agent_protocol_router
 from job_copilot.api.routes.analytics import router as analytics_router
 from job_copilot.api.routes.application_prep import router as application_prep_router
 from job_copilot.api.routes.browser import router as browser_router
@@ -155,6 +156,7 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 # 4. Include feature routers with require_dashboard_auth protection
 app.include_router(dashboard_router)
+app.include_router(agent_protocol_router)
 app.include_router(analytics_router, dependencies=[Depends(require_dashboard_auth)])
 app.include_router(application_prep_router, dependencies=[Depends(require_dashboard_auth)])
 app.include_router(browser_sessions_router, dependencies=[Depends(require_dashboard_auth)])

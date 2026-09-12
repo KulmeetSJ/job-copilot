@@ -310,3 +310,22 @@ export interface AnalyzeOpportunityResponse {
   message: string;
 }
 
+export interface PairingCodeResponse {
+  device_id: string;
+  pairing_code: string;
+  expires_at: string;
+  instructions: string;
+  cli_command: string;
+}
+
+export interface PairedDeviceItem {
+  device_id: string;
+  device_name: string;
+  status: string;
+  is_active: boolean;
+  last_seen_at?: string;
+  capabilities: string[];
+  agent_version: string;
+  created_at?: string;
+}
+

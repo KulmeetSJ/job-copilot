@@ -4,6 +4,8 @@ import {
   DashboardOverviewResponse,
   DashboardQueueResponse,
   JobDetailResponse,
+  PairedDeviceItem,
+  PairingCodeResponse,
   PriorityBand,
   QueueStatus,
   SessionMetadataItem,
@@ -241,6 +243,28 @@ export const api = {
     }
     const blob = await res.blob();
     return window.URL.createObjectURL(blob);
+  },
+
+  // Paired Devices (Local Browser Agent)
+  async generatePairingCode(deviceName: string = 'Local Browser Agent'): Promise<PairingCodeResponse> {
+    const res = await fetch(`${API_BASE}/devices/pair-code?device_name=${encodeURIComponent(deviceName)}`, {
+      method: 'POST',
+      headers: getHeaders(),
+    });
+    return handleResponse<PairingCodeResponse>(res);
+  },
+
+  async listDevices(): Promise<PairedDeviceItem[]> {
+    const res = await fetch(`${API_BASE}/devices`, { headers: getHeaders() });
+    return handleResponse<PairedDeviceItem[]>(res);
+  },
+
+  async revokeDevice(deviceId: string): Promise<{ success: boolean; device_id: string; message: string }> {
+    const res = await fetch(`${API_BASE}/devices/${deviceId}/revoke`, {
+      method: 'POST',
+      headers: getHeaders(),
+    });
+    return handleResponse<{ success: boolean; device_id: string; message: string }>(res);
   },
 };
 

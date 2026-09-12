@@ -525,26 +525,27 @@ export const ApplicationReviewView: React.FC<ApplicationReviewViewProps> = ({
                   </div>
                 </div>
 
-                {detail.can_resume ? (
+                <div className="flex items-center space-x-2 shrink-0">
                   <button
                     onClick={handleResume}
                     disabled={resuming}
-                    className="px-5 py-2.5 text-xs sm:text-sm font-bold bg-amber-500 hover:bg-amber-400 active:bg-amber-600 text-slate-950 rounded-lg shadow-lg shadow-amber-500/20 transition-all flex items-center justify-center space-x-2 shrink-0 disabled:opacity-50"
+                    className="px-4 py-2 text-xs sm:text-sm font-bold bg-amber-500 hover:bg-amber-400 active:bg-amber-600 text-slate-950 rounded-lg shadow-lg shadow-amber-500/20 transition-all flex items-center justify-center space-x-2 shrink-0 disabled:opacity-50"
                   >
                     {resuming ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
                     <span>Resume Automation</span>
                   </button>
-                ) : (
+
                   <a
                     href={detail.canonical_job_url || detail.browser_review?.target_url || '#'}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="px-5 py-2.5 text-xs sm:text-sm font-bold bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-lg shadow-lg shadow-amber-500/20 transition-all flex items-center justify-center space-x-2 shrink-0"
+                    className="px-3 py-2 text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-lg transition-all flex items-center justify-center space-x-1.5 shrink-0"
+                    title="Open employer link directly"
                   >
-                    <ExternalLink className="w-4 h-4" />
-                    <span>Open Employer Portal</span>
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    <span>Portal</span>
                   </a>
-                )}
+                </div>
               </div>
             </div>
           )}

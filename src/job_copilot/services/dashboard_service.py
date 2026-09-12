@@ -32,6 +32,7 @@ from job_copilot.models.browser_task import BrowserTaskModel
 from job_copilot.models.job import Job
 from job_copilot.repositories.application_repository import ApplicationRepository
 from job_copilot.repositories.browser_task_repository import BrowserTaskRepository
+from job_copilot.repositories.device_repository import DeviceRepository
 from job_copilot.repositories.job_repository import JobRepository
 from job_copilot.schemas.dashboard import (
     AnalyzeOpportunityRequest,
@@ -1692,5 +1693,65 @@ class DashboardService:
         finally:
             if should_close:
                 db.close()
+
+    # ==========================================================================
+    # 7. Local Interactive Browser Agent Devices
+    # ==========================================================================
+
+    def generate_device_pairing_code(self, device_name: str = "Local Browser Agent") -> Dict[str, Any]:
+        """Generate a short-lived 6-digit pairing code for connecting a local browser agent."""
+        db, should_close = self._get_db_session()
+        try:
+            device_repo = DeviceRepository(db)
+            device, code = device_repo.generate_pairing_code(device_name=device_name, validity_minutes=10)
+            return {
+                "device_id": device.device_id,
+                "pairing_code": code,
+                "expires_at": device.pairing_expires_at.isoformat() if device.pairing_expires_at else "",
+                "instructions": f"Run `python -m job_copilot.browser_agent pair {code}` on your machine.",
+                "cli_command": f"python -m job_copilot.browser_agent pair {code}",
+            }
+        finally:
+            if should_close:
+                db.close()
+
+    def list_paired_devices(self) -> List[Dict[str, Any]]:
+        """List all paired local browser agent devices and their connectivity state."""
+        db, should_close = self._get_db_session()
+        try:
+            device_repo = DeviceRepository(db)
+            devices = device_repo.list_devices()
+            now = datetime.now(timezone.utc)
+            results = []
+            for d in devices:
+                is_active = False
+                if d.last_seen_at and d.status.value in ("CONNECTED", "BUSY"):
+                    is_active = (now - d.last_seen_at.replace(tzinfo=timezone.utc if d.last_seen_at.tzinfo is None else d.last_seen_at.tzinfo)).total_seconds() < 60
+
+                results.append({
+                    "device_id": d.device_id,
+                    "device_name": d.device_name,
+                    "status": d.status.value,
+                    "is_active": is_active,
+                    "last_seen_at": d.last_seen_at.isoformat() if d.last_seen_at else None,
+                    "capabilities": d.capabilities or [],
+                    "agent_version": d.agent_version or "1.0.0",
+                    "created_at": d.created_at.isoformat() if d.created_at else None,
+                })
+            return results
+        finally:
+            if should_close:
+                db.close()
+
+    def revoke_device(self, device_id: str) -> bool:
+        """Revoke pairing and authorization for a local browser agent device."""
+        db, should_close = self._get_db_session()
+        try:
+            device_repo = DeviceRepository(db)
+            return device_repo.revoke_device(device_id)
+        finally:
+            if should_close:
+                db.close()
+
 
 

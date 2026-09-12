@@ -12,6 +12,9 @@ from job_copilot.models import (
     ApplicationSnapshotModel,
     CopilotQueueRecord,
     SourceHealthRecord,
+    ArtifactModel,
+    BrowserTaskModel,
+    DeviceRegistrationModel,
 )
 
 __all__ = [
@@ -26,4 +29,7 @@ __all__ = [
     "ApplicationSnapshotModel",
     "CopilotQueueRecord",
     "SourceHealthRecord",
+    "ArtifactModel",
+    "BrowserTaskModel",
+    "DeviceRegistrationModel",
 ]

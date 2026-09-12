@@ -350,3 +350,34 @@ def get_application_resume_pdf(
         logger.error(f"Failed to fetch resume PDF for '{application_id}': {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
+
+# --- Device Management Endpoints ---
+
+@router.post("/devices/pair-code")
+def create_device_pairing_code(
+    device_name: str = Query("Local Browser Agent", description="Device name/hostname"),
+    service: DashboardService = Depends(get_dashboard_service),
+):
+    """Generate a short-lived 6-digit pairing code for connecting a local interactive browser agent."""
+    return service.generate_device_pairing_code(device_name=device_name)
+
+
+@router.get("/devices")
+def list_paired_devices(
+    service: DashboardService = Depends(get_dashboard_service),
+):
+    """List paired local browser agent devices and their connectivity status."""
+    return service.list_paired_devices()
+
+
+@router.post("/devices/{device_id}/revoke")
+def revoke_paired_device(
+    device_id: str,
+    service: DashboardService = Depends(get_dashboard_service),
+):
+    """Revoke authorization for a paired local browser agent device."""
+    success = service.revoke_device(device_id)
+    if not success:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Device '{device_id}' not found.")
+    return {"success": True, "device_id": device_id, "message": "Device revoked successfully."}
+

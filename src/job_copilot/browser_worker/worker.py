@@ -43,11 +43,11 @@ class BrowserWorker:
         self._running = False
 
     async def process_next_task(self, db: Session) -> Optional[BrowserTaskModel]:
-        """Fetch and execute the next available SUBMISSION_AUTHORIZED or QUEUED task with atomic compare-and-swap."""
+        """Fetch and execute the next available REMOTE_HEADLESS task with atomic compare-and-swap."""
         repo = BrowserTaskRepository(db)
 
-        # 1. Prioritize authorized submissions
-        auth_tasks = repo.list_by_status(BrowserTaskStatus.SUBMISSION_AUTHORIZED, limit=1)
+        # 1. Prioritize authorized submissions for remote headless execution
+        auth_tasks = repo.list_by_status(BrowserTaskStatus.SUBMISSION_AUTHORIZED, execution_mode="REMOTE_HEADLESS", limit=1)
         if auth_tasks:
             task = auth_tasks[0]
             # Atomically transition from SUBMISSION_AUTHORIZED to SUBMISSION_RUNNING
@@ -56,6 +56,7 @@ class BrowserWorker:
                 expected_status=BrowserTaskStatus.SUBMISSION_AUTHORIZED,
                 new_status=BrowserTaskStatus.SUBMISSION_RUNNING,
                 worker_id=self.worker_id,
+                expected_execution_mode="REMOTE_HEADLESS",
             )
             if claimed:
                 logger.info(f"Worker '{self.worker_id}' atomically claimed SUBMISSION_AUTHORIZED task '{task.task_id}'")
@@ -66,8 +67,8 @@ class BrowserWorker:
             else:
                 logger.debug(f"Task '{task.task_id}' was claimed by another worker.")
 
-        # 2. Process queued preparation tasks
-        queued_tasks = repo.list_by_status(BrowserTaskStatus.QUEUED, limit=1)
+        # 2. Process queued preparation tasks for remote headless execution
+        queued_tasks = repo.list_by_status(BrowserTaskStatus.QUEUED, execution_mode="REMOTE_HEADLESS", limit=1)
         if not queued_tasks:
             return None
 
@@ -84,6 +85,7 @@ class BrowserWorker:
             expected_status=BrowserTaskStatus.QUEUED,
             new_status=BrowserTaskStatus.RUNNING,
             worker_id=self.worker_id,
+            expected_execution_mode="REMOTE_HEADLESS",
         )
         if claimed:
             logger.info(f"Worker '{self.worker_id}' atomically claimed QUEUED task '{task.task_id}' for URL: {task.target_url}")

@@ -117,8 +117,12 @@ def test_domain_security_validation():
     # Allowed domains
     assert validate_target_domain("https://boards.greenhouse.io/company/jobs/1")
     assert validate_target_domain("https://jobs.lever.co/company/apply")
-    assert validate_target_domain("http://localhost:8000/application-form")
     assert validate_target_domain("https://test.example.com/careers")
+    assert validate_target_domain("http://localhost:8000/application-form", allow_test_fixture=True)
+
+    # Localhost / private IP blocked without explicit test fixture allowance
+    with pytest.raises(DomainSecurityError, match="represents a private, loopback, or cloud metadata address"):
+        validate_target_domain("http://localhost:8000/application-form", allow_test_fixture=False)
 
     # Disallowed schemes
     with pytest.raises(DomainSecurityError, match="Disallowed URL scheme"):

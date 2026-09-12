@@ -331,6 +331,7 @@ async def test_worker_retry_cannot_submit_without_confirmation(db_session, mock_
         application_id="app-retry-001",
         target_url="https://jobs.lever.co/company/job-retry",
         status=BrowserTaskStatus.QUEUED,
+        execution_mode="REMOTE_HEADLESS",
         attempt_count=1,
         max_attempts=3,
     )
