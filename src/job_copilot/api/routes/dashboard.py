@@ -129,7 +129,14 @@ def get_application_detail(
     service: DashboardService = Depends(get_dashboard_service),
 ) -> ApplicationDetailResponse:
     """Retrieve complete application review data, tailored resume, cover letter, answers, and timeline."""
-    return service.get_application_detail(application_id)
+    try:
+        return service.get_application_detail(application_id)
+    except ValueError as ve:
+        logger.warning(f"Failed to resolve application detail for '{application_id}': {ve}")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(ve))
+    except Exception as e:
+        logger.error(f"Unexpected error retrieving application detail for '{application_id}': {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to retrieve application detail: {e}")
 
 
 @router.get("/applications/{application_id}/timeline", response_model=List[ApplicationTimelineEvent])

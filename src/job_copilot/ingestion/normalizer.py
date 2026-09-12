@@ -7,6 +7,7 @@ from typing import Optional, Tuple
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from job_copilot.domain.enums import EmploymentType, RemoteStatus
+from job_copilot.ingestion.metadata_extractor import JobMetadataExtractor
 from job_copilot.ingestion.models import CanonicalJob, RawJob
 from job_copilot.utils.logging import get_logger
 
@@ -243,6 +244,12 @@ class JobNormalizer:
         for line in lines[:6]:
             if line.lower().startswith("job title:") or line.lower().startswith("role:") or line.lower().startswith("title:"):
                 return line.split(":", 1)[1].strip()
+
+        if lines:
+            cleaned_first_line = JobMetadataExtractor.clean_title(lines[0])
+            if cleaned_first_line and len(cleaned_first_line.split()) <= 8 and not any(kw in cleaned_first_line.lower() for kw in ["about", "responsibilities", "requirements", "description", "welcome", "we are"]):
+                return cleaned_first_line
+
         patterns = [
             r"\b(Senior\s+Backend\s+Engineer(?:\s+-\s+Java)?)\b",
             r"\b(Senior\s+Backend\s+Java\s+Engineer)\b",
@@ -253,7 +260,7 @@ class JobNormalizer:
             r"\b(Lead\s+Data\s+Engineer)\b",
             r"\b(Data\s+Engineer)\b",
             r"\b(Full\s+Stack\s+Engineer)\b",
-            r"\b(Software\s+Engineer)\b",
+            r"\b(Software\s+Engineer(?:\s*[-–—]\s*[A-Za-z0-9 ]+)?)\b",
             r"\b(DevOps\s+Engineer)\b",
             r"\b(Site\s+Reliability\s+Engineer)\b",
         ]

@@ -2,7 +2,7 @@
 
 import json
 from pathlib import Path
-from typing import Any, List, Optional
+from typing import Any, Dict, List, Optional
 import yaml
 
 from job_copilot.application.classifier import QuestionClassifier
@@ -12,6 +12,7 @@ from job_copilot.application.models import (
     ApplicationPackage,
     ApplicationPackageStatus,
     ApplicationQuestion,
+    ClaimProvenance,
     CoverLetter,
     QuestionType,
     UserInputRequest,
@@ -199,11 +200,32 @@ class ApplicationPrepService:
         answers: List[ApplicationAnswer] = []
         user_input_requests: List[UserInputRequest] = []
 
+        # Load any existing human answers previously entered for this job (e.g. during Reprepare)
+        saved_inputs = self.load_saved_user_inputs(job_id)
+        if not saved_inputs and job_id != job_id_or_text:
+            saved_inputs = self.load_saved_user_inputs(job_id_or_text)
+
         for q in questions:
             ans = self.qa_engine.answer_question(q, profile, assessment)
+            # If human previously supplied an answer, preserve and apply it
+            if q.id in saved_inputs and saved_inputs[q.id]:
+                ans.answer = saved_inputs[q.id]
+                ans.requires_user_input = False
+                ans.confidence = 1.0
+                ans.provenance = [
+                    ClaimProvenance(
+                        claim_text=saved_inputs[q.id],
+                        source_type="USER_INPUT",
+                        source_ref="USER_INPUT",
+                        exact_text=saved_inputs[q.id],
+                        confidence=1.0,
+                    )
+                ]
             answers.append(ans)
             req = self.qa_engine.extract_user_input_request(q, ans)
             if req:
+                if req.question_id in saved_inputs:
+                    req.current_value = saved_inputs[req.question_id]
                 user_input_requests.append(req)
 
         # 5. Assemble Package
@@ -232,10 +254,98 @@ class ApplicationPrepService:
 
         return package
 
+    def load_saved_user_inputs(self, job_id: str) -> Dict[str, str]:
+        """Load persistent human-entered answers for an application."""
+        if not job_id or not isinstance(job_id, str) or "\n" in job_id or len(job_id) > 120:
+            return {}
+        
+        # 1. Check user_inputs.json
+        user_inputs_file = self.applications_data_dir / job_id / "user_inputs.json"
+        if user_inputs_file.exists():
+            try:
+                data = json.loads(user_inputs_file.read_text(encoding="utf-8"))
+                if isinstance(data, dict):
+                    if "answers" in data and isinstance(data["answers"], dict):
+                        return {str(k): str(v) for k, v in data["answers"].items()}
+                    return {str(k): str(v) for k, v in data.items() if isinstance(v, (str, int, float, bool))}
+            except Exception as e:
+                logger.warning(f"Error loading user_inputs.json for '{job_id}': {e}")
+
+        # 2. Check package.json for existing user-provided values
+        pkg = self.get_application_package(job_id)
+        if pkg:
+            answers_map: Dict[str, str] = {}
+            for uir in pkg.user_inputs_required:
+                if uir.current_value:
+                    answers_map[uir.question_id] = str(uir.current_value)
+            for ans in pkg.answers:
+                if getattr(ans, "provenance", None):
+                    for prov in ans.provenance:
+                        if prov.source_ref == "USER_INPUT" and ans.answer:
+                            answers_map[ans.question_id] = str(ans.answer)
+            if answers_map:
+                return answers_map
+
+        return {}
+
+    def save_user_inputs(self, job_id: str, answers: Dict[str, str]) -> None:
+        """
+        Persist human-entered answers on disk and update package.json.
+        Preserves candidate truth integrity while ensuring answers survive reloads and reprepare.
+        """
+        if not job_id or not answers:
+            return
+
+        job_dir = self.applications_data_dir / job_id
+        job_dir.mkdir(parents=True, exist_ok=True)
+
+        # 1. Persist user_inputs.json
+        existing_inputs = self.load_saved_user_inputs(job_id)
+        existing_inputs.update({str(k): str(v) for k, v in answers.items()})
+        payload = {
+            "job_id": job_id,
+            "answers": existing_inputs,
+        }
+        (job_dir / "user_inputs.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+        # 2. Update existing package.json if present
+        pkg = self.get_application_package(job_id)
+        if pkg:
+            for ans in pkg.answers:
+                if ans.question_id in existing_inputs and existing_inputs[ans.question_id]:
+                    ans.answer = existing_inputs[ans.question_id]
+                    ans.requires_user_input = False
+                    ans.confidence = 1.0
+                    ans.provenance = [
+                        ClaimProvenance(
+                            claim_text=existing_inputs[ans.question_id],
+                            source_type="USER_INPUT",
+                            source_ref="USER_INPUT",
+                            exact_text=existing_inputs[ans.question_id],
+                            confidence=1.0,
+                        )
+                    ]
+            for uir in pkg.user_inputs_required:
+                if uir.question_id in existing_inputs:
+                    uir.current_value = existing_inputs[uir.question_id]
+
+            self._persist_application_package(pkg)
+
     def get_application_package(self, job_id: str) -> Optional[ApplicationPackage]:
         """Load persistent application package by job ID."""
+        if not job_id:
+            return None
         pkg_file = self.applications_data_dir / job_id / "package.json"
         if not pkg_file.exists():
+            # Check for candidate subdirectories if job_id was partially formatted
+            for subdir in self.applications_data_dir.iterdir():
+                if subdir.is_dir() and (subdir.name == job_id or subdir.name.endswith(job_id) or job_id.endswith(subdir.name)):
+                    candidate_pkg = subdir / "package.json"
+                    if candidate_pkg.exists():
+                        try:
+                            return ApplicationPackage.model_validate_json(candidate_pkg.read_text(encoding="utf-8"))
+                        except Exception:
+                            pass
             return None
         try:
             return ApplicationPackage.model_validate_json(pkg_file.read_text(encoding="utf-8"))

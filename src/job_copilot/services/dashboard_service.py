@@ -167,7 +167,13 @@ class DashboardService:
         artifact_service: Optional[ArtifactService] = None,
     ):
         self._db = db
-        self.copilot_service = copilot_service or CopilotService()
+        disc_service = getattr(prep_service, "discovery_service", None) if prep_service else None
+        self.copilot_service = copilot_service or CopilotService(
+            discovery_service=disc_service,
+            intelligence_service=intelligence_service,
+            prep_service=prep_service,
+            tracking_service=tracking_service,
+        )
         orchestrator = getattr(self.copilot_service, "orchestrator", None) if isinstance(self.copilot_service, CopilotService) else None
         self.tracking_service = tracking_service or (getattr(orchestrator, "tracking_service", None) if orchestrator else None) or TrackingService()
         self.prep_service = prep_service or (getattr(orchestrator, "prep_service", None) if orchestrator else None) or ApplicationPrepService()
@@ -565,6 +571,7 @@ class DashboardService:
         """
         Fetch full application review package including tailored resume, cover letter,
         prepared Q&A answers, user input fields, artifacts, browser review summary, and timeline.
+        Enforces canonical identity resolution and persistent user input hydration.
         """
         db, should_close = self._get_db_session()
         try:
@@ -574,25 +581,92 @@ class DashboardService:
                 # Try finding by job_id_str
                 app_model = app_repo.get_by_job_id_str(application_id)
 
+            # Check tracking store
+            tracking_app = self.tracking_service.get_application(application_id) or self.tracking_service.get_application_by_job_id(application_id)
+
+            resolved_job_id = None
+            if app_model and app_model.job_id_str:
+                resolved_job_id = app_model.job_id_str
+            elif tracking_app and tracking_app.job_id:
+                resolved_job_id = tracking_app.job_id
+            else:
+                resolved_job_id = application_id
+
+            if not app_model and resolved_job_id:
+                app_model = app_repo.get_by_job_id_str(resolved_job_id) or app_repo.get_by_application_id(resolved_job_id)
+
             job_repo = JobRepository(db)
             db_job = None
             if app_model and app_model.job_id:
                 db_job = job_repo.get_by_id(app_model.job_id)
+            if not db_job and resolved_job_id:
+                db_job = job_repo.get_by_job_id(resolved_job_id)
             if not db_job:
                 db_job = job_repo.get_by_job_id(application_id)
 
-            job_id = app_model.job_id_str if app_model and app_model.job_id_str else (db_job.job_id if db_job else application_id)
-            raw_comp = app_model.company if app_model and app_model.company else (db_job.company if db_job else None)
+            canonical = None
+            if resolved_job_id:
+                canonical = self.copilot_service.orchestrator.discovery_service.store.get_canonical_job(resolved_job_id)
+            if not canonical and application_id and resolved_job_id != application_id:
+                canonical = self.copilot_service.orchestrator.discovery_service.store.get_canonical_job(application_id)
+
+            job_id = resolved_job_id or (canonical.job_id if canonical else (db_job.job_id if db_job else application_id))
+            
+            raw_comp = (
+                app_model.company if app_model and app_model.company
+                else (db_job.company if db_job and db_job.company
+                else (canonical.company if canonical and canonical.company
+                else (tracking_app.company if tracking_app and tracking_app.company else None)))
+            )
             company = normalize_company_display(raw_comp)
-            role = app_model.role if app_model and app_model.role else (db_job.title if db_job else "Role unavailable")
-            source = app_model.source if app_model and app_model.source else (db_job.source if db_job and db_job.source else "Source unavailable")
-            canonical_url = app_model.canonical_job_url if app_model else (db_job.canonical_url or db_job.url if db_job else None)
-            match_score = app_model.match_score if app_model else None
-            recommendation = app_model.recommendation if app_model else None
+
+            role = (
+                app_model.role if app_model and app_model.role
+                else (db_job.title if db_job and db_job.title
+                else (canonical.title if canonical and canonical.title
+                else (tracking_app.role if tracking_app and tracking_app.role else None)))
+            )
+
+            source = (
+                app_model.source if app_model and app_model.source
+                else (db_job.source if db_job and db_job.source
+                else (canonical.source if canonical and canonical.source
+                else (tracking_app.source if tracking_app and tracking_app.source else None)))
+            )
+
+            canonical_url = (
+                app_model.canonical_job_url if app_model and app_model.canonical_job_url
+                else (db_job.canonical_url or db_job.url if db_job
+                else (canonical.canonical_url or canonical.source_url if canonical
+                else (tracking_app.canonical_job_url if tracking_app else None)))
+            )
+
+            # Invariant: Never return fake placeholders or fabricated records when resolution fails
+            invalid_placeholders = {"company unavailable", "unknown company", "target company", "general_swe", "role unavailable", "unknown role", "source unavailable"}
+            if (
+                not company
+                or not role
+                or not source
+                or company.lower() in invalid_placeholders
+                or role.lower() in invalid_placeholders
+                or source.lower() in invalid_placeholders
+            ):
+                raise ValueError(f"Could not resolve canonical application data for '{application_id}'. Canonical record missing or invalid.")
+
+            match_score = app_model.match_score if app_model and app_model.match_score is not None else (tracking_app.match_score if tracking_app else None)
+            recommendation = app_model.recommendation if app_model and app_model.recommendation else (tracking_app.recommendation if tracking_app else None)
+
             # Retrieve prepared package if available on disk/cache
             pkg = self.prep_service.get_application_package(job_id)
+            if not pkg and job_id != application_id:
+                pkg = self.prep_service.get_application_package(application_id)
 
             selected_strat = ResumeStrategy.normalize(app_model.resume_strategy if app_model and app_model.resume_strategy else (pkg.selected_resume_strategy if pkg else None))
+
+            # Hydrate saved user inputs from persistent storage
+            saved_answers = self.prep_service.load_saved_user_inputs(job_id)
+            if not saved_answers and job_id != application_id:
+                saved_answers = self.prep_service.load_saved_user_inputs(application_id)
 
             prepared_answers: List[PreparedAnswerItem] = []
             user_inputs: List[UserInputRequiredItem] = []
@@ -616,30 +690,36 @@ class DashboardService:
                     except Exception:
                         pass
 
-                # Prepared answers
+                # Prepared answers with user inputs hydrated
                 for ans in pkg.answers:
+                    ans_text = saved_answers.get(ans.question_id) if ans.question_id in saved_answers else (ans.answer or "Pending user input")
+                    requires_input = ans.requires_user_input and (ans.question_id not in saved_answers)
                     evidence_refs = [p.source_ref for p in ans.provenance] if getattr(ans, "provenance", None) else []
+                    if ans.question_id in saved_answers and "USER_INPUT" not in evidence_refs:
+                        evidence_refs = ["USER_INPUT"] + evidence_refs
+
                     prepared_answers.append(
                         PreparedAnswerItem(
                             question_text=ans.question_text,
                             field_name=ans.question_id,
                             field_category=getattr(ans.classification, "value", str(ans.classification)),
-                            answer_text=ans.answer or "Pending user input",
-                            confidence=ans.confidence,
+                            answer_text=ans_text,
+                            confidence=1.0 if ans.question_id in saved_answers else ans.confidence,
                             source_evidence=evidence_refs,
-                            requires_user_input=ans.requires_user_input,
+                            requires_user_input=requires_input,
                             validation_status="VALID",
                         )
                     )
 
-                # User inputs required
+                # User inputs required with current_value populated
                 for uir in pkg.user_inputs_required:
+                    current_val = saved_answers.get(uir.question_id) or uir.current_value
                     user_inputs.append(
                         UserInputRequiredItem(
                             question_id=uir.question_id,
                             question_text=uir.question_text,
                             field_type=getattr(uir.expected_type, "value", "text"),
-                            current_value=None,
+                            current_value=current_val,
                             reason_required=uir.reason,
                             options=uir.options if getattr(uir, "options", None) else None,
                             is_sensitive=True,
@@ -906,13 +986,22 @@ class DashboardService:
     def submit_user_inputs(self, application_id: str, req: HumanInputSubmitRequest) -> ApplicationDetailResponse:
         """
         Record user-provided answers for sensitive/unresolved questions.
-        Stores them in application session state WITHOUT modifying candidate truth files.
+        Stores them persistently on disk in user_inputs.json and updates package.json
+        WITHOUT modifying candidate truth files.
         """
         db, should_close = self._get_db_session()
         try:
             app_repo = ApplicationRepository(db)
             app = app_repo.get_by_application_id(application_id) or app_repo.get_by_job_id_str(application_id)
-            job_id = app.job_id_str if app and app.job_id_str else application_id
+            tracking_app = self.tracking_service.get_application(application_id) or self.tracking_service.get_application_by_job_id(application_id)
+
+            job_id = app.job_id_str if app and app.job_id_str else (tracking_app.job_id if tracking_app else application_id)
+
+            # Persist human answers on disk via prep_service
+            answers_dict = {a.question_id: a.answer_value for a in req.answers}
+            self.prep_service.save_user_inputs(job_id=job_id, answers=answers_dict)
+            if application_id != job_id:
+                self.prep_service.save_user_inputs(job_id=application_id, answers=answers_dict)
 
             notes_entry = f"Human input provided for {len(req.answers)} questions: " + ", ".join(
                 f"{a.question_id}='{a.answer_value}'" for a in req.answers
@@ -1094,7 +1183,15 @@ class DashboardService:
 
                 if job_id in app_by_job:
                     existing = app_by_job[job_id]
+                    if db_app.application_id:
+                        existing.application_id = db_app.application_id
                     existing.company = comp_display
+                    if db_app.role:
+                        existing.role = db_app.role
+                    if db_app.source:
+                        existing.source = db_app.source
+                    if db_app.canonical_job_url:
+                        existing.canonical_job_url = db_app.canonical_job_url
                     existing.current_status = target_status
                     if target_status == ApplicationLifecycleStatus.SUBMITTED:
                         existing.submitted_at = db_app.submitted_at or db_app.applied_at or utc_now()
@@ -1103,19 +1200,26 @@ class DashboardService:
                 elif db_app.application_id in app_by_id:
                     existing = app_by_id[db_app.application_id]
                     existing.company = comp_display
+                    if db_app.role:
+                        existing.role = db_app.role
+                    if db_app.source:
+                        existing.source = db_app.source
+                    if db_app.canonical_job_url:
+                        existing.canonical_job_url = db_app.canonical_job_url
                     existing.current_status = target_status
                     if target_status == ApplicationLifecycleStatus.SUBMITTED:
                         existing.submitted_at = db_app.submitted_at or db_app.applied_at or utc_now()
                     elif target_status == ApplicationLifecycleStatus.SUBMISSION_UNVERIFIED:
                         existing.submitted_at = None
                 else:
+                    canonical_meta = self.copilot_service.orchestrator.discovery_service.store.get_canonical_job(job_id)
                     rec = ApplicationRecord(
                         application_id=db_app.application_id or f"app-{uuid.uuid4().hex[:8]}",
                         job_id=job_id,
                         company=comp_display,
-                        role=db_app.role or "Role unavailable",
-                        canonical_job_url=db_app.canonical_job_url,
-                        source=db_app.source or "Source unavailable",
+                        role=db_app.role or (canonical_meta.title if canonical_meta else "Role unavailable"),
+                        canonical_job_url=db_app.canonical_job_url or (canonical_meta.canonical_url or canonical_meta.source_url if canonical_meta else None),
+                        source=db_app.source or (canonical_meta.source if canonical_meta else "Source unavailable"),
                         discovered_at=db_app.discovered_at or db_app.created_at,
                         prepared_at=db_app.prepared_at,
                         submitted_at=db_app.submitted_at if target_status == ApplicationLifecycleStatus.SUBMITTED else None,
@@ -1493,7 +1597,53 @@ class DashboardService:
 
                 app_repo = ApplicationRepository(db)
                 existing_app = app_repo.get_by_job_id_str(canonical_id)
-                app_id = existing_app.application_id if existing_app else None
+                tracking_app = self.tracking_service.get_application_by_job_id(canonical_id)
+                app_id = existing_app.application_id if existing_app else (tracking_app.application_id if tracking_app else None)
+
+                # Ensure application package exists and get actual needs_input count
+                pkg = self.prep_service.get_application_package(canonical_id)
+                if not pkg:
+                    pkg = self.prep_service.prepare_application(job_id_or_text=canonical_id, db_session=db)
+
+                job_repo = JobRepository(db)
+                db_job = job_repo.get_by_job_id(canonical_id)
+                if not db_job:
+                    db_job = Job(
+                        job_id=canonical_id,
+                        title=title,
+                        company=company,
+                        location=location,
+                        url=clean_url,
+                        canonical_url=clean_url,
+                        description=existing_canonical.clean_description if existing_canonical else "",
+                        source="user_submitted_url",
+                        lifecycle_status="RECOMMENDED",
+                    )
+                    db.add(db_job)
+                    db.commit()
+                    db.refresh(db_job)
+
+                if not existing_app:
+                    app_id = app_id or f"app-usr-{uuid.uuid4().hex[:8]}"
+                    existing_app = Application(
+                        application_id=app_id,
+                        job_id=db_job.id if db_job else None,
+                        job_id_str=canonical_id,
+                        company=company,
+                        role=title,
+                        source="user_submitted_url",
+                        canonical_job_url=clean_url,
+                        status=ApplicationStatus.READY_TO_APPLY,
+                        match_score=match_score,
+                        resume_strategy=pkg.selected_resume_strategy if pkg else selected_strat,
+                        prepared_at=utc_now(),
+                        user_notes=["Added by candidate via dashboard."],
+                    )
+                    db.add(existing_app)
+                    db.commit()
+                    db.refresh(existing_app)
+
+                needs_cnt = len(pkg.user_inputs_required) if pkg else 0
 
                 return AnalyzeOpportunityResponse(
                     job_id=canonical_id,
@@ -1513,11 +1663,11 @@ class DashboardService:
                     risks=existing_copilot_job.risk_flags if existing_copilot_job else [],
                     is_duplicate=True,
                     duplicate_of_id=canonical_id,
-                    status=existing_app.status.value if existing_app else "READY_FOR_REVIEW",
+                    status="READY_FOR_REVIEW",
                     resume_download_url=f"/api/dashboard/applications/{app_id or canonical_id}/resume/pdf",
                     supports_browser_prep=False,
                     has_active_session=False,
-                    needs_user_input_count=0,
+                    needs_user_input_count=needs_cnt,
                     message="This opportunity is already in Job Copilot.",
                 )
 
@@ -1553,7 +1703,8 @@ class DashboardService:
             app_repo = ApplicationRepository(db)
             app_model = app_repo.get_by_job_id_str(canonical.job_id)
             if not app_model:
-                app_id = f"app-usr-{uuid.uuid4().hex[:8]}"
+                tracking_app = self.tracking_service.get_application_by_job_id(canonical.job_id)
+                app_id = tracking_app.application_id if tracking_app else f"app-usr-{uuid.uuid4().hex[:8]}"
                 app_model = Application(
                     application_id=app_id,
                     job_id=db_job.id if db_job else None,

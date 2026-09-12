@@ -532,8 +532,19 @@ class TrackingService:
         return app
 
     def get_application(self, application_id: str) -> Optional[ApplicationRecord]:
-        """Fetch application record by ID."""
-        return self.store.get_application(application_id)
+        """Fetch application record by ID or Job ID."""
+        if not application_id:
+            return None
+        app = self.store.get_application(application_id)
+        if not app:
+            app = self.store.get_application_by_job_id(application_id)
+        return app
+
+    def get_application_by_job_id(self, job_id: str) -> Optional[ApplicationRecord]:
+        """Fetch application record by Job ID."""
+        if not job_id:
+            return None
+        return self.store.get_application_by_job_id(job_id)
 
     def list_applications(
         self,

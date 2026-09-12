@@ -71,6 +71,7 @@ class UserInputRequest(BaseModel):
     expected_type: QuestionType
     required: bool = True
     options: List[str] = Field(default_factory=list)
+    current_value: Optional[str] = Field(default=None, description="Persisted user-entered value if already provided")
 
 
 class CoverLetterValidation(BaseModel):
