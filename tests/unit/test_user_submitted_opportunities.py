@@ -423,3 +423,70 @@ def test_seven_dimension_scoring_unchanged():
     assert len(scorer.config.dimension_weights.__dict__) >= 7
 
 
+def test_real_mastercard_flow_end_to_end(isolated_dashboard_service):
+    """Verify real Mastercard opportunity creates genuine metadata, BACKEND_JAVA strategy, real employer URL, and zero default leaks."""
+    service = isolated_dashboard_service
+
+    mc_jd_text = """
+    Software Engineer - Backend Java
+    Mastercard | Pune, Maharashtra, India | Hybrid
+
+    Overview:
+    Mastercard is a global technology company in the payments industry.
+    We are seeking a Software Engineer - Backend Java to build real-time transaction processing APIs.
+
+    Responsibilities:
+    - Design and develop scalable microservices using Java, Spring Boot, and REST.
+    - Implement low-latency caching with Redis and messaging with Kafka.
+    - Deploy distributed systems on Google Cloud Platform (GCP).
+
+    Requirements:
+    - 5+ years of software development experience in Java.
+    - Strong expertise in Spring Boot, REST APIs, Microservices, and SQL/NoSQL.
+    - Experience in payments, cloud services, and CI/CD pipelines.
+    """
+
+    with patch("job_copilot.services.dashboard_service.UrlJobSource.fetch") as mock_fetch:
+        from job_copilot.ingestion.models import RawJob
+        mock_fetch.return_value = RawJob(
+            source="user_submitted_url",
+            source_url="https://careers.mastercard.com/jobs/mastercard-swe-pune-101",
+            raw_description=mc_jd_text,
+            company="Mastercard",
+            title="Software Engineer - Backend Java",
+        )
+
+        resp = service.analyze_user_submitted_url("https://careers.mastercard.com/jobs/mastercard-swe-pune-101")
+
+        # 1. Company and Title
+        assert resp.company == "Mastercard"
+        assert "Software Engineer" in resp.title
+
+        # 2. Source and Strategy
+        assert resp.source == "user_submitted_url"
+        assert resp.selected_strategy == "backend_java"
+
+        # 3. Correct IDs and URLs
+        assert resp.job_id is not None
+        assert resp.application_id is not None
+        assert resp.canonical_url == "https://careers.mastercard.com/jobs/mastercard-swe-pune-101"
+
+        # 4. No default/dummy leaks
+        resp_str = str(resp.model_dump())
+        assert "Target Company" not in resp_str
+        assert "GENERAL_SWE" not in resp_str
+        assert "jobs.example.com" not in resp_str
+
+        # 5. Verify database application detail
+        detail = service.get_application_detail(resp.application_id)
+        assert detail.company == "Mastercard"
+        assert detail.source == "user_submitted_url"
+        assert detail.selected_strategy == "backend_java"
+        assert detail.browser_review is not None
+        assert detail.browser_review.target_url == "https://careers.mastercard.com/jobs/mastercard-swe-pune-101"
+        assert detail.browser_review.confirmation_token is not None
+        assert "jobs.example.com" not in str(detail.model_dump())
+        assert "Target Company" not in str(detail.model_dump())
+
+
+

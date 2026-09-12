@@ -59,6 +59,26 @@ def client_with_db():
         status=ApplicationStatus.READY_TO_APPLY,
     )
     session.add(app_record)
+
+    job2 = Job(
+        job_id="job-api-test-002",
+        title="Frontend Engineer",
+        company="Datadog",
+        description="React and TypeScript",
+        lifecycle_status="DISCOVERED",
+    )
+    session.add(job2)
+    session.commit()
+
+    app_record2 = Application(
+        application_id="app-other-unrelated-002",
+        job_id=job2.id,
+        job_id_str="job-api-test-002",
+        company="Datadog",
+        role="Frontend Engineer",
+        status=ApplicationStatus.READY_TO_APPLY,
+    )
+    session.add(app_record2)
     session.commit()
 
     # Seed browser task for confirmation test
@@ -177,7 +197,7 @@ def test_api_dashboard_confirm_flow(client_with_db, monkeypatch):
     }
     res_mismatch = client.post("/api/dashboard/applications/app-other-unrelated-002/confirm", json=mismatched_app_payload)
     assert res_mismatch.status_code == 403
-    assert "does not belong" in res_mismatch.json()["detail"]
+    assert "does not match expected application" in res_mismatch.json()["detail"]
 
     # 4. Invalid confirmation token fails with 403 Forbidden
     bad_token_payload = {

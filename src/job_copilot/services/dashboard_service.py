@@ -445,12 +445,19 @@ class DashboardService:
                 # Try finding by job_id_str
                 app_model = app_repo.get_by_job_id_str(application_id)
 
-            job_id = app_model.job_id_str if app_model and app_model.job_id_str else application_id
-            company = app_model.company if app_model and app_model.company else "Target Company"
-            role = app_model.role if app_model and app_model.role else "Software Engineer"
+            job_repo = JobRepository(db)
+            db_job = None
+            if app_model and app_model.job_id:
+                db_job = job_repo.get_by_id(app_model.job_id)
+            if not db_job:
+                db_job = job_repo.get_by_job_id(application_id)
+
+            job_id = app_model.job_id_str if app_model and app_model.job_id_str else (db_job.job_id if db_job else application_id)
+            company = app_model.company if app_model and app_model.company else (db_job.company if db_job else "Target Company")
+            role = app_model.role if app_model and app_model.role else (db_job.title if db_job else "Software Engineer")
             status = app_model.status.value if app_model else "DISCOVERED"
-            source = app_model.source if app_model else "unknown"
-            canonical_url = app_model.canonical_job_url if app_model else None
+            source = app_model.source if app_model else (db_job.source if db_job else "unknown")
+            canonical_url = app_model.canonical_job_url if app_model else (db_job.canonical_url or db_job.url if db_job else None)
             match_score = app_model.match_score if app_model else None
             recommendation = app_model.recommendation if app_model else None
             selected_strat = app_model.resume_strategy if app_model and app_model.resume_strategy else "general_swe"
@@ -533,32 +540,12 @@ class DashboardService:
                 for art in artifacts_list
             ]
 
-            # Browser Worker Review Package
+            # Browser Worker Review Package (Read-only query, no synthetic task creation)
             task_repo = BrowserTaskRepository(db)
-            browser_task = task_repo.get_by_application_id(application_id) or task_repo.get_by_application_id(job_id)
-
-            if pkg and not browser_task:
-                task_id = f"task-bw-{uuid.uuid4().hex[:8]}"
-                confirm_token = HumanConfirmationService.generate_confirmation_token()
-                expires_at = datetime.now(timezone.utc) + timedelta(hours=24)
-                review_pkg_json = {
-                    "detected_fields": [a.question_text for a in pkg.answers],
-                    "filled_fields": [a.question_text for a in pkg.answers if not a.requires_user_input],
-                    "unresolved_fields": [u.question_text for u in pkg.user_inputs_required],
-                    "warnings": [],
-                }
-                browser_task = BrowserTaskModel(
-                    task_id=task_id,
-                    application_id=app_model.application_id if app_model else application_id,
-                    job_id=job_id,
-                    source=source or "manual",
-                    target_url=canonical_url or f"https://jobs.example.com/apply/{job_id}",
-                    status=BrowserTaskStatus.READY_FOR_REVIEW,
-                    confirmation_token=confirm_token,
-                    confirmation_expires_at=expires_at,
-                    review_package_json=review_pkg_json,
-                )
-                task_repo.create(browser_task)
+            browser_task = task_repo.get_by_application_or_job_id(
+                application_id=app_model.application_id if app_model else application_id,
+                job_id=job_id,
+            )
 
             browser_review: Optional[BrowserReviewSummary] = None
 
@@ -667,7 +654,10 @@ class DashboardService:
 
             # Create or update browser worker task in READY_FOR_REVIEW
             task_repo = BrowserTaskRepository(db)
-            existing_task = task_repo.get_by_application_id(app.application_id if app else application_id) or task_repo.get_by_application_id(job_id)
+            existing_task = task_repo.get_by_application_or_job_id(
+                application_id=app.application_id if app else application_id,
+                job_id=job_id,
+            )
             review_pkg_json = {
                 "detected_fields": [a.question_text for a in pkg.answers],
                 "filled_fields": [a.question_text for a in pkg.answers if not a.requires_user_input],
@@ -678,12 +668,15 @@ class DashboardService:
                 task_id = f"task-bw-{uuid.uuid4().hex[:8]}"
                 confirm_token = HumanConfirmationService.generate_confirmation_token()
                 expires_at = datetime.now(timezone.utc) + timedelta(hours=24)
+                job_repo = JobRepository(db)
+                db_job = job_repo.get_by_job_id(job_id)
+                target_url = app.canonical_job_url if app and app.canonical_job_url else (db_job.canonical_url or db_job.url if db_job else None)
                 new_task = BrowserTaskModel(
                     task_id=task_id,
                     application_id=app.application_id if app else application_id,
                     job_id=job_id,
-                    source=app.source if app else "manual",
-                    target_url=(app.canonical_job_url if app and app.canonical_job_url else f"https://jobs.example.com/apply/{job_id}"),
+                    source=app.source if app else (db_job.source if db_job else "manual"),
+                    target_url=target_url or f"https://jobs.example.com/apply/{job_id}",
                     status=BrowserTaskStatus.READY_FOR_REVIEW,
                     confirmation_token=confirm_token,
                     confirmation_expires_at=expires_at,

@@ -2,7 +2,7 @@
 
 from datetime import datetime, timezone
 from typing import List, Optional
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from job_copilot.domain.browser_worker_enums import BrowserTaskStatus
@@ -37,6 +37,25 @@ class BrowserTaskRepository:
         stmt = (
             select(BrowserTaskModel)
             .where(BrowserTaskModel.application_id == application_id)
+            .order_by(BrowserTaskModel.created_at.desc())
+        )
+        return self.db.scalars(stmt).first()
+
+    def get_by_application_or_job_id(
+        self, application_id: str, job_id: Optional[str] = None
+    ) -> Optional[BrowserTaskModel]:
+        """Fetch latest task matching either application_id or job_id."""
+        clauses = [
+            BrowserTaskModel.application_id == application_id,
+            BrowserTaskModel.job_id == application_id,
+        ]
+        if job_id:
+            clauses.append(BrowserTaskModel.job_id == job_id)
+            clauses.append(BrowserTaskModel.application_id == job_id)
+
+        stmt = (
+            select(BrowserTaskModel)
+            .where(or_(*clauses))
             .order_by(BrowserTaskModel.created_at.desc())
         )
         return self.db.scalars(stmt).first()

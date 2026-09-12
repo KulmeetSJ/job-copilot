@@ -60,15 +60,35 @@ class HumanConfirmationService:
         # 3. Verify task ownership against application_id if provided
         if application_id:
             clean_app_id = application_id.strip()
-            matches_app = (task.application_id == clean_app_id or task.job_id == clean_app_id)
-            if not matches_app:
-                app = self.app_repo.get_by_application_id(clean_app_id) or self.app_repo.get_by_job_id_str(clean_app_id)
-                if app and (app.application_id == task.application_id or app.job_id_str == task.job_id):
-                    matches_app = True
-            if not matches_app:
+            app = self.app_repo.get_by_application_id(clean_app_id) or self.app_repo.get_by_job_id_str(clean_app_id)
+            if not app:
+                raise SubmissionSafetyError(f"Application '{application_id}' not found.")
+
+            # Strict relationship verification:
+            # 1. BrowserTask.application_id must match Application.application_id
+            expected_app_id = app.application_id or clean_app_id
+            if task.application_id != expected_app_id:
                 raise SubmissionSafetyError(
-                    f"Browser task '{task_id}' does not belong to application '{application_id}'."
+                    f"Browser task '{task_id}' application ID '{task.application_id}' does not match expected application '{expected_app_id}'."
                 )
+
+            # 2. BrowserTask.job_id must match Application.job_id_str (or linked Job.job_id)
+            expected_job_id = app.job_id_str or (app.job.job_id if app.job else None)
+            if expected_job_id and task.job_id != expected_job_id:
+                raise SubmissionSafetyError(
+                    f"Browser task '{task_id}' job ID '{task.job_id}' does not match expected job '{expected_job_id}'."
+                )
+
+            # 3. Cross-domain integrity check
+            if app.canonical_job_url and task.target_url:
+                from urllib.parse import urlparse
+                app_host = (urlparse(app.canonical_job_url).hostname or "").lower()
+                task_host = (urlparse(task.target_url).hostname or "").lower()
+                if app_host and task_host and app_host != task_host:
+                    if not (app_host.endswith("." + task_host) or task_host.endswith("." + app_host)):
+                        raise SubmissionSafetyError(
+                            f"Browser task target domain '{task_host}' does not match application destination domain '{app_host}'."
+                        )
 
         # 4. Check duplicate submission guard
         if task.status == BrowserTaskStatus.COMPLETED:
