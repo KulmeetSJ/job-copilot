@@ -32,6 +32,8 @@ class PipelineCounts(BaseModel):
     recommended: int = 0
     prepared: int = 0
     ready_for_review: int = 0
+    manual_action_required: int = 0
+    submission_unverified: int = 0
     needs_user_input: int = 0
     awaiting_confirmation: int = 0
     submitted: int = 0
@@ -327,6 +329,18 @@ class SubmissionConfirmResponse(BaseModel):
     submission_reference: Optional[str] = None
     submitted_at: Optional[datetime] = None
     message: str
+
+
+class RetrySubmissionPayload(BaseModel):
+    """
+    Explicit retry request for unverified submissions.
+    Requires user to acknowledge duplicate submission risk.
+    """
+    acknowledge_duplicate_risk: bool = Field(
+        ...,
+        description="Explicit acknowledgement that retrying an unverified submission may create a duplicate application.",
+    )
+    user_notes: Optional[str] = Field(default=None, description="Optional user notes explaining the retry justification.")
 
 
 # ==============================================================================

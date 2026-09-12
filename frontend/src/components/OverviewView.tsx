@@ -113,6 +113,9 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
     { label: 'Recommended', count: pipeline_counts.recommended, color: 'text-blue-400', bg: 'bg-blue-900/20' },
     { label: 'Prepared', count: pipeline_counts.prepared, color: 'text-indigo-400', bg: 'bg-indigo-900/20' },
     { label: 'Ready for Review', count: pipeline_counts.ready_for_review, color: 'text-amber-400', bg: 'bg-amber-900/20' },
+    ...(pipeline_counts.submission_unverified > 0 ? [
+      { label: 'Unverified', count: pipeline_counts.submission_unverified, color: 'text-amber-400', bg: 'bg-amber-950/20' }
+    ] : []),
     { label: 'Submitted', count: pipeline_counts.submitted, color: 'text-emerald-400', bg: 'bg-emerald-900/20' },
     { label: 'Interview', count: pipeline_counts.interview, color: 'text-purple-400', bg: 'bg-purple-900/20' },
     { label: 'Offer', count: pipeline_counts.offer, color: 'text-yellow-300', bg: 'bg-yellow-900/20' },
@@ -495,7 +498,14 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
             <span className="text-xs font-semibold tracking-wide uppercase">Submitted</span>
             <Send className="w-4 h-4" />
           </div>
-          <div className="text-2xl font-bold text-white">{pipeline_counts.submitted}</div>
+          <div className="flex items-baseline space-x-2">
+            <span className="text-2xl font-bold text-white">{pipeline_counts.submitted}</span>
+            {pipeline_counts.submission_unverified > 0 && (
+              <span className="text-[10px] font-medium text-amber-400 font-mono bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">
+                +{pipeline_counts.submission_unverified} unverified
+              </span>
+            )}
+          </div>
           <p className="text-[11px] text-slate-400 mt-1">Confirmed applications</p>
         </div>
 

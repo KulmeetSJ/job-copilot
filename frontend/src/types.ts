@@ -16,6 +16,8 @@ export interface PipelineCounts {
   ready_for_review: number;
   needs_user_input: number;
   awaiting_confirmation: number;
+  manual_action_required: number;
+  submission_unverified: number;
   submitted: number;
   recruiter_response: number;
   interview: number;
@@ -271,6 +273,11 @@ export interface SubmissionConfirmResponse {
   submission_reference?: string;
   submitted_at?: string;
   message: string;
+}
+
+export interface RetrySubmissionPayload {
+  acknowledge_duplicate_risk: boolean;
+  user_notes?: string;
 }
 
 export interface AnalyzeOpportunityRequest {

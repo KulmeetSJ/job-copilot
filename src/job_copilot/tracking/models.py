@@ -41,6 +41,8 @@ class ApplicationLifecycleStatus(str, Enum):
     RECOMMENDED = "RECOMMENDED"
     PREPARED = "PREPARED"
     READY_FOR_REVIEW = "READY_FOR_REVIEW"
+    MANUAL_ACTION_REQUIRED = "MANUAL_ACTION_REQUIRED"
+    SUBMISSION_UNVERIFIED = "SUBMISSION_UNVERIFIED"
     SUBMITTED = "SUBMITTED"
     ACKNOWLEDGED = "ACKNOWLEDGED"
     RECRUITER_RESPONSE = "RECRUITER_RESPONSE"
@@ -136,6 +138,8 @@ class FunnelMetrics(BaseModel):
     recommended: int = 0
     prepared: int = 0
     ready_for_review: int = 0
+    manual_action_required: int = 0
+    submission_unverified: int = 0
     submitted: int = 0
     acknowledged: int = 0
     recruiter_responses: int = 0

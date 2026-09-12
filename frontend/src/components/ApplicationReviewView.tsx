@@ -53,6 +53,12 @@ export const ApplicationReviewView: React.FC<ApplicationReviewViewProps> = ({
   // Submission Modal state
   const [showSubmissionModal, setShowSubmissionModal] = useState(false);
 
+  // Retry Submission Modal state
+  const [showRetryModal, setShowRetryModal] = useState(false);
+  const [retryAcknowledged, setRetryAcknowledged] = useState(false);
+  const [retryNotes, setRetryNotes] = useState('');
+  const [retrying, setRetrying] = useState(false);
+
   const [listLoading, setListLoading] = useState(true);
 
   // Authenticated PDF and Screenshot Blob URLs
@@ -121,14 +127,36 @@ export const ApplicationReviewView: React.FC<ApplicationReviewViewProps> = ({
     if (!detail?.application_id) return;
     try {
       setDownloadingPdf(true);
+      const cleanCompany = (detail.company || 'Company').replace(/[^a-zA-Z0-9_-]/g, '_');
+      const cleanRole = (detail.role || 'Software_Engineer').replace(/[^a-zA-Z0-9_-]/g, '_');
+      const filename = `Kulmeet_Singh_${cleanCompany}_${cleanRole}.pdf`;
       await api.downloadFile(
         `/api/dashboard/applications/${detail.application_id}/resume/pdf`,
-        `Resume_${detail.company.replace(/\s+/g, '_')}.pdf`
+        filename
       );
     } catch (err: any) {
       alert(err.message || 'Failed to download resume PDF');
     } finally {
       setDownloadingPdf(false);
+    }
+  };
+
+  const handleRetrySubmit = async () => {
+    if (!detail?.application_id || !retryAcknowledged) return;
+    try {
+      setRetrying(true);
+      const updated = await api.retryApplication(detail.application_id, {
+        acknowledge_duplicate_risk: true,
+        user_notes: retryNotes || 'User acknowledged duplicate risk and authorized retry review.',
+      });
+      setDetail(updated);
+      setShowRetryModal(false);
+      setRetryAcknowledged(false);
+      setRetryNotes('');
+    } catch (err: any) {
+      alert(err.message || 'Failed to initialize retry');
+    } finally {
+      setRetrying(false);
     }
   };
 
@@ -312,11 +340,19 @@ export const ApplicationReviewView: React.FC<ApplicationReviewViewProps> = ({
             {applications.length === 0 ? (
               <option value="">No applications prepared</option>
             ) : (
-              applications.map((app) => (
-                <option key={app.application_id || app.job_id_str} value={app.application_id || app.job_id_str}>
-                  {app.company} — {app.role} ({app.status})
-                </option>
-              ))
+              applications.map((app) => {
+                const identifier = app.job_id_str || app.job_id || app.application_id || 'app';
+                const displayId = identifier.length > 32 ? `${identifier.slice(0, 29)}...` : identifier;
+                return (
+                  <option 
+                    key={app.application_id || app.job_id_str || app.job_id} 
+                    value={app.application_id || app.job_id_str || app.job_id}
+                    title={`${app.company} — ${app.role} (${identifier})`}
+                  >
+                    {app.company} — {app.role} ({displayId})
+                  </option>
+                );
+              })
             )}
           </select>
 
@@ -387,16 +423,28 @@ export const ApplicationReviewView: React.FC<ApplicationReviewViewProps> = ({
               </div>
 
               {/* Dynamic State-Driven Action Controls */}
-              <div className="w-full md:w-auto pt-1 md:pt-0">
+              <div className="w-full md:w-auto pt-1 md:pt-0 flex flex-wrap items-center gap-2">
                 {isBlockerActive ? (
-                  <button
-                    onClick={handleResume}
-                    disabled={resuming}
-                    className="w-full md:w-auto px-5 py-2.5 text-xs sm:text-sm font-bold bg-amber-500 hover:bg-amber-400 active:bg-amber-600 text-slate-950 rounded-lg shadow-lg shadow-amber-500/20 transition-all flex items-center justify-center space-x-2"
-                  >
-                    {resuming ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
-                    <span>Resume Automation</span>
-                  </button>
+                  detail.can_resume ? (
+                    <button
+                      onClick={handleResume}
+                      disabled={resuming}
+                      className="w-full md:w-auto px-5 py-2.5 text-xs sm:text-sm font-bold bg-amber-500 hover:bg-amber-400 active:bg-amber-600 text-slate-950 rounded-lg shadow-lg shadow-amber-500/20 transition-all flex items-center justify-center space-x-2"
+                    >
+                      {resuming ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+                      <span>Resume Automation</span>
+                    </button>
+                  ) : (
+                    <a
+                      href={detail.canonical_job_url || detail.browser_review?.target_url || '#'}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="w-full md:w-auto px-4 py-2.5 text-xs sm:text-sm font-bold bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-lg shadow-lg shadow-amber-500/20 transition-all flex items-center justify-center space-x-2"
+                    >
+                      <ExternalLink className="w-4 h-4" />
+                      <span>Open Employer Portal</span>
+                    </a>
+                  )
                 ) : isSubmissionAuthorized ? (
                   <div className="w-full md:w-auto px-4 py-2.5 text-xs font-semibold bg-blue-900/30 text-blue-300 border border-blue-500/40 rounded-lg flex items-center justify-center space-x-2">
                     <Loader2 className="w-4 h-4 animate-spin text-blue-400" />
@@ -424,9 +472,18 @@ export const ApplicationReviewView: React.FC<ApplicationReviewViewProps> = ({
                     </div>
                   </div>
                 ) : isUnverified ? (
-                  <div className="w-full md:w-auto px-4 py-2.5 text-xs font-semibold bg-amber-950/30 text-amber-300 border border-amber-500/40 rounded-lg flex items-center justify-center space-x-2">
-                    <AlertTriangle className="w-4 h-4 text-amber-400" />
-                    <span>Submission attempted — confirmation could not be verified</span>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="px-3.5 py-2 text-xs font-semibold bg-amber-950/40 text-amber-300 border border-amber-500/40 rounded-lg flex items-center space-x-1.5">
+                      <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Submission unverified</span>
+                    </div>
+                    <button
+                      onClick={() => setShowRetryModal(true)}
+                      className="px-4 py-2 text-xs font-bold bg-amber-600 hover:bg-amber-500 text-white rounded-lg shadow-sm transition-colors flex items-center space-x-1.5 cursor-pointer"
+                    >
+                      <Sparkles className="w-3.5 h-3.5" />
+                      <span>Review & Retry Submission</span>
+                    </button>
                   </div>
                 ) : (
                   <button
@@ -442,7 +499,7 @@ export const ApplicationReviewView: React.FC<ApplicationReviewViewProps> = ({
             </div>
           </div>
 
-          {/* Prominent Blocker / Human Action Required Card */}
+          {/* Prominent Blocker / Human Action Required Card (Option B: Safe Manual Takeover) */}
           {isBlockerActive && (
             <div className="glass-panel p-4 sm:p-5 rounded-xl border-2 border-amber-500/60 bg-amber-950/25 space-y-3 animate-in fade-in">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -455,35 +512,60 @@ export const ApplicationReviewView: React.FC<ApplicationReviewViewProps> = ({
                       {detail.blocker_type === 'CAPTCHA' ? 'CAPTCHA Verification Required' :
                        detail.blocker_type === 'LOGIN' ? 'Authentication Login Required' :
                        detail.blocker_type === 'MFA' ? 'MFA / OTP Challenge' :
-                       'Human Action Required'}
+                       detail.blocker_type === 'USER_INPUT_REQUIRED' ? 'Candidate Input Required' :
+                       'Manual Action Required'}
                     </h4>
                     <p className="text-xs sm:text-sm text-slate-200 leading-relaxed font-medium">
-                      {detail.blocker_instruction || detail.browser_review?.pause_reason || 'Please complete the required action in the authenticated browser session, then click Resume.'}
+                      {detail.blocker_instruction || detail.browser_review?.pause_reason || (
+                        detail.can_resume
+                          ? 'Please provide the missing information in the Needs Input tab, then click Resume.'
+                          : 'The automated browser cannot safely continue because human interaction is required. Complete this application manually in the employer portal. The automation will not submit or retry automatically.'
+                      )}
                     </p>
                   </div>
                 </div>
 
-                <button
-                  onClick={handleResume}
-                  disabled={resuming}
-                  className="px-5 py-2.5 text-xs sm:text-sm font-bold bg-amber-500 hover:bg-amber-400 active:bg-amber-600 text-slate-950 rounded-lg shadow-lg shadow-amber-500/20 transition-all flex items-center justify-center space-x-2 shrink-0 disabled:opacity-50"
-                >
-                  {resuming ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
-                  <span>Resume Automation</span>
-                </button>
+                {detail.can_resume ? (
+                  <button
+                    onClick={handleResume}
+                    disabled={resuming}
+                    className="px-5 py-2.5 text-xs sm:text-sm font-bold bg-amber-500 hover:bg-amber-400 active:bg-amber-600 text-slate-950 rounded-lg shadow-lg shadow-amber-500/20 transition-all flex items-center justify-center space-x-2 shrink-0 disabled:opacity-50"
+                  >
+                    {resuming ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+                    <span>Resume Automation</span>
+                  </button>
+                ) : (
+                  <a
+                    href={detail.canonical_job_url || detail.browser_review?.target_url || '#'}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-5 py-2.5 text-xs sm:text-sm font-bold bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-lg shadow-lg shadow-amber-500/20 transition-all flex items-center justify-center space-x-2 shrink-0"
+                  >
+                    <ExternalLink className="w-4 h-4" />
+                    <span>Open Employer Portal</span>
+                  </a>
+                )}
               </div>
             </div>
           )}
 
           {/* Historical Record / External Unverified Banner */}
           {isUnverified && (
-            <div className="glass-panel p-4 rounded-xl border border-amber-500/40 bg-amber-950/20 space-y-1 text-xs">
-              <div className="flex items-center space-x-2 text-amber-300 font-bold">
-                <AlertTriangle className="w-4 h-4 shrink-0" />
-                <span>INTERNAL RECORD (EXTERNAL SUBMISSION UNVERIFIED)</span>
+            <div className="glass-panel p-4 rounded-xl border border-amber-500/40 bg-amber-950/20 space-y-2 text-xs">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2 text-amber-300 font-bold">
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
+                  <span>INTERNAL RECORD (EXTERNAL SUBMISSION UNVERIFIED)</span>
+                </div>
+                <button
+                  onClick={() => setShowRetryModal(true)}
+                  className="px-3 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 rounded text-[11px] font-semibold transition-colors cursor-pointer"
+                >
+                  Review & Retry
+                </button>
               </div>
               <p className="text-slate-300 leading-relaxed pl-6">
-                Submission outcome could not be verified. Do not retry automatically because the employer may already have received the application.
+                Submission outcome could not be verified from external employer confirmation. Retrying could create a duplicate application if the employer already received it. Automated retry is strictly blocked without explicit duplicate risk acknowledgement.
               </p>
             </div>
           )}
@@ -634,9 +716,21 @@ export const ApplicationReviewView: React.FC<ApplicationReviewViewProps> = ({
                     </div>
                   </div>
                 ) : (
-                  <pre className="p-4 bg-slate-950 border border-slate-800 rounded-lg text-xs font-mono text-slate-300 max-h-[450px] sm:max-h-[500px] overflow-y-auto leading-relaxed whitespace-pre-wrap">
-                    {detail.resume_tex_content || '% Tailored LaTeX generated for this opportunity\n\\begin{document}\n...'}
-                  </pre>
+                  <div className="space-y-2">
+                    <pre className="p-4 bg-slate-950 border border-slate-800 rounded-lg text-xs font-mono text-slate-300 max-h-[450px] sm:max-h-[500px] overflow-y-auto overflow-x-auto leading-relaxed whitespace-pre font-mono select-text">
+                      {detail.resume_tex_content || '% Tailored LaTeX generated for this opportunity\n\\begin{document}\n...'}
+                    </pre>
+                    <div className="flex items-center justify-between text-[11px] text-slate-400 px-1">
+                      <span>Full LaTeX source preserved • {detail.resume_tex_content ? `${detail.resume_tex_content.length} characters` : 'No source'}</span>
+                      <button
+                        onClick={handleCopyTex}
+                        className="text-blue-400 hover:underline flex items-center space-x-1 font-semibold cursor-pointer"
+                      >
+                        {copiedTex ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                        <span>{copiedTex ? 'Copied' : 'Copy LaTeX'}</span>
+                      </button>
+                    </div>
+                  </div>
                 )}
               </div>
 
@@ -896,6 +990,108 @@ export const ApplicationReviewView: React.FC<ApplicationReviewViewProps> = ({
             api.getApplicationDetail(detail.application_id).then(setDetail);
           }}
         />
+      )}
+
+      {/* Review & Retry Submission Modal */}
+      {showRetryModal && detail && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-amber-500/40 rounded-2xl max-w-lg w-full p-6 space-y-5 shadow-2xl animate-in fade-in zoom-in-95">
+            <div className="flex items-start justify-between">
+              <div className="flex items-center space-x-3">
+                <div className="p-2.5 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/40">
+                  <AlertTriangle className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white">Review & Retry Submission</h3>
+                  <p className="text-xs text-slate-400">{detail.company} — {detail.role}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowRetryModal(false)}
+                className="text-slate-400 hover:text-white text-xs p-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            {detail.application_id === 'app-usr-2a43a63d' || detail.is_external_unverified && detail.application_id.startsWith('app-usr-') ? (
+              <div className="space-y-4">
+                <div className="p-4 rounded-xl bg-amber-950/40 border border-amber-500/40 text-amber-200 text-xs space-y-2 leading-relaxed">
+                  <p className="font-semibold text-amber-300">Historical Internal Record Safeguard</p>
+                  <p>
+                    This application was created by an older internal system record where external confirmation was unverified.
+                  </p>
+                  <p>
+                    Automatic retry for this historical record is strictly prevented to protect against submitting a duplicate application to the employer.
+                  </p>
+                  <p className="text-slate-300">
+                    Please inspect your application status directly in the employer's career portal.
+                  </p>
+                </div>
+                <div className="flex justify-end pt-2">
+                  <button
+                    onClick={() => setShowRetryModal(false)}
+                    className="px-4 py-2 text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg transition-colors cursor-pointer"
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="p-3.5 rounded-xl bg-amber-950/40 border border-amber-500/40 text-amber-200 text-xs space-y-2 leading-relaxed">
+                  <p className="font-bold text-amber-300">Warning: Risk of Duplicate Application</p>
+                  <p>
+                    Submission outcome could not be verified. The employer may already have received this application. Retrying could create a duplicate application.
+                  </p>
+                  <p>
+                    Initiating retry will reset the submission cycle, clear stale confirmation tokens, and require you to review and authorize fresh submission.
+                  </p>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-slate-300">User Notes (Optional):</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Verified portal manually, no prior submission found."
+                    value={retryNotes}
+                    onChange={(e) => setRetryNotes(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-amber-500"
+                  />
+                </div>
+
+                <label className="flex items-start space-x-2.5 p-3 rounded-xl bg-slate-950/80 border border-slate-800 cursor-pointer text-xs">
+                  <input
+                    type="checkbox"
+                    checked={retryAcknowledged}
+                    onChange={(e) => setRetryAcknowledged(e.target.checked)}
+                    className="mt-0.5 rounded border-slate-700 text-amber-500 focus:ring-amber-500"
+                  />
+                  <span className="text-slate-300 leading-snug">
+                    I understand that retrying an unverified submission may result in a duplicate application and explicitly request a new review cycle.
+                  </span>
+                </label>
+
+                <div className="flex items-center justify-end space-x-3 pt-2">
+                  <button
+                    onClick={() => setShowRetryModal(false)}
+                    className="px-4 py-2 text-xs font-medium text-slate-400 hover:text-white transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleRetrySubmit}
+                    disabled={!retryAcknowledged || retrying}
+                    className="px-5 py-2 text-xs font-bold bg-amber-600 hover:bg-amber-500 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-lg transition-all shadow-md flex items-center space-x-1.5"
+                  >
+                    {retrying ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                    <span>Proceed with Retry Review</span>
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
       )}
 
     </div>

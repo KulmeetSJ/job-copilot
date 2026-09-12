@@ -23,6 +23,7 @@ from job_copilot.schemas.dashboard import (
     HumanInputSubmitRequest,
     JobDetailResponse,
     PrepareApplicationPayload,
+    RetrySubmissionPayload,
     SessionMetadataItem,
     SkipApplicationPayload,
     SourceMonitoringItem,
@@ -244,6 +245,26 @@ def resume_application(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(ve))
     except Exception as e:
         logger.error(f"Unexpected error during application resume: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+
+@router.post("/applications/{application_id}/retry", response_model=ApplicationDetailResponse)
+def retry_application_submission(
+    application_id: str,
+    payload: RetrySubmissionPayload,
+    service: DashboardService = Depends(get_dashboard_service),
+) -> ApplicationDetailResponse:
+    """
+    Review & Retry Submission gate for SUBMISSION_UNVERIFIED applications.
+    Requires explicit duplicate risk acknowledgement checkbox and generates a fresh confirmation token.
+    Historical Mastercard record (app-usr-2a43a63d) is protected and non-retryable.
+    """
+    try:
+        return service.retry_submission(application_id=application_id, payload=payload)
+    except ValueError as ve:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(ve))
+    except Exception as e:
+        logger.error(f"Unexpected error during application submission retry: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 

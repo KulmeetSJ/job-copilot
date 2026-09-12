@@ -143,6 +143,15 @@ export const api = {
     return handleResponse<ApplicationDetailResponse>(res);
   },
 
+  async retryApplication(applicationId: string, payload: import('./types').RetrySubmissionPayload): Promise<ApplicationDetailResponse> {
+    const res = await fetch(`${API_BASE}/applications/${encodeURIComponent(applicationId)}/retry`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify(payload),
+    });
+    return handleResponse<ApplicationDetailResponse>(res);
+  },
+
   // Analytics
   async getAnalytics(fromDate?: string, toDate?: string): Promise<any> {
     const query = new URLSearchParams();

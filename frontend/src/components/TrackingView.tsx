@@ -33,6 +33,7 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ onSelectApplication 
   const columns = [
     { id: 'DISCOVERED', label: 'Discovered', fullLabel: 'Discovered & Recommended', statuses: ['DISCOVERED', 'RECOMMENDED', 'SHORTLISTED'] },
     { id: 'PREPARED', label: 'Prepared', fullLabel: 'Prepared & Review', statuses: ['PREPARED', 'READY_FOR_REVIEW', 'READY_TO_APPLY', 'WAITING_FOR_USER', 'PREPARING'] },
+    { id: 'UNVERIFIED', label: 'Unverified', fullLabel: 'Unverified / Needs Review', statuses: ['SUBMISSION_UNVERIFIED', 'EXTERNAL_SUBMISSION_UNVERIFIED', 'MANUAL_ACTION_REQUIRED'] },
     { id: 'SUBMITTED', label: 'Submitted', fullLabel: 'Submitted & Sent', statuses: ['SUBMITTED', 'APPLIED', 'ACKNOWLEDGED'] },
     { id: 'IN_PROGRESS', label: 'Assessment', fullLabel: 'Response & Assessment', statuses: ['RECRUITER_RESPONSE', 'ASSESSMENT', 'OA'] },
     { id: 'INTERVIEW', label: 'Interview', fullLabel: 'Interviewing', statuses: ['INTERVIEW', 'FINAL_ROUND'] },
@@ -142,7 +143,7 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ onSelectApplication 
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-7 gap-3 sm:gap-3.5">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8 gap-3 sm:gap-3.5">
           {displayedColumns.map((col) => {
             const colApps = filtered.filter((a) => col.statuses.includes(getAppStatus(a)));
             return (

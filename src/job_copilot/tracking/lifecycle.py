@@ -13,12 +13,14 @@ STAGE_ORDER = {
     ApplicationLifecycleStatus.RECOMMENDED: 2,
     ApplicationLifecycleStatus.PREPARED: 3,
     ApplicationLifecycleStatus.READY_FOR_REVIEW: 4,
-    ApplicationLifecycleStatus.SUBMITTED: 5,
-    ApplicationLifecycleStatus.ACKNOWLEDGED: 6,
-    ApplicationLifecycleStatus.RECRUITER_RESPONSE: 7,
-    ApplicationLifecycleStatus.ASSESSMENT: 8,
-    ApplicationLifecycleStatus.INTERVIEW: 9,
-    ApplicationLifecycleStatus.FINAL_ROUND: 10,
+    ApplicationLifecycleStatus.MANUAL_ACTION_REQUIRED: 4,
+    ApplicationLifecycleStatus.SUBMISSION_UNVERIFIED: 5,
+    ApplicationLifecycleStatus.SUBMITTED: 6,
+    ApplicationLifecycleStatus.ACKNOWLEDGED: 7,
+    ApplicationLifecycleStatus.RECRUITER_RESPONSE: 8,
+    ApplicationLifecycleStatus.ASSESSMENT: 9,
+    ApplicationLifecycleStatus.INTERVIEW: 10,
+    ApplicationLifecycleStatus.FINAL_ROUND: 11,
 }
 
 # Outcome states (results of applications)

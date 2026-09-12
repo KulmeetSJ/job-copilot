@@ -403,8 +403,8 @@ def test_dashboard_service_blocker_and_mastercard_historical_unverified(db_sessi
     detail = dash_svc.get_application_detail("app-usr-2a43a63d")
 
     assert detail.blocker_type == "CAPTCHA"
-    assert "CAPTCHA verification detected" in detail.blocker_instruction
-    assert detail.can_resume is True
+    assert "manual" in detail.blocker_instruction.lower()
+    assert detail.can_resume is False
     # Historical Mastercard record must be flagged as unverified
     assert detail.is_external_unverified is True
 

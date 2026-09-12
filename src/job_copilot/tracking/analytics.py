@@ -56,6 +56,12 @@ class AnalyticsEngine:
         }
 
         for app in applications:
+            # Check if this application is unverified or manual action required
+            is_unverified = (
+                app.application_id == "app-usr-2a43a63d"
+                or app.current_status == ApplicationLifecycleStatus.SUBMISSION_UNVERIFIED
+            )
+
             # 1. Base stages from record fields
             if app.discovered_at or app.application_id:
                 stage_apps[ApplicationLifecycleStatus.DISCOVERED].add(app.application_id)
@@ -63,27 +69,35 @@ class AnalyticsEngine:
                 stage_apps[ApplicationLifecycleStatus.RECOMMENDED].add(app.application_id)
             if app.prepared_at:
                 stage_apps[ApplicationLifecycleStatus.PREPARED].add(app.application_id)
-            if app.submitted_at:
+            if app.submitted_at and not is_unverified:
                 stage_apps[ApplicationLifecycleStatus.SUBMITTED].add(app.application_id)
 
             # 2. Record explicit events
             for e in app.events:
-                if e.event_type in stage_apps:
+                if is_unverified and e.event_type == ApplicationLifecycleStatus.SUBMITTED:
+                    stage_apps[ApplicationLifecycleStatus.SUBMISSION_UNVERIFIED].add(app.application_id)
+                elif e.event_type in stage_apps:
                     stage_apps[e.event_type].add(app.application_id)
 
             # 3. Record current status
-            if app.current_status in stage_apps:
+            if is_unverified:
+                stage_apps[ApplicationLifecycleStatus.SUBMISSION_UNVERIFIED].add(app.application_id)
+            elif app.current_status in stage_apps:
                 stage_apps[app.current_status].add(app.application_id)
 
         # Ingest all global events
         for e in events:
-            if e.event_type in stage_apps:
+            if e.application_id == "app-usr-2a43a63d" and e.event_type == ApplicationLifecycleStatus.SUBMITTED:
+                stage_apps[ApplicationLifecycleStatus.SUBMISSION_UNVERIFIED].add(e.application_id)
+            elif e.event_type in stage_apps:
                 stage_apps[e.event_type].add(e.application_id)
 
         funnel.discovered = len(stage_apps[ApplicationLifecycleStatus.DISCOVERED])
         funnel.recommended = len(stage_apps[ApplicationLifecycleStatus.RECOMMENDED])
         funnel.prepared = len(stage_apps[ApplicationLifecycleStatus.PREPARED])
         funnel.ready_for_review = len(stage_apps[ApplicationLifecycleStatus.READY_FOR_REVIEW])
+        funnel.manual_action_required = len(stage_apps[ApplicationLifecycleStatus.MANUAL_ACTION_REQUIRED])
+        funnel.submission_unverified = len(stage_apps[ApplicationLifecycleStatus.SUBMISSION_UNVERIFIED])
         funnel.submitted = len(stage_apps[ApplicationLifecycleStatus.SUBMITTED])
         funnel.acknowledged = len(stage_apps[ApplicationLifecycleStatus.ACKNOWLEDGED])
         funnel.recruiter_responses = len(stage_apps[ApplicationLifecycleStatus.RECRUITER_RESPONSE])
