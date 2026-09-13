@@ -1,8 +1,6 @@
 """Focused unit and integration tests for LLM Resume Tailoring, Provider Abstraction,
 Evidence Grounding, and Deterministic Fallback."""
 
-from pathlib import Path
-from typing import Optional
 import pytest
 
 from job_copilot.resume.llm.models import (
@@ -11,29 +9,23 @@ from job_copilot.resume.llm.models import (
     LLMResumeDraft,
     LLMSkillGroupItem,
 )
-from job_copilot.resume.llm.prompts import (
-    RESUME_SYSTEM_PROMPT,
-    build_grounded_resume_prompt,
-)
 from job_copilot.resume.llm.provider import (
     LLMResumeProvider,
     OpenAICompatibleResumeProvider,
-    get_resume_llm_provider,
 )
 from job_copilot.resume.llm.validator import GroundingValidator
 from job_copilot.resume.llm.writer import LLMResumeWriter
-from job_copilot.resume.models import JobAnalysis, JobRequirement, JobRequirementType
 from job_copilot.services.resume_service import ResumeService
 
 
 class MockLLMProvider(LLMResumeProvider):
     """Mock LLM Provider returning pre-configured drafts or simulated errors."""
 
-    def __init__(self, draft_to_return: Optional[LLMResumeDraft] = None, should_fail: bool = False):
+    def __init__(self, draft_to_return: LLMResumeDraft | None = None, should_fail: bool = False):
         self.draft_to_return = draft_to_return
         self.should_fail = should_fail
         self.call_count = 0
-        self.last_retry_error: Optional[str] = None
+        self.last_retry_error: str | None = None
 
     def is_available(self) -> bool:
         return not self.should_fail
@@ -42,8 +34,8 @@ class MockLLMProvider(LLMResumeProvider):
         self,
         system_prompt: str,
         user_prompt: str,
-        retry_error: Optional[str] = None,
-    ) -> Optional[LLMResumeDraft]:
+        retry_error: str | None = None,
+    ) -> LLMResumeDraft | None:
         self.call_count += 1
         self.last_retry_error = retry_error
         if self.should_fail:
@@ -168,6 +160,8 @@ def test_writer_falls_back_when_provider_returns_none(service, candidate_profile
 # ==============================================================================
 # 2. Grounding & Truth Invariant Validation Tests
 # ==============================================================================
+# 2. Grounding & Truth Invariant Validation Tests
+# ==============================================================================
 
 def test_evidence_grounding_validation_success(valid_llm_draft, candidate_profile):
     """Valid draft containing only verified facts and metrics passes grounding validation."""
@@ -228,7 +222,119 @@ def test_unauthorized_evidence_id_rejected(valid_llm_draft, candidate_profile):
 
 
 # ==============================================================================
-# 3. Retry with Validation Feedback Tests
+# 3. Explicit Adversarial Tests (Requirement 7)
+# ==============================================================================
+
+def test_adversarial_valid_evidence_id_plus_invented_metric(valid_llm_draft, candidate_profile):
+    """
+    Adversarial Case 1: Valid evidence ID + invented metric.
+    EXP-HSBC-TF-001 supports 2,000+ resources and 60% acceleration.
+    Injecting '95%' or '50M+' must fail deterministically.
+    Expected Result: FAIL (is_valid is False)
+    """
+    validator = GroundingValidator()
+    draft = valid_llm_draft.model_copy(deep=True)
+    draft.experience_bullets[1].text = (
+        "Provisioned **2,000+ GCP resources** using Terraform IaC modules, accelerating cycle time by **95%**."
+    )
+    is_valid, errors = validator.validate(draft, candidate_profile)
+    assert is_valid is False
+    assert any("95%" in err and "unverified metric" in err.lower() for err in errors)
+
+
+def test_adversarial_valid_evidence_id_plus_unsupported_technology(valid_llm_draft, candidate_profile):
+    """
+    Adversarial Case 2: Valid evidence ID + unsupported technology.
+    EXP-HSBC-TF-001 does not include AWS or Kafka.
+    Expected Result: FAIL (is_valid is False)
+    """
+    validator = GroundingValidator()
+    draft = valid_llm_draft.model_copy(deep=True)
+    draft.experience_bullets[1].text = (
+        "Provisioned **2,000+ AWS resources** using modular Terraform IaC."
+    )
+    draft.experience_bullets[1].technologies = ["Terraform", "AWS"]
+    is_valid, errors = validator.validate(draft, candidate_profile)
+    assert is_valid is False
+    assert any("aws" in err.lower() for err in errors)
+
+
+def test_adversarial_valid_evidence_id_plus_unsupported_claim_like_architected(valid_llm_draft, candidate_profile):
+    """
+    Adversarial Case 3: Valid evidence ID + unsupported verb like 'Architected'.
+    EXP-HSBC-TF-001 supports 'Provisioned 2,000+ GCP resources', not 'Architected'.
+    Expected Result: FAIL (is_valid is False)
+    """
+    validator = GroundingValidator()
+    draft = valid_llm_draft.model_copy(deep=True)
+    draft.experience_bullets[1].text = (
+        "Architected enterprise Terraform IaC modules for **2,000+ GCP resources**, accelerating deployment by **60%**."
+    )
+    is_valid, errors = validator.validate(draft, candidate_profile)
+    assert is_valid is False
+    assert any("architected" in err.lower() or "architectural ownership" in err.lower() for err in errors)
+
+
+def test_adversarial_unknown_skill(valid_llm_draft, candidate_profile):
+    """
+    Adversarial Case 4: Unknown skill not confirmed in CandidateProfile.
+    Injecting 'Kubeflow' or 'Snowflake' must invalidate the draft.
+    Expected Result: FAIL (is_valid is False)
+    """
+    validator = GroundingValidator()
+    draft = valid_llm_draft.model_copy(deep=True)
+    draft.skill_groups[0].skills.append("Kubeflow")
+    is_valid, errors = validator.validate(draft, candidate_profile)
+    assert is_valid is False
+    assert any("kubeflow" in err.lower() and "unknown or unconfirmed skill" in err.lower() for err in errors)
+
+
+def test_adversarial_certification_not_present_in_profile(valid_llm_draft, candidate_profile):
+    """
+    Adversarial Case 5: Certification not present in canonical profile.
+    Candidate only has GCP PCA. Hallucinating 'AWS Certified Solutions Architect' must fail.
+    Expected Result: FAIL (is_valid is False)
+    """
+    validator = GroundingValidator()
+    draft = valid_llm_draft.model_copy(deep=True)
+    draft.summary = (
+        "AWS Certified Solutions Architect with 3+ years experience engineering scalable cloud systems at HSBC."
+    )
+    is_valid, errors = validator.validate(draft, candidate_profile)
+    assert is_valid is False
+    assert any("unconfirmed certification" in err.lower() for err in errors)
+
+
+def test_adversarial_project_benchmark_presented_as_production(valid_llm_draft, candidate_profile):
+    """
+    Adversarial Case 6: Project benchmark presented as production.
+    The Rate Limiter '100K+ RPS' was a local/demo benchmark, not production infrastructure.
+    Expected Result: FAIL (is_valid is False)
+    """
+    validator = GroundingValidator()
+    draft = valid_llm_draft.model_copy(deep=True)
+    draft.projects[0].bullets[0].text = (
+        "Deployed token bucket rate limiter achieving **100K+ RPS** in production environment at HSBC."
+    )
+    is_valid, errors = validator.validate(draft, candidate_profile)
+    assert is_valid is False
+    assert any("production" in err.lower() for err in errors)
+
+
+def test_adversarial_valid_bullet_that_should_pass(valid_llm_draft, candidate_profile):
+    """
+    Adversarial Case 7: Valid bullet that should pass.
+    Fully grounded bullet citing EXP-HSBC-BEAM-001 with supported verb, metric, and tech.
+    Expected Result: PASS (is_valid is True, 0 errors)
+    """
+    validator = GroundingValidator()
+    is_valid, errors = validator.validate(valid_llm_draft, candidate_profile)
+    assert is_valid is True
+    assert len(errors) == 0
+
+
+# ==============================================================================
+# 4. Retry with Validation Feedback Tests
 # ==============================================================================
 
 def test_writer_retries_with_error_feedback(candidate_profile, service, valid_llm_draft):
@@ -267,11 +373,15 @@ def test_writer_retries_with_error_feedback(candidate_profile, service, valid_ll
 
 
 # ==============================================================================
-# 4. End-to-End PDF Compilation & Integration Tests
+# 5. End-to-End Actual ResumeService Integration Tests (Requirement 8)
 # ==============================================================================
 
-def test_successful_jd_specific_tailoring_and_1_page_pdf(service, valid_llm_draft):
-    """Verify that a valid LLM draft renders to LaTeX and compiles to a 1-page PDF."""
+def test_resumeservice_uses_valid_llm_writer_output(service, valid_llm_draft):
+    """
+    Verify actual integration path:
+    JD -> ResumeService.generate_tailored_resume() -> LLM writer -> validated TailoredResume
+    actually uses the LLM-generated content when the provider returns a valid draft.
+    """
     provider = MockLLMProvider(draft_to_return=valid_llm_draft)
     writer = LLMResumeWriter(provider=provider)
     service.llm_writer = writer
@@ -287,31 +397,51 @@ def test_successful_jd_specific_tailoring_and_1_page_pdf(service, valid_llm_draf
 
     res = service.generate_tailored_resume("backend_java", job_description_text=sample_jd)
 
+    # 1. Verify LLM tailored draft was used
+    assert res.tailored_resume.metadata.get("llm_tailored") is True
+    assert res.tailored_resume.summary == valid_llm_draft.summary
+    assert res.tailored_resume.experience[0].bullets[0].text == valid_llm_draft.experience_bullets[0].text
+    assert res.tailored_resume.projects[0].name == valid_llm_draft.projects[0].name
+
+    # 2. Verify PDF generation and 1-page compliance
     assert res.validation.is_valid is True
     assert res.validation.pdf_generated is True
     assert res.validation.page_count == 1
     assert len(res.validation.truth_violations) == 0
-    assert res.tailored_resume.metadata.get("llm_tailored") is True
 
-    # Check that canonical employment facts remain completely unchanged
+    # 3. Canonical employment facts strictly preserved from CandidateProfile
     assert res.tailored_resume.personal_info.full_name == "Kulmeet Singh Jaggi"
     assert res.tailored_resume.experience[0].company == "HSBC"
     assert res.tailored_resume.experience[0].role == "Software Engineer"
+    assert res.tailored_resume.experience[0].location == "Pune, India"
     assert res.tailored_resume.education[0].institution == "Graphic Era Deemed to be University"
 
-    # Check that tailored summary reflects target role
-    assert "payment" in res.tailored_resume.summary.lower()
-    assert "google cloud" in res.tailored_resume.summary.lower()
 
+def test_resumeservice_falls_back_when_llm_writer_output_invalid(service, valid_llm_draft):
+    """
+    Verify actual integration path:
+    JD -> ResumeService.generate_tailored_resume() -> LLM writer -> invalid draft -> deterministic fallback.
+    Must fall back cleanly to deterministic selector and still generate a valid 1-page resume.
+    """
+    bad_draft = valid_llm_draft.model_copy(deep=True)
+    # Inject invented metric that fails validation
+    bad_draft.experience_bullets[0].text = (
+        "Architected real-time Apache Beam pipelines ingesting **500M+ daily payment transactions** into BigQuery."
+    )
 
-def test_fallback_to_deterministic_when_llm_unconfigured(service):
-    """When no LLM API key is provided, resume generation still succeeds via deterministic selector."""
-    service.llm_writer = LLMResumeWriter(provider=OpenAICompatibleResumeProvider(api_key=None))
+    provider = MockLLMProvider(draft_to_return=bad_draft)
+    writer = LLMResumeWriter(provider=provider)
+    service.llm_writer = writer
 
     sample_jd = "Senior Software Engineer — Google Cloud Platform & Terraform"
-    res = service.generate_tailored_resume("cloud_devops", job_description_text=sample_jd)
+    res = service.generate_tailored_resume("backend_java", job_description_text=sample_jd)
 
+    # 1. Verify fallback to deterministic generator happened
+    assert res.tailored_resume.metadata.get("llm_tailored") is not True
+
+    # 2. Verify resume is still valid and compiles to 1-page PDF
     assert res.validation.is_valid is True
     assert res.validation.pdf_generated is True
     assert res.validation.page_count == 1
-    assert res.tailored_resume.metadata.get("llm_tailored") is not True  # Deterministic path
+    assert len(res.validation.truth_violations) == 0
+
