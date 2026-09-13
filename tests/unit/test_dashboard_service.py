@@ -740,3 +740,251 @@ def test_manual_submission_remains_distinct_from_automated_submission(in_memory_
     tracking_sub_events = [e for e in saved_rec.events if e.event_type == ApplicationLifecycleStatus.SUBMITTED]
     assert len(tracking_sub_events) == 1
     assert tracking_sub_events[0].source == EventSource.MANUAL
+
+
+def test_manual_submission_without_canonical_url_never_fabricates_url(in_memory_db):
+    """
+    REGRESSION TEST:
+    Manual submission with no canonical URL must NEVER create a fabricated or dummy URL
+    (e.g. 'https://manual.application.portal/...').
+    No BrowserTaskModel is created if target URL is not available.
+    """
+    service = DashboardService(db=in_memory_db)
+    track_store = service.tracking_service.store
+
+    job = Job(
+        job_id="job-manual-nourl-01",
+        title="Software Engineer",
+        company="Stripe",
+        description="Core infra engineer",
+        source="manual",
+        lifecycle_status="DISCOVERED",
+    )
+    in_memory_db.add(job)
+    in_memory_db.commit()
+
+    app = Application(
+        application_id="app-manual-nourl-01",
+        job_id=job.id,
+        job_id_str="job-manual-nourl-01",
+        company="Stripe",
+        role="Software Engineer",
+        canonical_job_url=None,  # No canonical URL
+        source="manual",
+        status=ApplicationStatus.READY_TO_APPLY,
+    )
+    in_memory_db.add(app)
+    in_memory_db.commit()
+
+    track_rec = ApplicationRecord(
+        application_id="app-manual-nourl-01",
+        job_id="job-manual-nourl-01",
+        company="Stripe",
+        role="Software Engineer",
+        current_status=ApplicationLifecycleStatus.PREPARED,
+    )
+    track_store.save_application(track_rec)
+
+    notes = "Candidate applied manually offline directly at career fair / internal referral."
+    detail = service.mark_application_submitted_manually("app-manual-nourl-01", user_notes=notes)
+
+    # Application state is SUBMITTED
+    assert detail.status == "SUBMITTED"
+    assert detail.submitted_at is not None
+    assert detail.canonical_job_url is None
+
+    # NO BrowserTaskModel created with fabricated URL
+    task = in_memory_db.query(BrowserTaskModel).filter_by(application_id="app-manual-nourl-01").first()
+    assert task is None
+
+    # Verify no fabricated URLs exist anywhere in the database
+    all_tasks = in_memory_db.query(BrowserTaskModel).all()
+    for t in all_tasks:
+        assert "manual.application.portal" not in (t.target_url or "")
+        assert "example.portal" not in (t.target_url or "")
+
+    # Event tracking records manual submission correctly
+    events = in_memory_db.query(ApplicationEventModel).filter_by(application_id="app-manual-nourl-01").all()
+    sub_events = [e for e in events if e.event_type == "SUBMITTED"]
+    assert len(sub_events) == 1
+    assert sub_events[0].source == "MANUAL_CANDIDATE"
+    assert notes in sub_events[0].notes
+
+
+def test_continue_application_session_isolation_cross_employer(in_memory_db):
+    """
+    REGRESSION TEST:
+    ACTIVE session for employer A + application for employer B + CONTINUE
+    = must NOT reuse employer A's session.
+    Fails safely with LOGIN_REQUIRED.
+    """
+    service = DashboardService(db=in_memory_db)
+
+    # 1. Active session belonging specifically to Employer A
+    session_a = BrowserSessionModel(
+        session_id="sess-emp-a-99",
+        source="greenhouse",
+        status=AuthenticatedSessionStatus.ACTIVE,
+        metadata_json={"company": "Employer A", "employer": "Employer A"},
+    )
+    in_memory_db.add(session_a)
+
+    # 2. Application belonging to Employer B
+    job_b = Job(
+        job_id="job-emp-b-01",
+        title="Staff Engineer",
+        company="Employer B",
+        description="Employer B backend role",
+        lifecycle_status="DISCOVERED",
+    )
+    in_memory_db.add(job_b)
+    in_memory_db.commit()
+
+    app_b = Application(
+        application_id="app-emp-b-01",
+        job_id=job_b.id,
+        job_id_str="job-emp-b-01",
+        company="Employer B",
+        role="Staff Engineer",
+        canonical_job_url="https://boards.greenhouse.io/employer_b/jobs/901",
+        source="greenhouse",
+        status=ApplicationStatus.READY_TO_APPLY,
+    )
+    in_memory_db.add(app_b)
+    in_memory_db.commit()
+
+    # 3. Candidate clicks CONTINUE on Employer B's application
+    detail = service.continue_application("app-emp-b-01")
+
+    # 4. Must NOT reuse Employer A's session; must fail safely to LOGIN_REQUIRED
+    expected_prompt = "Log in to the employer portal first, then connect an authenticated browser session to Job Copilot."
+    assert detail.browser_review is not None
+    assert detail.browser_review.status == BrowserTaskStatus.LOGIN_REQUIRED.value
+    assert detail.browser_review.pause_reason == expected_prompt
+    assert detail.blocker_instruction == expected_prompt
+
+    # Verify task in DB
+    task = in_memory_db.query(BrowserTaskModel).filter_by(application_id="app-emp-b-01").first()
+    assert task is not None
+    assert task.status == BrowserTaskStatus.LOGIN_REQUIRED
+    assert task.pause_reason == expected_prompt
+
+    # Task audit events must NOT contain Employer A's session ID
+    for audit_evt in task.audit_events:
+        assert audit_evt.get("session_id") != "sess-emp-a-99"
+        assert audit_evt.get("event") != "continue_application_enqueued"
+
+
+def test_continue_application_session_domain_mismatch_isolation(in_memory_db):
+    """
+    REGRESSION TEST:
+    Session domain mismatch: Greenhouse session must not be reused for a Lever job.
+    Fails safely with LOGIN_REQUIRED.
+    """
+    service = DashboardService(db=in_memory_db)
+
+    # Active session scoped to greenhouse
+    session = BrowserSessionModel(
+        session_id="sess-gh-only-01",
+        source="greenhouse",
+        status=AuthenticatedSessionStatus.ACTIVE,
+        metadata_json={"target_domain": "boards.greenhouse.io"},
+    )
+    in_memory_db.add(session)
+
+    job = Job(
+        job_id="job-lever-app-01",
+        title="Frontend Lead",
+        company="Datadog",
+        description="Datadog UI lead",
+        lifecycle_status="DISCOVERED",
+    )
+    in_memory_db.add(job)
+    in_memory_db.commit()
+
+    app = Application(
+        application_id="app-lever-app-01",
+        job_id=job.id,
+        job_id_str="job-lever-app-01",
+        company="Datadog",
+        role="Frontend Lead",
+        canonical_job_url="https://jobs.lever.co/datadog/3322",
+        source="lever",
+        status=ApplicationStatus.READY_TO_APPLY,
+    )
+    in_memory_db.add(app)
+    in_memory_db.commit()
+
+    detail = service.continue_application("app-lever-app-01")
+
+    # Mismatched domain/source fails safely to LOGIN_REQUIRED
+    expected_prompt = "Log in to the employer portal first, then connect an authenticated browser session to Job Copilot."
+    assert detail.browser_review.status == BrowserTaskStatus.LOGIN_REQUIRED.value
+    assert detail.browser_review.pause_reason == expected_prompt
+
+
+def test_continue_application_matching_employer_session_is_used(in_memory_db):
+    """
+    REGRESSION TEST:
+    When multiple sessions exist, the session matching the target employer is selected
+    and the other employer's session is isolated.
+    """
+    service = DashboardService(db=in_memory_db)
+
+    # Session for Employer A
+    sess_a = BrowserSessionModel(
+        session_id="sess-emp-a-iso",
+        source="greenhouse",
+        status=AuthenticatedSessionStatus.ACTIVE,
+        metadata_json={"company": "Employer A"},
+    )
+    in_memory_db.add(sess_a)
+
+    # Session for Employer B
+    sess_b = BrowserSessionModel(
+        session_id="sess-emp-b-iso",
+        source="greenhouse",
+        status=AuthenticatedSessionStatus.ACTIVE,
+        metadata_json={"company": "Employer B"},
+    )
+    in_memory_db.add(sess_b)
+
+    job_b = Job(
+        job_id="job-b-iso-01",
+        title="Security Engineer",
+        company="Employer B",
+        description="SecEng role",
+        lifecycle_status="DISCOVERED",
+    )
+    in_memory_db.add(job_b)
+    in_memory_db.commit()
+
+    app_b = Application(
+        application_id="app-b-iso-01",
+        job_id=job_b.id,
+        job_id_str="job-b-iso-01",
+        company="Employer B",
+        role="Security Engineer",
+        canonical_job_url="https://boards.greenhouse.io/employer_b/jobs/55",
+        source="greenhouse",
+        status=ApplicationStatus.READY_TO_APPLY,
+    )
+    in_memory_db.add(app_b)
+    in_memory_db.commit()
+
+    detail = service.continue_application("app-b-iso-01")
+
+    # Task is queued using Employer B's session
+    assert detail.browser_review is not None
+    assert detail.browser_review.status == BrowserTaskStatus.QUEUED.value
+
+    task = in_memory_db.query(BrowserTaskModel).filter_by(application_id="app-b-iso-01").first()
+    assert task is not None
+    assert task.status == BrowserTaskStatus.QUEUED
+
+    # Verify audit event uses Employer B's session, NOT Employer A's
+    queued_events = [e for e in task.audit_events if e.get("event") == "continue_application_enqueued"]
+    assert len(queued_events) == 1
+    assert queued_events[0]["session_id"] == "sess-emp-b-iso"
+    assert queued_events[0]["session_id"] != "sess-emp-a-iso"
+

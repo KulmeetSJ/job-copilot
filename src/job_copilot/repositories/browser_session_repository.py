@@ -38,6 +38,15 @@ class BrowserSessionRepository:
         """List all browser session metadata records."""
         return self.db.query(BrowserSessionModel).order_by(BrowserSessionModel.id.desc()).limit(limit).all()
 
+    def list_active(self) -> List[BrowserSessionModel]:
+        """Fetch all active browser session metadata records ordered by recency."""
+        return (
+            self.db.query(BrowserSessionModel)
+            .filter(BrowserSessionModel.status == AuthenticatedSessionStatus.ACTIVE)
+            .order_by(BrowserSessionModel.id.desc())
+            .all()
+        )
+
     def update_status(
         self,
         session_id: str,

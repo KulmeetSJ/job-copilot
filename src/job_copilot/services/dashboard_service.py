@@ -132,6 +132,8 @@ def resolve_canonical_application_state(
         if app.status == ApplicationStatus.APPLIED:
             if browser_task and browser_task.status == BrowserTaskStatus.COMPLETED:
                 return "SUBMITTED"
+            if not browser_task and app.submitted_at:
+                return "SUBMITTED"
             return "SUBMISSION_UNVERIFIED"
         if app.status == ApplicationStatus.READY_TO_APPLY:
             return "READY_FOR_REVIEW"
@@ -981,6 +983,7 @@ class DashboardService:
             blocker_instruction = None
             can_resume = False
             is_external_unverified = (canonical_status == "SUBMISSION_UNVERIFIED")
+            browser_review = None
 
             if browser_task:
                 if browser_task.status == BrowserTaskStatus.CAPTCHA_REQUIRED:
@@ -1737,7 +1740,11 @@ class DashboardService:
 
             # 3. Check for Usable Authenticated Browser Session
             session_mgr = AuthenticatedSessionManager(db=db)
-            active_session = session_mgr.get_active_session_for_source(app.source)
+            active_session = session_mgr.get_active_session_for_application(
+                source=app.source,
+                company=app.company,
+                canonical_job_url=target_url,
+            )
 
             task_repo = BrowserTaskRepository(db)
             task = task_repo.get_by_application_or_job_id(
@@ -1796,6 +1803,13 @@ class DashboardService:
                     source=app.source,
                     target_url=target_url,
                     status=BrowserTaskStatus.QUEUED,
+                    audit_events=[
+                        {
+                            "event": "continue_application_enqueued",
+                            "session_id": active_session.session_id,
+                            "timestamp": utc_now().isoformat(),
+                        }
+                    ],
                 )
                 task_repo.create(new_task)
 
@@ -1862,15 +1876,14 @@ class DashboardService:
                         "timestamp": now.isoformat(),
                     },
                 )
-            else:
+            elif app.canonical_job_url:
                 task_id = f"task-bw-{uuid.uuid4().hex[:8]}"
-                target_url = app.canonical_job_url or f"https://manual.application.portal/{app.application_id}"
                 task = BrowserTaskModel(
                     task_id=task_id,
                     application_id=app.application_id,
                     job_id=app.job_id_str or str(app.job_id),
                     source=app.source or "manual",
-                    target_url=target_url,
+                    target_url=app.canonical_job_url,
                     status=BrowserTaskStatus.COMPLETED,
                     audit_events=[
                         {

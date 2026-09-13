@@ -147,7 +147,12 @@ class BrowserTaskExecutor:
 
         # 4. Check for active authenticated session state
         storage_state_path = None
-        active_session = self.session_manager.get_active_session_for_source(adapter.source_name)
+        app_obj = self.app_repo.get_by_application_id(task.application_id) if task.application_id else None
+        active_session = self.session_manager.get_active_session_for_application(
+            source=app_obj.source if app_obj else (adapter.source_name or task.source),
+            company=app_obj.company if app_obj else None,
+            canonical_job_url=task.target_url,
+        )
         if active_session:
             sess_path = self.session_store.get_session_path(active_session.session_id)
             if sess_path.exists():
@@ -421,7 +426,12 @@ class BrowserTaskExecutor:
 
         # Active session restoration if any
         storage_state_path = None
-        active_session = self.session_manager.get_active_session_for_source(adapter.source_name)
+        app_obj = self.app_repo.get_by_application_id(task.application_id) if task.application_id else None
+        active_session = self.session_manager.get_active_session_for_application(
+            source=app_obj.source if app_obj else (adapter.source_name or task.source),
+            company=app_obj.company if app_obj else None,
+            canonical_job_url=task.target_url,
+        )
         if active_session:
             sess_path = self.session_store.get_session_path(active_session.session_id)
             if sess_path.exists():
