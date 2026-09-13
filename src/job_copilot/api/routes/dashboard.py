@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from job_copilot.api.auth import require_dashboard_auth
-from job_copilot.browser_worker.exceptions import SubmissionSafetyError
+from job_copilot.browser_worker.exceptions import DomainSecurityError, SubmissionSafetyError
 from job_copilot.copilot.models import PriorityBand, QueueStatus
 from job_copilot.db.database import get_db
 from job_copilot.domain.enums import ApplicationStatus
@@ -22,6 +22,7 @@ from job_copilot.schemas.dashboard import (
     DashboardQueueResponse,
     HumanInputSubmitRequest,
     JobDetailResponse,
+    ManualSubmissionPayload,
     PrepareApplicationPayload,
     RetrySubmissionPayload,
     SessionMetadataItem,
@@ -252,6 +253,62 @@ def resume_application(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(ve))
     except Exception as e:
         logger.error(f"Unexpected error during application resume: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+
+@router.post("/applications/{application_id}/portal-opened", response_model=ApplicationDetailResponse)
+def record_portal_opened(
+    application_id: str,
+    service: DashboardService = Depends(get_dashboard_service),
+) -> ApplicationDetailResponse:
+    """
+    Record when candidate clicks APPLY and opens the original employer portal in a new tab.
+    Does NOT authorize or perform submission.
+    """
+    try:
+        return service.record_portal_opened(application_id=application_id)
+    except (ValueError, DomainSecurityError) as ve:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(ve))
+    except Exception as e:
+        logger.error(f"Failed to record portal opened for '{application_id}': {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+
+@router.post("/applications/{application_id}/continue", response_model=ApplicationDetailResponse)
+def continue_application(
+    application_id: str,
+    service: DashboardService = Depends(get_dashboard_service),
+) -> ApplicationDetailResponse:
+    """
+    Continue application after manual portal login.
+    Checks session availability and safely connects browser workflow.
+    """
+    try:
+        return service.continue_application(application_id=application_id)
+    except (ValueError, DomainSecurityError) as ve:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(ve))
+    except Exception as e:
+        logger.error(f"Failed to continue application for '{application_id}': {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+
+@router.post("/applications/{application_id}/mark-submitted", response_model=ApplicationDetailResponse)
+def mark_application_submitted_manually(
+    application_id: str,
+    payload: Optional[ManualSubmissionPayload] = None,
+    service: DashboardService = Depends(get_dashboard_service),
+) -> ApplicationDetailResponse:
+    """
+    Mark application as manually submitted by candidate in employer portal.
+    Distinct from automated submission; records manual submission event in tracking store.
+    """
+    try:
+        notes = payload.user_notes if payload else None
+        return service.mark_application_submitted_manually(application_id=application_id, user_notes=notes)
+    except (ValueError, DomainSecurityError) as ve:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(ve))
+    except Exception as e:
+        logger.error(f"Failed to mark application '{application_id}' as submitted: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 

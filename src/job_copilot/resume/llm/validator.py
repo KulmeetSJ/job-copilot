@@ -442,6 +442,23 @@ class GroundingValidator:
         # 2. Derive Allowed Skills and Evidence Universe
         allowed_skills = self.extract_allowed_skills_and_aliases(profile)
 
+        # Build project-only evidence IDs dynamically from CandidateProfile and evidence graph
+        project_evidence_ids: set[str] = set()
+        for p in profile.projects:
+            project_evidence_ids.update(p.evidence_ids)
+            for ach in p.achievements:
+                project_evidence_ids.update(ach.evidence_ids)
+        for cat in profile.skills:
+            for s in cat.skills:
+                if s.status == "CONFIRMED" and s.evidence:
+                    for ev in s.evidence:
+                        if ev.type == "project" and ev.evidence_id:
+                            project_evidence_ids.add(ev.evidence_id)
+        for fid, fact in self._evidence_facts.items():
+            cat = fact.get("category")
+            if cat == "project" or fid.startswith(("PRJ-", "PROJ-")):
+                project_evidence_ids.add(fid)
+
         # Strictly derive employment evidence IDs (experience bullets may cite ONLY these)
         allowed_exp_evidence: set[str] = set()
         for emp in profile.employment:
@@ -457,7 +474,8 @@ class GroundingValidator:
                             allowed_exp_evidence.add(ev.evidence_id)
 
         for fid, fact in self._evidence_facts.items():
-            if fact.get("category") == "employment" or fid.startswith("EXP-"):
+            cat = fact.get("category")
+            if (cat in {"employment", "achievement", "employment_achievement"} or fid.startswith("EXP-")) and cat != "project":
                 allowed_exp_evidence.add(fid)
 
         # 3. Validate Experience Bullets
@@ -472,7 +490,12 @@ class GroundingValidator:
                 errors.append(f"{loc} lacks evidence IDs.")
             else:
                 for eid in bullet.evidence_ids:
-                    if eid not in allowed_exp_evidence:
+                    if eid in project_evidence_ids and eid not in allowed_exp_evidence:
+                        errors.append(
+                            f"{loc} cites project evidence ID '{eid}'. "
+                            f"Experience bullets may cite ONLY employment evidence IDs. Project evidence IDs must be rejected."
+                        )
+                    elif eid not in allowed_exp_evidence:
                         errors.append(
                             f"{loc} cites evidence ID '{eid}', which is not an authorized employment evidence ID. "
                             f"Experience bullets may cite ONLY employment evidence IDs."
@@ -668,17 +691,51 @@ class GroundingValidator:
         text_lower = text.lower()
         ev_text = self._get_evidence_text(evidence_ids, profile)
 
-        # 1. Architecture / Ownership verbs: "architected", "architect"
-        if re.search(r"\barchitect(?:ed|ing)?\b", text_lower) and "architect" not in ev_text:
+        # 1. Architecture / Ownership verbs & phrases: "architected", "architect", "enterprise architecture", "designed the architecture"
+        if (
+            re.search(r"\b(?:architect(?:ed|ing)?|enterprise\s+architecture|designed\s+(?:the\s+)?architecture)\b", text_lower)
+            and "architect" not in ev_text
+        ):
             errors.append(
                 f"{location_label} claims 'architected' or architectural ownership, "
                 f"which is not substantiated by cited evidence IDs: {evidence_ids}."
             )
 
-        # 2. Scale / Sub-second latency claims
-        if "sub-second" in text_lower and "sub-second" not in ev_text:
+        # 2. Latency / SLA claims: "sub-second", "latency", "uptime", "availability", "sla"
+        if re.search(r"\b(?:sub-second|latency)\b", text_lower) and not re.search(r"\b(?:sub-second|latency)\b", ev_text):
             errors.append(
-                f"{location_label} claims 'sub-second' latency not substantiated by cited evidence IDs: {evidence_ids}."
+                f"{location_label} claims latency/sub-second performance not substantiated by cited evidence IDs: {evidence_ids}."
+            )
+        if re.search(r"\b(?:uptime|sla)\b", text_lower) and not re.search(r"\b(?:uptime|sla|availability)\b", ev_text):
+            errors.append(
+                f"{location_label} claims uptime/SLA not substantiated by cited evidence IDs: {evidence_ids}."
+            )
+
+        # 3. Production scale claims: "millions of", "billions of"
+        if (
+            re.search(r"\b(?:millions?|billions?)\s+(?:of\s+)?(?:transactions|requests|records|events|messages|users)\b", text_lower)
+            and not re.search(r"\b(?:10m|million|billion)\b", ev_text)
+        ):
+            errors.append(
+                f"{location_label} claims production scale ('millions/billions') not substantiated by cited evidence IDs: {evidence_ids}."
+            )
+
+        # 4. Business impact: "cost reduction", "cost savings", "annual savings", "revenue"
+        if (
+            re.search(r"\b(?:cost\s+savings?|cost\s+reduction|annual\s+savings?|revenue)\b", text_lower)
+            and not re.search(r"\b(?:cost|saving|expenditure|revenue)\b", ev_text)
+        ):
+            errors.append(
+                f"{location_label} claims business impact (cost/revenue) not substantiated by cited evidence IDs: {evidence_ids}."
+            )
+
+        # 5. System ownership: "sole owner", "system owner", "owned the system", "owned the platform"
+        if (
+            re.search(r"\b(?:sole\s+owner|system\s+owner|product\s+owner|owned\s+(?:the\s+)?(?:system|platform|architecture))\b", text_lower)
+            and not re.search(r"\b(?:owned|owner)\b", ev_text)
+        ):
+            errors.append(
+                f"{location_label} claims unsupported system ownership not substantiated by cited evidence IDs: {evidence_ids}."
             )
 
     def _validate_certifications(
@@ -716,7 +773,8 @@ class GroundingValidator:
     ) -> None:
         """Reject unsupported management or team leadership claims."""
         leadership_pattern = re.compile(
-            r"\b(?:led|managed|headed|supervised|directed)\s+(?:a\s+)?(?:team|engineers|developers|squad|group|department)\b",
+            r"\b(?:led|managed|headed|supervised|directed)\s+(?:a\s+)?(?:team(?:\s+of\s+\d+)?|\d+\s+)?(?:engineers|developers|squad|group|department)\b"
+            r"|\b(?:led|managed|headed|supervised|directed)\s+(?:a\s+)?team\b",
             re.IGNORECASE,
         )
 

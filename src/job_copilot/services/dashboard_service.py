@@ -62,12 +62,13 @@ from job_copilot.schemas.dashboard import (
     SubmissionConfirmResponse,
     UserInputRequiredItem,
 )
+from job_copilot.browser_worker.safety import validate_target_domain
 from job_copilot.services.application_prep_service import ApplicationPrepService
 from job_copilot.services.artifact_service import ArtifactService
 from job_copilot.services.copilot_service import CopilotService
 from job_copilot.services.job_intelligence_service import JobIntelligenceService
 from job_copilot.services.tracking_service import TrackingService
-from job_copilot.tracking.models import ApplicationLifecycleStatus, ApplicationRecord
+from job_copilot.tracking.models import ApplicationEvent, ApplicationLifecycleStatus, ApplicationRecord, EventSource
 from job_copilot.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -1329,18 +1330,55 @@ class DashboardService:
             if not app:
                 app = app_repo.get_by_application_id(application_id) or app_repo.get_by_job_id_str(job_id)
 
+            job_repo = JobRepository(db)
+            db_job = job_repo.get_by_job_id(job_id)
+            canonical_meta = self.copilot_service.orchestrator.discovery_service.store.get_canonical_job(job_id)
+            tracking_app = self.tracking_service.get_application_by_job_id(job_id) or self.tracking_service.get_application(application_id)
+
+            resolved_company = (
+                app.company if app and app.company
+                else (db_job.company if db_job and db_job.company
+                else (canonical_meta.company if canonical_meta and canonical_meta.company
+                else (tracking_app.company if tracking_app and tracking_app.company
+                else (pkg.company if pkg and pkg.company else None))))
+            )
+            resolved_role = (
+                app.role if app and app.role
+                else (db_job.title if db_job and db_job.title
+                else (canonical_meta.title if canonical_meta and canonical_meta.title
+                else (tracking_app.role if tracking_app and tracking_app.role
+                else (pkg.job_title if pkg and pkg.job_title else None))))
+            )
+            resolved_source = (
+                app.source if app and app.source
+                else (db_job.source if db_job and db_job.source
+                else (canonical_meta.source if canonical_meta and canonical_meta.source
+                else (tracking_app.source if tracking_app and tracking_app.source else "direct")))
+            )
+            resolved_url = (
+                app.canonical_job_url if app and app.canonical_job_url
+                else (db_job.canonical_url or db_job.url if db_job
+                else (canonical_meta.canonical_url or canonical_meta.source_url if canonical_meta
+                else (tracking_app.canonical_job_url if tracking_app and tracking_app.canonical_job_url else None)))
+            )
+
+            invalid_placeholders = {"company unavailable", "unknown company", "target company", "general_swe", "role unavailable", "unknown role", "source unavailable"}
+            if (
+                not resolved_company or resolved_company.lower() in invalid_placeholders
+                or not resolved_role or resolved_role.lower() in invalid_placeholders
+            ):
+                raise ValueError(f"Could not resolve canonical job identity for '{application_id}'. Cannot prepare application.")
+
             if not app:
-                job_repo = JobRepository(db)
-                db_job = job_repo.get_by_job_id(job_id)
                 app_id = f"app-{job_id[:16]}"
                 app = Application(
                     application_id=app_id,
                     job_id=db_job.id if db_job else None,
                     job_id_str=job_id,
-                    company=db_job.company if db_job else "Target Company",
-                    role=db_job.title if db_job else "Software Engineer",
-                    canonical_job_url=(db_job.canonical_url or db_job.url) if db_job else None,
-                    source=db_job.source if db_job else "direct",
+                    company=resolved_company,
+                    role=resolved_role,
+                    canonical_job_url=resolved_url,
+                    source=resolved_source,
                     status=ApplicationStatus.READY_TO_APPLY,
                     resume_strategy=pkg.selected_resume_strategy,
                     prepared_at=utc_now(),
@@ -1352,6 +1390,12 @@ class DashboardService:
                 app.status = ApplicationStatus.READY_TO_APPLY
                 app.resume_strategy = pkg.selected_resume_strategy
                 app.prepared_at = utc_now()
+                if not app.company or app.company.lower() in invalid_placeholders:
+                    app.company = resolved_company
+                if not app.role or app.role.lower() in invalid_placeholders:
+                    app.role = resolved_role
+                if not app.canonical_job_url and resolved_url:
+                    app.canonical_job_url = resolved_url
                 app_repo.append_event(
                     application_id=app.application_id,
                     job_id=job_id,
@@ -1376,17 +1420,15 @@ class DashboardService:
                 "unresolved_fields": [u.question_text for u in pkg.user_inputs_required],
                 "warnings": [],
             }
-            if not existing_task:
+            target_url = app.canonical_job_url if app and app.canonical_job_url else resolved_url
+            if not existing_task and target_url:
                 task_id = f"task-bw-{uuid.uuid4().hex[:8]}"
-                job_repo = JobRepository(db)
-                db_job = job_repo.get_by_job_id(job_id)
-                target_url = app.canonical_job_url if app and app.canonical_job_url else (db_job.canonical_url or db_job.url if db_job else None)
                 new_task = BrowserTaskModel(
                     task_id=task_id,
                     application_id=target_app_id,
                     job_id=job_id,
-                    source=app.source if app else (db_job.source if db_job else "manual"),
-                    target_url=target_url or f"https://jobs.example.com/apply/{job_id}",
+                    source=app.source if app else resolved_source,
+                    target_url=target_url,
                     status=BrowserTaskStatus.QUEUED,
                     confirmation_token=None,
                     confirmation_expires_at=None,
@@ -1597,6 +1639,256 @@ class DashboardService:
             if should_close:
                 db.close()
 
+    def record_portal_opened(self, application_id: str) -> ApplicationDetailResponse:
+        """
+        Record when candidate clicks APPLY to open the employer's original job portal.
+        Preserves canonical identity and appends a PORTAL_OPENED event to the timeline.
+        Never performs or authorizes automated submission.
+        """
+        db, should_close = self._get_db_session()
+        try:
+            app_repo = ApplicationRepository(db)
+            app = app_repo.get_by_application_id(application_id) or app_repo.get_by_job_id_str(application_id)
+            if not app:
+                raise ValueError(f"Application '{application_id}' not found.")
+
+            # Validate canonical identity
+            invalid_placeholders = {"company unavailable", "unknown company", "target company", "general_swe", "role unavailable", "unknown role", "source unavailable"}
+            if (
+                not app.company or app.company.lower() in invalid_placeholders
+                or not app.role or app.role.lower() in invalid_placeholders
+            ):
+                raise ValueError(f"Cannot record portal opened: Invalid canonical identity for '{application_id}'.")
+
+            if not app.canonical_job_url:
+                raise ValueError(f"Original job URL unavailable for application '{application_id}'.")
+
+            # Validate domain safety
+            validate_target_domain(app.canonical_job_url)
+
+            # Append event to Application repository
+            app_repo.append_event(
+                application_id=app.application_id,
+                job_id=app.job_id_str or str(app.job_id),
+                event_type="PORTAL_OPENED",
+                event_id=f"evt-{uuid.uuid4().hex[:8]}",
+                source="USER",
+                notes="Candidate clicked APPLY and opened original employer portal link.",
+                metadata_json={"target_url": app.canonical_job_url},
+            )
+            db.commit()
+
+            # Record event in TrackingService if record exists
+            job_id = app.job_id_str or str(app.job_id)
+            rec = self.tracking_service.get_application_by_job_id(job_id) or self.tracking_service.get_application(app.application_id)
+            if rec:
+                evt = ApplicationEvent(
+                    event_id=f"evt-{uuid.uuid4().hex[:8]}",
+                    application_id=app.application_id,
+                    job_id=job_id,
+                    event_type=ApplicationLifecycleStatus.PREPARED,
+                    source=EventSource.USER,
+                    notes="Candidate opened original employer portal link.",
+                    metadata={"target_url": app.canonical_job_url, "stage": "PORTAL_OPENED"},
+                )
+                rec.events.append(evt)
+                self.tracking_service.store.save_application(rec)
+
+            return self.get_application_detail(app.application_id)
+        finally:
+            if should_close:
+                db.close()
+
+    def continue_application(self, application_id: str) -> ApplicationDetailResponse:
+        """
+        Handle 'CONTINUE APPLICATION' after user opens portal and logs in.
+        1. Verifies application/job canonical identity.
+        2. Verifies original job URL and domain safety (SSRF/domain guards).
+        3. Checks whether an authenticated browser session is available.
+        4. If no usable authenticated session exists:
+           Transitions task to LOGIN_REQUIRED with prompt:
+           'Please log in to the employer portal first, then connect/authorize the browser session.'
+        5. If a usable authenticated session exists:
+           Queues/starts browser workflow to fill safe fields, pausing for sensitive fields/CAPTCHA/MFA,
+           reaching READY_FOR_REVIEW.
+        """
+        db, should_close = self._get_db_session()
+        try:
+            app_repo = ApplicationRepository(db)
+            app = app_repo.get_by_application_id(application_id) or app_repo.get_by_job_id_str(application_id)
+            if not app:
+                raise ValueError(f"Application '{application_id}' not found.")
+
+            # 1. Canonical Identity Verification
+            invalid_placeholders = {"company unavailable", "unknown company", "target company", "general_swe", "role unavailable", "unknown role", "source unavailable"}
+            if (
+                not app.company or app.company.lower() in invalid_placeholders
+                or not app.role or app.role.lower() in invalid_placeholders
+                or not app.source or app.source.lower() in invalid_placeholders
+            ):
+                raise ValueError(f"Cannot continue application: Invalid canonical identity for '{application_id}'.")
+
+            # 2. Canonical Job URL & Domain Safety
+            target_url = app.canonical_job_url
+            if not target_url:
+                raise ValueError(f"Original job URL unavailable for application '{application_id}'.")
+
+            validate_target_domain(target_url)
+
+            # 3. Check for Usable Authenticated Browser Session
+            session_mgr = AuthenticatedSessionManager(db=db)
+            active_session = session_mgr.get_active_session_for_source(app.source)
+
+            task_repo = BrowserTaskRepository(db)
+            task = task_repo.get_by_application_or_job_id(
+                application_id=app.application_id,
+                job_id=app.job_id_str,
+            )
+
+            job_id = app.job_id_str or str(app.job_id)
+
+            if not active_session:
+                # No active authenticated session -> produce LOGIN_REQUIRED state with required prompt
+                login_msg = "Please log in to the employer portal first, then connect/authorize the browser session."
+                if task:
+                    task_repo.update_status(task.task_id, BrowserTaskStatus.LOGIN_REQUIRED, pause_reason=login_msg)
+                    task_repo.append_audit_event(
+                        task.task_id,
+                        {
+                            "event": "login_required_on_continue",
+                            "source": app.source,
+                            "reason": login_msg,
+                            "timestamp": utc_now().isoformat(),
+                        },
+                    )
+                else:
+                    task_id = f"task-bw-{uuid.uuid4().hex[:8]}"
+                    new_task = BrowserTaskModel(
+                        task_id=task_id,
+                        application_id=app.application_id,
+                        job_id=job_id,
+                        source=app.source,
+                        target_url=target_url,
+                        status=BrowserTaskStatus.LOGIN_REQUIRED,
+                        pause_reason=login_msg,
+                    )
+                    task_repo.create(new_task)
+                db.commit()
+                return self.get_application_detail(app.application_id)
+
+            # Usable authenticated session exists -> Enqueue/start browser task
+            if task:
+                task_repo.update_status(task.task_id, BrowserTaskStatus.QUEUED, pause_reason=None)
+                task_repo.append_audit_event(
+                    task.task_id,
+                    {
+                        "event": "continue_application_enqueued",
+                        "session_id": active_session.session_id,
+                        "timestamp": utc_now().isoformat(),
+                    },
+                )
+            else:
+                task_id = f"task-bw-{uuid.uuid4().hex[:8]}"
+                new_task = BrowserTaskModel(
+                    task_id=task_id,
+                    application_id=app.application_id,
+                    job_id=job_id,
+                    source=app.source,
+                    target_url=target_url,
+                    status=BrowserTaskStatus.QUEUED,
+                )
+                task_repo.create(new_task)
+
+            db.commit()
+            return self.get_application_detail(app.application_id)
+        finally:
+            if should_close:
+                db.close()
+
+    def mark_application_submitted_manually(
+        self,
+        application_id: str,
+        user_notes: Optional[str] = None,
+    ) -> ApplicationDetailResponse:
+        """
+        Mark application as SUBMITTED manually by candidate in employer portal.
+        Distinct from automated submission; preserves exact canonical identity.
+        """
+        db, should_close = self._get_db_session()
+        try:
+            app_repo = ApplicationRepository(db)
+            app = app_repo.get_by_application_id(application_id) or app_repo.get_by_job_id_str(application_id)
+            if not app:
+                raise ValueError(f"Application '{application_id}' not found.")
+
+            # Validate canonical identity
+            invalid_placeholders = {"company unavailable", "unknown company", "target company", "general_swe", "role unavailable", "unknown role", "source unavailable"}
+            if (
+                not app.company or app.company.lower() in invalid_placeholders
+                or not app.role or app.role.lower() in invalid_placeholders
+            ):
+                raise ValueError(f"Cannot mark submitted: Invalid canonical identity for '{application_id}'.")
+
+            now = utc_now()
+            app.status = ApplicationStatus.APPLIED
+            app.submitted_at = now
+            notes_str = user_notes or "Submitted manually by candidate directly in employer portal."
+
+            # Append event in DB repository
+            app_repo.append_event(
+                application_id=app.application_id,
+                job_id=app.job_id_str or str(app.job_id),
+                event_type="SUBMITTED",
+                event_id=f"evt-{uuid.uuid4().hex[:8]}",
+                source="MANUAL_CANDIDATE",
+                notes=notes_str,
+                metadata_json={"submission_mode": "MANUAL", "timestamp": now.isoformat()},
+            )
+
+            # Update BrowserTaskModel if present
+            task_repo = BrowserTaskRepository(db)
+            task = task_repo.get_by_application_or_job_id(
+                application_id=app.application_id,
+                job_id=app.job_id_str,
+            )
+            if task:
+                task_repo.update_status(task.task_id, BrowserTaskStatus.COMPLETED, pause_reason=None)
+                task_repo.append_audit_event(
+                    task.task_id,
+                    {
+                        "event": "manual_submission_confirmed",
+                        "submission_mode": "MANUAL",
+                        "notes": notes_str,
+                        "timestamp": now.isoformat(),
+                    },
+                )
+
+            db.commit()
+
+            # Record in TrackingService store
+            job_id = app.job_id_str or str(app.job_id)
+            rec = self.tracking_service.get_application_by_job_id(job_id) or self.tracking_service.get_application(app.application_id)
+            if rec:
+                rec.current_status = ApplicationLifecycleStatus.SUBMITTED
+                rec.submitted_at = now
+                sub_evt = ApplicationEvent(
+                    event_id=f"evt-{uuid.uuid4().hex[:8]}",
+                    application_id=app.application_id,
+                    job_id=job_id,
+                    event_type=ApplicationLifecycleStatus.SUBMITTED,
+                    timestamp=now,
+                    source=EventSource.MANUAL,
+                    notes=notes_str,
+                    metadata={"submission_mode": "MANUAL"},
+                )
+                rec.events.append(sub_evt)
+                self.tracking_service.store.save_application(rec)
+
+            return self.get_application_detail(app.application_id)
+        finally:
+            if should_close:
+                db.close()
+
     def list_applications(
         self,
         status: Optional[Any] = None,
@@ -1698,9 +1990,9 @@ class DashboardService:
                         application_id=db_app.application_id or f"app-{uuid.uuid4().hex[:8]}",
                         job_id=job_id,
                         company=comp_display,
-                        role=db_app.role or (canonical_meta.title if canonical_meta else "Role unavailable"),
+                        role=db_app.role or (canonical_meta.title if canonical_meta else ""),
                         canonical_job_url=db_app.canonical_job_url or (canonical_meta.canonical_url or canonical_meta.source_url if canonical_meta else None),
-                        source=db_app.source or (canonical_meta.source if canonical_meta else "Source unavailable"),
+                        source=db_app.source or (canonical_meta.source if canonical_meta else "direct"),
                         discovered_at=db_app.discovered_at or db_app.created_at,
                         prepared_at=db_app.prepared_at,
                         submitted_at=db_app.submitted_at if target_status == ApplicationLifecycleStatus.SUBMITTED else None,

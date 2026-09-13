@@ -126,12 +126,46 @@ class LLMResumeWriter:
         # 1. Convert Experience Bullets
         exp_bullets: list[ResumeBullet] = []
         for b in draft.experience_bullets:
+            b_claim_type = "PROFESSIONAL"
+            b_metric_type = "PRODUCTION"
+
+            # Derive claim_type dynamically from canonical employment achievements
+            for emp in profile.employment:
+                for ach in emp.achievements:
+                    if any(eid in ach.evidence_ids for eid in b.evidence_ids):
+                        if ach.claim_type:
+                            b_claim_type = ach.claim_type
+                        break
+
+            # Cross-reference evidence facts if available
+            if self.validator and self.validator._evidence_facts:
+                for eid in b.evidence_ids:
+                    if eid in self.validator._evidence_facts:
+                        fact = self.validator._evidence_facts[eid]
+                        if fact.get("claim_type"):
+                            b_claim_type = fact.get("claim_type")
+                        break
+
+            # Distinguish production vs benchmark / project / estimate / academic / positioning
+            if b_claim_type == "BENCHMARK":
+                b_metric_type = "BENCHMARK"
+            elif b_claim_type == "PERSONAL_PROJECT":
+                b_metric_type = "PROJECT"
+            elif b_claim_type == "PROFESSIONAL":
+                b_metric_type = "PRODUCTION"
+            elif b_claim_type == "ESTIMATE":
+                b_metric_type = "ESTIMATE"
+            elif b_claim_type == "ACADEMIC":
+                b_metric_type = "ACADEMIC"
+            elif b_claim_type == "POSITIONING":
+                b_metric_type = "POSITIONING"
+
             exp_bullets.append(
                 ResumeBullet(
                     text=b.text.strip(),
                     evidence_ids=b.evidence_ids,
-                    claim_type="PROFESSIONAL",
-                    metric_type="PRODUCTION",
+                    claim_type=b_claim_type,
+                    metric_type=b_metric_type,
                     relevance_score=1.0,
                 )
             )
@@ -160,16 +194,48 @@ class LLMResumeWriter:
             canon_p = resolve_canonical_project(prj_item.name, profile)
             p_claim_type = canon_p.claim_type if canon_p else "PERSONAL_PROJECT"
             p_deployment_status = canon_p.deployment_status if canon_p else "PORTFOLIO_DEMO"
-            p_metric_type = "BENCHMARK" if p_claim_type == "BENCHMARK" else "PROJECT"
+            if p_claim_type == "BENCHMARK":
+                p_metric_type = "BENCHMARK"
+            elif p_claim_type == "PROFESSIONAL" and p_deployment_status == "PRODUCTION":
+                p_metric_type = "PRODUCTION"
+            elif p_claim_type == "ESTIMATE":
+                p_metric_type = "ESTIMATE"
+            elif p_claim_type == "ACADEMIC":
+                p_metric_type = "ACADEMIC"
+            elif p_claim_type == "POSITIONING":
+                p_metric_type = "POSITIONING"
+            else:
+                p_metric_type = "PROJECT"
 
             p_bullets: list[ResumeBullet] = []
             for pb in prj_item.bullets:
+                bullet_claim_type = p_claim_type
+                bullet_metric_type = p_metric_type
+                if canon_p and pb.evidence_ids:
+                    for ach in canon_p.achievements:
+                        if any(eid in ach.evidence_ids for eid in pb.evidence_ids):
+                            if ach.claim_type:
+                                bullet_claim_type = ach.claim_type
+                                if bullet_claim_type == "BENCHMARK":
+                                    bullet_metric_type = "BENCHMARK"
+                                elif bullet_claim_type == "PROFESSIONAL" and p_deployment_status == "PRODUCTION":
+                                    bullet_metric_type = "PRODUCTION"
+                                elif bullet_claim_type == "ESTIMATE":
+                                    bullet_metric_type = "ESTIMATE"
+                                elif bullet_claim_type == "ACADEMIC":
+                                    bullet_metric_type = "ACADEMIC"
+                                elif bullet_claim_type == "POSITIONING":
+                                    bullet_metric_type = "POSITIONING"
+                                else:
+                                    bullet_metric_type = "PROJECT"
+                            break
+
                 p_bullets.append(
                     ResumeBullet(
                         text=pb.text.strip(),
                         evidence_ids=pb.evidence_ids or (canon_p.evidence_ids if canon_p else prj_item.evidence_ids),
-                        claim_type=p_claim_type,
-                        metric_type=p_metric_type,
+                        claim_type=bullet_claim_type,
+                        metric_type=bullet_metric_type,
                         relevance_score=1.0,
                     )
                 )

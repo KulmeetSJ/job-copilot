@@ -145,6 +145,31 @@ export const api = {
     return handleResponse<ApplicationDetailResponse>(res);
   },
 
+  async recordPortalOpened(applicationId: string): Promise<ApplicationDetailResponse> {
+    const res = await fetch(`${API_BASE}/applications/${encodeURIComponent(applicationId)}/portal-opened`, {
+      method: 'POST',
+      headers: getHeaders(),
+    });
+    return handleResponse<ApplicationDetailResponse>(res);
+  },
+
+  async continueApplication(applicationId: string): Promise<ApplicationDetailResponse> {
+    const res = await fetch(`${API_BASE}/applications/${encodeURIComponent(applicationId)}/continue`, {
+      method: 'POST',
+      headers: getHeaders(),
+    });
+    return handleResponse<ApplicationDetailResponse>(res);
+  },
+
+  async markSubmittedManually(applicationId: string, userNotes?: string): Promise<ApplicationDetailResponse> {
+    const res = await fetch(`${API_BASE}/applications/${encodeURIComponent(applicationId)}/mark-submitted`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ user_notes: userNotes }),
+    });
+    return handleResponse<ApplicationDetailResponse>(res);
+  },
+
   async retryApplication(applicationId: string, payload: import('./types').RetrySubmissionPayload): Promise<ApplicationDetailResponse> {
     const res = await fetch(`${API_BASE}/applications/${encodeURIComponent(applicationId)}/retry`, {
       method: 'POST',

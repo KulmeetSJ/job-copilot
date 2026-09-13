@@ -88,6 +88,14 @@ export const ApplicationReviewView: React.FC<ApplicationReviewViewProps> = ({
   // Submission Modal state
   const [showSubmissionModal, setShowSubmissionModal] = useState(false);
 
+  // Apply, Continue & Manual Submission states
+  const [portalOpened, setPortalOpened] = useState(false);
+  const [continuing, setContinuing] = useState(false);
+  const [showManualSubmitModal, setShowManualSubmitModal] = useState(false);
+  const [manualSubmitNotes, setManualSubmitNotes] = useState('');
+  const [manualSubmitting, setManualSubmitting] = useState(false);
+  const [manualSuccessMsg, setManualSuccessMsg] = useState(false);
+
   // Retry Submission Modal state
   const [showRetryModal, setShowRetryModal] = useState(false);
   const [retryAcknowledged, setRetryAcknowledged] = useState(false);
@@ -237,6 +245,9 @@ export const ApplicationReviewView: React.FC<ApplicationReviewViewProps> = ({
       .then((data) => {
         setDetail(data);
         setReshareUrl(data.canonical_job_url || data.browser_review?.target_url || '');
+        const storedPortal = typeof window !== 'undefined' && localStorage.getItem(`portal_opened_${data.application_id}`) === 'true';
+        const eventRecorded = Boolean(data.timeline?.some((e: any) => e.event_type === 'PORTAL_OPENED'));
+        setPortalOpened(storedPortal || eventRecorded);
         // Prepopulate human answers if empty
         const initialMap: Record<string, string> = {};
         data.user_inputs_required.forEach((u) => {
@@ -352,18 +363,73 @@ export const ApplicationReviewView: React.FC<ApplicationReviewViewProps> = ({
     }
   };
 
+  const handleApply = async () => {
+    if (!detail?.canonical_job_url) {
+      alert('Original job URL unavailable for this application.');
+      return;
+    }
+    // 1. Open original employer URL in new browser tab
+    window.open(detail.canonical_job_url, '_blank', 'noopener,noreferrer');
+    setPortalOpened(true);
+    if (detail.application_id) {
+      try {
+        localStorage.setItem(`portal_opened_${detail.application_id}`, 'true');
+        const updated = await api.recordPortalOpened(detail.application_id);
+        setDetail(updated);
+      } catch (err) {
+        console.error('Failed to record portal opened event:', err);
+      }
+    }
+  };
+
+  const handleContinue = async () => {
+    if (!detail?.application_id) return;
+    setContinuing(true);
+    try {
+      const updated = await api.continueApplication(detail.application_id);
+      setDetail(updated);
+    } catch (err: any) {
+      alert(err.message || 'Failed to continue application workflow');
+    } finally {
+      setContinuing(false);
+    }
+  };
+
+  const handleManualSubmit = async () => {
+    if (!detail?.application_id) return;
+    setManualSubmitting(true);
+    try {
+      const updated = await api.markSubmittedManually(detail.application_id, manualSubmitNotes);
+      setDetail(updated);
+      setShowManualSubmitModal(false);
+      setManualSubmitNotes('');
+      setManualSuccessMsg(true);
+      setTimeout(() => setManualSuccessMsg(false), 5000);
+    } catch (err: any) {
+      alert(err.message || 'Failed to record manual submission');
+    } finally {
+      setManualSubmitting(false);
+    }
+  };
+
   // Compute canonical status
   const taskStatus = detail?.browser_review?.status || detail?.status || 'DISCOVERED';
+  const hasPortalOpenedEvent = Boolean(detail?.timeline?.some((e: any) => e.event_type === 'PORTAL_OPENED'));
+  const isPortalOpened = portalOpened || hasPortalOpenedEvent;
   const isBlockerActive = Boolean(
     detail?.blocker_type || 
     ['CAPTCHA_REQUIRED', 'LOGIN_REQUIRED', 'MFA_REQUIRED', 'HUMAN_ACTION_REQUIRED', 'USER_INPUT_REQUIRED'].includes(taskStatus)
   );
+  const isReadyForReview = taskStatus === 'READY_FOR_REVIEW';
   const isReadyToConfirm = (taskStatus === 'READY_FOR_REVIEW' && Boolean(detail?.browser_review?.has_confirmation_token && detail?.browser_review?.confirmation_token)) || 
     (detail?.status === 'READY_TO_APPLY' && Boolean(detail?.browser_review?.has_confirmation_token && detail?.browser_review?.confirmation_token));
   const isSubmissionAuthorized = taskStatus === 'SUBMISSION_AUTHORIZED';
   const isSubmissionRunning = taskStatus === 'SUBMISSION_RUNNING' || taskStatus === 'RUNNING';
   const isSubmitted = detail?.status === 'APPLIED' || taskStatus === 'COMPLETED';
   const isUnverified = detail?.is_external_unverified || taskStatus === 'SUBMISSION_UNVERIFIED';
+  const hasManualSubmissionEvent = Boolean(
+    detail?.timeline?.some((e: any) => e.event_type === 'SUBMITTED' && (e.source === 'MANUAL' || e.source === 'MANUAL_CANDIDATE' || e.metadata?.submission_mode === 'MANUAL'))
+  );
 
   return (
     <div className="space-y-4 sm:space-y-6">
@@ -383,16 +449,23 @@ export const ApplicationReviewView: React.FC<ApplicationReviewViewProps> = ({
                   ? 'bg-purple-500/20 text-purple-300 border border-purple-500/40 animate-pulse'
                   : isSubmissionAuthorized || isSubmissionRunning
                   ? 'bg-blue-500/20 text-blue-300 border border-blue-500/40 animate-pulse'
+                  : isReadyForReview
+                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
                   : isSubmitted && !isUnverified
                   ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
                   : isUnverified
                   ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                  : isPortalOpened
+                  ? 'bg-blue-500/20 text-blue-300 border border-blue-500/40'
                   : 'bg-slate-700/50 text-slate-300 border border-slate-600'
               }`}>
                 {isBlockerActive ? (detail.blocker_type ? `${detail.blocker_type} REQUIRED` : 'ACTION REQUIRED')
                   : isSubmissionAuthorized ? 'SUBMISSION AUTHORIZED'
                   : isSubmissionRunning ? 'SUBMITTING...'
+                  : isReadyForReview ? 'READY FOR REVIEW'
+                  : isSubmitted && !isUnverified ? (hasManualSubmissionEvent ? 'SUBMITTED (MANUAL)' : 'SUBMITTED')
                   : isUnverified ? 'EXTERNAL UNVERIFIED'
+                  : isPortalOpened ? 'PORTAL OPENED'
                   : detail.status}
               </span>
             )}
@@ -493,12 +566,61 @@ export const ApplicationReviewView: React.FC<ApplicationReviewViewProps> = ({
                     </>
                   )}
                 </div>
+
+                {/* Canonical Original Job URL (Task 2) */}
+                <div className="flex flex-wrap items-center gap-2 text-xs pt-1">
+                  <span className="text-slate-400 font-medium">Original Job:</span>
+                  {detail.canonical_job_url ? (
+                    <a
+                      href={detail.canonical_job_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center space-x-1.5 text-blue-400 hover:text-blue-300 font-medium hover:underline cursor-pointer"
+                      title={detail.canonical_job_url}
+                    >
+                      <span className="font-semibold">View Job Posting ↗</span>
+                      <span className="text-[11px] text-slate-500 font-mono truncate max-w-[200px] sm:max-w-[320px]">
+                        ({(() => {
+                          try {
+                            return new URL(detail.canonical_job_url).hostname.replace(/^www\./, '');
+                          } catch {
+                            return detail.canonical_job_url;
+                          }
+                        })()})
+                      </span>
+                    </a>
+                  ) : (
+                    <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-slate-800 text-amber-400/90 border border-slate-700/80">
+                      Original job URL unavailable
+                    </span>
+                  )}
+                </div>
               </div>
 
               {/* Dynamic State-Driven Action Controls */}
               <div className="w-full md:w-auto pt-1 md:pt-0 flex flex-wrap items-center gap-2">
                 {isBlockerActive ? (
-                  detail.can_resume ? (
+                  detail.blocker_type === 'LOGIN' ? (
+                    <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
+                      <a
+                        href={detail.canonical_job_url || '#'}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="w-full sm:w-auto px-4 py-2.5 text-xs sm:text-sm font-bold bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-lg shadow-lg shadow-amber-500/20 transition-all flex items-center justify-center space-x-2 cursor-pointer"
+                      >
+                        <ExternalLink className="w-4 h-4" />
+                        <span>Log in in Portal ↗</span>
+                      </a>
+                      <button
+                        onClick={handleContinue}
+                        disabled={continuing}
+                        className="w-full sm:w-auto px-5 py-2.5 text-xs sm:text-sm font-bold bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white rounded-lg shadow-lg shadow-blue-600/20 transition-all flex items-center justify-center space-x-2 cursor-pointer"
+                      >
+                        {continuing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+                        <span>CONTINUE APPLICATION</span>
+                      </button>
+                    </div>
+                  ) : detail.can_resume ? (
                     <button
                       onClick={handleResume}
                       disabled={resuming}
@@ -528,20 +650,44 @@ export const ApplicationReviewView: React.FC<ApplicationReviewViewProps> = ({
                     <Loader2 className="w-4 h-4 animate-spin text-blue-300" />
                     <span>Submitting application...</span>
                   </div>
-                ) : isReadyToConfirm ? (
-                  <button
-                    onClick={() => setShowSubmissionModal(true)}
-                    className="w-full md:w-auto px-5 py-2.5 text-xs sm:text-sm font-bold bg-rose-600 hover:bg-rose-500 active:bg-rose-700 text-white rounded-lg shadow-lg shadow-rose-600/20 transition-all flex items-center justify-center space-x-2"
-                  >
-                    <Send className="w-4 h-4" />
-                    <span>Authorize Submission</span>
-                  </button>
+                ) : isReadyForReview ? (
+                  <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
+                    {detail.canonical_job_url && (
+                      <a
+                        href={detail.canonical_job_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="w-full sm:w-auto px-4 py-2.5 text-xs sm:text-sm font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-lg transition-all flex items-center justify-center space-x-1.5"
+                      >
+                        <ExternalLink className="w-4 h-4" />
+                        <span>Open Employer Application ↗</span>
+                      </a>
+                    )}
+                    <button
+                      onClick={() => setShowManualSubmitModal(true)}
+                      className="w-full sm:w-auto px-4 py-2.5 text-xs sm:text-sm font-bold bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white rounded-lg shadow-lg shadow-emerald-600/20 transition-all flex items-center justify-center space-x-1.5 cursor-pointer"
+                    >
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>Mark as Submitted</span>
+                    </button>
+                    {isReadyToConfirm && (
+                      <button
+                        onClick={() => setShowSubmissionModal(true)}
+                        className="w-full sm:w-auto px-4 py-2.5 text-xs sm:text-sm font-bold bg-rose-600 hover:bg-rose-500 active:bg-rose-700 text-white rounded-lg shadow-lg shadow-rose-600/20 transition-all flex items-center justify-center space-x-1.5 cursor-pointer"
+                      >
+                        <Send className="w-4 h-4" />
+                        <span>Authorize Automated Submission</span>
+                      </button>
+                    )}
+                  </div>
                 ) : isSubmitted && !isUnverified ? (
                   <div className="w-full md:w-auto px-4 py-2.5 text-xs font-semibold bg-emerald-950/40 text-emerald-300 border border-emerald-500/40 rounded-lg flex items-center justify-center space-x-2">
                     <CheckCircle2 className="w-4 h-4 text-emerald-400" />
                     <div className="text-left">
                       <div className="font-bold text-emerald-300">✓ Application submitted</div>
-                      <div className="text-[10px] text-emerald-400 font-normal">Employer confirmation verified</div>
+                      <div className="text-[10px] text-emerald-400 font-normal">
+                        {hasManualSubmissionEvent ? 'Submitted manually by candidate' : 'Employer confirmation verified'}
+                      </div>
                     </div>
                   </div>
                 ) : isUnverified ? (
@@ -558,15 +704,55 @@ export const ApplicationReviewView: React.FC<ApplicationReviewViewProps> = ({
                       <span>Review & Retry Submission</span>
                     </button>
                   </div>
+                ) : isPortalOpened ? (
+                  <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
+                    {detail.canonical_job_url && (
+                      <a
+                        href={detail.canonical_job_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="w-full sm:w-auto px-3.5 py-2.5 text-xs sm:text-sm font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-lg transition-all flex items-center justify-center space-x-1.5"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                        <span>Portal Tab ↗</span>
+                      </a>
+                    )}
+                    <button
+                      onClick={handleContinue}
+                      disabled={continuing}
+                      className="w-full sm:w-auto px-5 py-2.5 text-xs sm:text-sm font-bold bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white rounded-lg shadow-lg shadow-blue-600/20 transition-all flex items-center justify-center space-x-2 cursor-pointer"
+                    >
+                      {continuing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+                      <span>CONTINUE APPLICATION</span>
+                    </button>
+                    <button
+                      onClick={() => setShowManualSubmitModal(true)}
+                      className="w-full sm:w-auto px-3.5 py-2.5 text-xs sm:text-sm font-semibold bg-emerald-700/20 hover:bg-emerald-700/30 text-emerald-300 border border-emerald-500/40 rounded-lg transition-all flex items-center justify-center space-x-1.5 cursor-pointer"
+                    >
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>I Submitted Manually</span>
+                    </button>
+                  </div>
                 ) : (
-                  <button
-                    onClick={handlePrepareAgain}
-                    disabled={loading}
-                    className="w-full md:w-auto px-5 py-2.5 text-xs sm:text-sm font-bold bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white rounded-lg shadow-lg shadow-blue-600/20 transition-all flex items-center justify-center space-x-2"
-                  >
-                    <Sparkles className="w-4 h-4" />
-                    <span>Prepare Application Materials</span>
-                  </button>
+                  <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
+                    <button
+                      onClick={handleApply}
+                      disabled={!detail.canonical_job_url}
+                      className="w-full sm:w-auto px-6 py-2.5 text-xs sm:text-sm font-extrabold bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white rounded-lg shadow-lg shadow-blue-600/25 transition-all flex items-center justify-center space-x-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                      title={detail.canonical_job_url ? `Open ${detail.canonical_job_url}` : 'Original job URL unavailable'}
+                    >
+                      <ExternalLink className="w-4 h-4" />
+                      <span>APPLY</span>
+                    </button>
+                    <button
+                      onClick={handlePrepareAgain}
+                      disabled={loading}
+                      className="w-full sm:w-auto px-3.5 py-2.5 text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded-lg transition-all flex items-center justify-center space-x-1.5"
+                    >
+                      <Sparkles className="w-3.5 h-3.5" />
+                      <span>Re-prepare</span>
+                    </button>
+                  </div>
                 )}
               </div>
             </div>
@@ -609,6 +795,100 @@ export const ApplicationReviewView: React.FC<ApplicationReviewViewProps> = ({
             </div>
           </div>
 
+          {/* Manual Submission Success Confirmation Banner */}
+          {manualSuccessMsg && (
+            <div className="glass-panel p-3.5 rounded-xl border border-emerald-500/50 bg-emerald-950/30 flex items-center space-x-2 text-emerald-300 text-xs sm:text-sm font-medium animate-in fade-in">
+              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+              <span>✓ Application recorded as submitted manually in your tracking ledger.</span>
+            </div>
+          )}
+
+          {/* Open -> Login -> Return -> Continue Guidance Card (Task 4) */}
+          {isPortalOpened && !isSubmitted && !isReadyForReview && !isBlockerActive && (
+            <div className="glass-panel p-4 sm:p-5 rounded-xl border border-blue-500/40 bg-blue-950/20 space-y-3 animate-in fade-in">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-start space-x-3">
+                  <div className="p-2 sm:p-2.5 rounded-xl bg-blue-500/20 text-blue-400 border border-blue-500/40 shrink-0 mt-0.5">
+                    <ExternalLink className="w-5 h-5 sm:w-6 sm:h-6" />
+                  </div>
+                  <div className="space-y-1">
+                    <h4 className="text-sm sm:text-base font-bold text-blue-200 uppercase tracking-wide">
+                      Portal Opened — Next Steps
+                    </h4>
+                    <div className="text-xs sm:text-sm text-slate-200 font-medium space-y-1">
+                      <ol className="list-decimal list-inside space-y-0.5 text-slate-200 pl-0.5">
+                        <li>Log in to the employer portal in the newly opened tab.</li>
+                        <li>Navigate to the application for this job posting.</li>
+                        <li>Return here.</li>
+                        <li>Click <b>CONTINUE APPLICATION</b> for browser-assisted autofill.</li>
+                      </ol>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 shrink-0">
+                  <button
+                    onClick={handleContinue}
+                    disabled={continuing}
+                    className="w-full sm:w-auto px-5 py-2.5 text-xs sm:text-sm font-bold bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white rounded-lg shadow-lg shadow-blue-600/20 transition-all flex items-center justify-center space-x-2 cursor-pointer"
+                  >
+                    {continuing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+                    <span>CONTINUE APPLICATION</span>
+                  </button>
+                  <button
+                    onClick={() => setShowManualSubmitModal(true)}
+                    className="w-full sm:w-auto px-4 py-2.5 text-xs sm:text-sm font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-lg transition-all flex items-center justify-center space-x-1.5 cursor-pointer"
+                  >
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                    <span>I Submitted Manually</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Ready For Review Card (Task 3C / 3D) */}
+          {isReadyForReview && !isSubmitted && (
+            <div className="glass-panel p-4 sm:p-5 rounded-xl border border-emerald-500/40 bg-emerald-950/20 space-y-3 animate-in fade-in">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-start space-x-3">
+                  <div className="p-2 sm:p-2.5 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 shrink-0 mt-0.5">
+                    <CheckCircle2 className="w-5 h-5 sm:w-6 sm:h-6" />
+                  </div>
+                  <div className="space-y-1">
+                    <h4 className="text-sm sm:text-base font-bold text-emerald-200 uppercase tracking-wide">
+                      Review Application
+                    </h4>
+                    <p className="text-xs sm:text-sm text-slate-200 font-medium">
+                      The application has been filled and is ready for your review. Open the employer application to review and submit there, or mark it as submitted below.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 shrink-0">
+                  {detail.canonical_job_url && (
+                    <a
+                      href={detail.canonical_job_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-4 py-2 text-xs sm:text-sm font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-lg transition-all flex items-center justify-center space-x-1.5 cursor-pointer"
+                    >
+                      <ExternalLink className="w-4 h-4" />
+                      <span>Open Employer Application ↗</span>
+                    </a>
+                  )}
+                  <button
+                    onClick={() => setShowManualSubmitModal(true)}
+                    className="px-4 py-2 text-xs sm:text-sm font-bold bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white rounded-lg shadow-lg shadow-emerald-600/20 transition-all flex items-center justify-center space-x-1.5 cursor-pointer"
+                  >
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>Mark as Submitted</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Prominent Blocker / Human Action Required Card (Option B: Safe Manual Takeover) */}
           {isBlockerActive && (
             <div className="glass-panel p-4 sm:p-5 rounded-xl border-2 border-amber-500/60 bg-amber-950/25 space-y-3 animate-in fade-in">
@@ -627,7 +907,9 @@ export const ApplicationReviewView: React.FC<ApplicationReviewViewProps> = ({
                     </h4>
                     <p className="text-xs sm:text-sm text-slate-200 leading-relaxed font-medium">
                       {detail.blocker_instruction || detail.browser_review?.pause_reason || (
-                        detail.can_resume
+                        detail.blocker_type === 'LOGIN'
+                          ? 'Please log in to the employer portal first, then connect/authorize the browser session.'
+                          : detail.can_resume
                           ? 'Please provide the missing information in the Needs Input tab, then click Resume.'
                           : 'The automated browser cannot safely continue because human interaction is required. Complete this application manually in the employer portal. The automation will not submit or retry automatically.'
                       )}
@@ -635,26 +917,50 @@ export const ApplicationReviewView: React.FC<ApplicationReviewViewProps> = ({
                   </div>
                 </div>
 
-                <div className="flex items-center space-x-2 shrink-0">
-                  <button
-                    onClick={handleResume}
-                    disabled={resuming}
-                    className="px-4 py-2 text-xs sm:text-sm font-bold bg-amber-500 hover:bg-amber-400 active:bg-amber-600 text-slate-950 rounded-lg shadow-lg shadow-amber-500/20 transition-all flex items-center justify-center space-x-2 shrink-0 disabled:opacity-50"
-                  >
-                    {resuming ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
-                    <span>Resume Automation</span>
-                  </button>
-
-                  <a
-                    href={detail.canonical_job_url || detail.browser_review?.target_url || '#'}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="px-3 py-2 text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-lg transition-all flex items-center justify-center space-x-1.5 shrink-0"
-                    title="Open employer link directly"
-                  >
-                    <ExternalLink className="w-3.5 h-3.5" />
-                    <span>Portal</span>
-                  </a>
+                <div className="flex flex-wrap items-center gap-2 shrink-0">
+                  {detail.blocker_type === 'LOGIN' ? (
+                    <>
+                      <a
+                        href={detail.canonical_job_url || detail.browser_review?.target_url || '#'}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-3.5 py-2 text-xs font-bold bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-lg shadow-lg shadow-amber-500/20 transition-all flex items-center justify-center space-x-1.5 shrink-0"
+                        title="Open employer link directly"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                        <span>Open Portal ↗</span>
+                      </a>
+                      <button
+                        onClick={handleContinue}
+                        disabled={continuing}
+                        className="px-4 py-2 text-xs sm:text-sm font-bold bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white rounded-lg shadow-lg shadow-blue-600/20 transition-all flex items-center justify-center space-x-2 shrink-0 disabled:opacity-50 cursor-pointer"
+                      >
+                        {continuing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+                        <span>CONTINUE APPLICATION</span>
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        onClick={handleResume}
+                        disabled={resuming}
+                        className="px-4 py-2 text-xs sm:text-sm font-bold bg-amber-500 hover:bg-amber-400 active:bg-amber-600 text-slate-950 rounded-lg shadow-lg shadow-amber-500/20 transition-all flex items-center justify-center space-x-2 shrink-0 disabled:opacity-50"
+                      >
+                        {resuming ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+                        <span>Resume Automation</span>
+                      </button>
+                      <a
+                        href={detail.canonical_job_url || detail.browser_review?.target_url || '#'}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-3 py-2 text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-lg transition-all flex items-center justify-center space-x-1.5 shrink-0"
+                        title="Open employer link directly"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                        <span>Portal</span>
+                      </a>
+                    </>
+                  )}
                 </div>
               </div>
             </div>
@@ -1594,6 +1900,107 @@ export const ApplicationReviewView: React.FC<ApplicationReviewViewProps> = ({
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Manual Submission Confirmation Modal */}
+      {showManualSubmitModal && detail && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-emerald-500/40 rounded-2xl max-w-lg w-full p-6 space-y-5 shadow-2xl animate-in fade-in zoom-in-95">
+            <div className="flex items-start justify-between">
+              <div className="flex items-center space-x-3">
+                <div className="p-2.5 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/40">
+                  <CheckCircle2 className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white">Record Manual Submission</h3>
+                  <p className="text-xs text-slate-400">Confirm external portal application</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowManualSubmitModal(false)}
+                className="text-slate-400 hover:text-white transition-colors text-sm"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 text-xs space-y-2">
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Target Role:</span>
+                  <span className="font-semibold text-white">{detail.role}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Company:</span>
+                  <span className="font-semibold text-white">{detail.company}</span>
+                </div>
+                {detail.canonical_job_url && (
+                  <div className="flex justify-between items-center pt-1 border-t border-slate-800/80">
+                    <span className="text-slate-400">Portal Link:</span>
+                    <a
+                      href={detail.canonical_job_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-emerald-400 hover:underline flex items-center space-x-1"
+                    >
+                      <span>Open Employer Page</span>
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+                  </div>
+                )}
+              </div>
+
+              <div className="p-3.5 rounded-xl bg-emerald-950/30 border border-emerald-500/30 text-emerald-200 text-xs leading-relaxed">
+                <p className="font-semibold text-emerald-300">Candidate Audit Record</p>
+                <p className="mt-1">
+                  This will mark your application status as <strong className="text-white">APPLIED</strong> and log a verified manual submission event attributed to <code className="bg-emerald-900/60 px-1 py-0.5 rounded text-[11px] text-emerald-200">MANUAL_CANDIDATE</code> in your tracking ledger.
+                </p>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-slate-300">
+                  Submission Notes / Confirmation Details (Optional):
+                </label>
+                <textarea
+                  rows={3}
+                  placeholder="e.g. Submitted manually on Greenhouse portal, received confirmation email #12345"
+                  value={manualSubmitNotes}
+                  onChange={(e) => setManualSubmitNotes(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-emerald-500 resize-none"
+                />
+              </div>
+
+              <div className="flex items-center justify-end space-x-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowManualSubmitModal(false)}
+                  disabled={manualSubmitting}
+                  className="px-4 py-2 text-xs font-medium text-slate-400 hover:text-white transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleManualSubmit}
+                  disabled={manualSubmitting}
+                  className="px-5 py-2 text-xs font-bold bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-lg transition-all shadow-md flex items-center space-x-1.5 min-h-[36px]"
+                >
+                  {manualSubmitting ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>Recording...</span>
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      <span>Confirm & Mark as Submitted</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

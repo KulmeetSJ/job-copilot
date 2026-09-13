@@ -184,6 +184,22 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ onSelectApplication 
                           </div>
                         </div>
 
+                        {app.canonical_job_url && (
+                          <div className="pt-0.5">
+                            <a
+                              href={app.canonical_job_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="inline-flex items-center space-x-1 text-[10px] text-blue-400 hover:text-blue-300 font-medium truncate max-w-full hover:underline"
+                              title={app.canonical_job_url}
+                            >
+                              <ExternalLink className="w-2.5 h-2.5 shrink-0" />
+                              <span className="truncate">Original Job Link ↗</span>
+                            </a>
+                          </div>
+                        )}
+
                         <div className="flex items-center justify-between text-[10px] text-slate-400 pt-1.5 border-t border-slate-800/80">
                           <span className="font-medium text-slate-400">
                             {formatSource(app.source)}

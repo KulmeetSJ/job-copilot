@@ -474,6 +474,65 @@ def test_canonical_project_metadata_comes_from_profile(candidate_profile, valid_
     assert p_mcp.bullets[0].metric_type == "PROJECT"
 
 
+def test_adversarial_project_evidence_in_correct_project_passes(valid_llm_draft, candidate_profile):
+    """
+    Test C: Project evidence cited in its correct canonical project must PASS.
+    PRJ-RL-001 in Distributed Rate Limiter Service and PRJ-MCP-001 in MCP Diagnostic Tools.
+    """
+    validator = GroundingValidator()
+    is_valid, errors = validator.validate(valid_llm_draft, candidate_profile)
+    assert is_valid is True
+    assert len(errors) == 0
+
+
+def test_adversarial_unknown_project_alias_cannot_bypass_ownership(valid_llm_draft, candidate_profile):
+    """
+    Test F: Unknown or hardcoded project alias cannot bypass ownership -> FAIL.
+    An LLM cannot introduce a non-existent project (e.g. 'Arbitrary Crypto Trading Bot')
+    even if it cites valid evidence IDs.
+    """
+    validator = GroundingValidator()
+    draft = valid_llm_draft.model_copy(deep=True)
+    draft.projects[0].name = "Arbitrary Crypto Trading Bot"
+    is_valid, errors = validator.validate(draft, candidate_profile)
+    assert is_valid is False
+    assert any("not in candidate's verified projects" in err.lower() for err in errors)
+
+
+def test_adversarial_unsupported_latency_scale_claim_fails(valid_llm_draft, candidate_profile):
+    """
+    Test I: Unsupported latency/scale claim without evidence grounding -> FAIL.
+    Citing EXP-HSBC-TF-001 while claiming 'sub-second latency' and 'millions of transactions'.
+    """
+    validator = GroundingValidator()
+    draft = valid_llm_draft.model_copy(deep=True)
+    draft.experience_bullets[1].text = (
+        "Provisioned **2,000+ GCP resources** using Terraform IaC modules with sub-second latency serving millions of transactions."
+    )
+    is_valid, errors = validator.validate(draft, candidate_profile)
+    assert is_valid is False
+    assert any("latency" in err.lower() or "scale" in err.lower() for err in errors)
+
+
+def test_canonical_employer_title_dates_cannot_be_overwritten(valid_llm_draft, candidate_profile, service):
+    """
+    Test L: Canonical employer, title, and dates cannot be overwritten by LLM -> PASS with canonical values.
+    The writer must enforce company='HSBC', role='Software Engineer', start_date='2024-07', etc. from CandidateProfile.
+    """
+    writer = LLMResumeWriter(provider=MockLLMProvider())
+    strat = service.get_strategy("backend_java")
+    tailored = writer._build_tailored_resume(valid_llm_draft, candidate_profile, strat)
+
+    canonical_emp = candidate_profile.employment[0]
+    res_emp = tailored.experience[0]
+
+    assert res_emp.company == canonical_emp.company
+    assert res_emp.role == canonical_emp.role
+    assert res_emp.start_date == canonical_emp.start_date
+    assert res_emp.end_date == canonical_emp.end_date
+    assert res_emp.location == canonical_emp.location
+
+
 # ==============================================================================
 # 4. Retry with Validation Feedback Tests
 # ==============================================================================

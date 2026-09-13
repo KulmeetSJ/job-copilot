@@ -336,3 +336,102 @@ def test_no_secrets_in_compiled_frontend_bundle():
         assert "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY" not in content
 
 
+def test_api_portal_opened_and_continue_and_manual_submit_flow(client_with_db):
+    """Ensure POST portal-opened, continue, and mark-submitted work via API."""
+    client, SessionLocal = client_with_db
+    session = SessionLocal()
+
+    job = Job(
+        job_id="job-api-portal-flow-01",
+        title="Platform Security Engineer",
+        company="Stripe",
+        description="Infra security engineer",
+        source="greenhouse",
+        canonical_url="https://boards.greenhouse.io/stripe/jobs/9988",
+    )
+    session.add(job)
+    session.commit()
+
+    app_record = Application(
+        application_id="app-api-portal-flow-01",
+        job_id=job.id,
+        job_id_str="job-api-portal-flow-01",
+        company="Stripe",
+        role="Platform Security Engineer",
+        canonical_job_url="https://boards.greenhouse.io/stripe/jobs/9988",
+        source="greenhouse",
+        status=ApplicationStatus.READY_TO_APPLY,
+    )
+    session.add(app_record)
+    session.commit()
+    session.close()
+
+    # 1. POST /portal-opened
+    res_portal = client.post("/api/dashboard/applications/app-api-portal-flow-01/portal-opened")
+    assert res_portal.status_code == 200
+    data_portal = res_portal.json()
+    assert data_portal["status"] != "SUBMITTED"
+    assert any(evt["event_type"] == "PORTAL_OPENED" for evt in data_portal["timeline"])
+
+    # 2. POST /continue (without active session -> LOGIN_REQUIRED)
+    res_continue = client.post("/api/dashboard/applications/app-api-portal-flow-01/continue")
+    assert res_continue.status_code == 200
+    data_continue = res_continue.json()
+    assert data_continue["browser_review"]["status"] == "LOGIN_REQUIRED"
+    assert "Please log in to the employer portal first" in data_continue["browser_review"]["pause_reason"]
+
+    # 3. POST /mark-submitted
+    manual_notes = "Finished application manually on Stripe Greenhouse portal #GH-771"
+    res_manual = client.post(
+        "/api/dashboard/applications/app-api-portal-flow-01/mark-submitted",
+        json={"user_notes": manual_notes},
+    )
+    assert res_manual.status_code == 200
+    data_manual = res_manual.json()
+    assert data_manual["status"] == "SUBMITTED"
+    assert data_manual["submitted_at"] is not None
+    assert any(evt["event_type"] == "SUBMITTED" and evt["source"] == "MANUAL_CANDIDATE" for evt in data_manual["timeline"])
+
+
+def test_api_portal_opened_and_continue_ssrf_protection(client_with_db):
+    """Ensure POST portal-opened and continue reject disallowed/SSRF domains with 400 Bad Request."""
+    client, SessionLocal = client_with_db
+    session = SessionLocal()
+
+    job = Job(
+        job_id="job-api-ssrf-01",
+        title="Software Engineer",
+        company="Internal Corp",
+        description="Software engineer",
+        source="custom",
+        canonical_url="http://169.254.169.254/latest/meta-data",
+    )
+    session.add(job)
+    session.commit()
+
+    app_record = Application(
+        application_id="app-api-ssrf-01",
+        job_id=job.id,
+        job_id_str="job-api-ssrf-01",
+        company="Internal Corp",
+        role="Software Engineer",
+        canonical_job_url="http://169.254.169.254/latest/meta-data",
+        source="custom",
+        status=ApplicationStatus.READY_TO_APPLY,
+    )
+    session.add(app_record)
+    session.commit()
+    session.close()
+
+    # 1. portal-opened on SSRF URL -> 400 Bad Request
+    res_portal = client.post("/api/dashboard/applications/app-api-ssrf-01/portal-opened")
+    assert res_portal.status_code == 400
+    assert "Security Violation" in res_portal.json()["detail"] or "disallowed" in res_portal.json()["detail"].lower()
+
+    # 2. continue on SSRF URL -> 400 Bad Request
+    res_continue = client.post("/api/dashboard/applications/app-api-ssrf-01/continue")
+    assert res_continue.status_code == 400
+    assert "Security Violation" in res_continue.json()["detail"] or "disallowed" in res_continue.json()["detail"].lower()
+
+
+

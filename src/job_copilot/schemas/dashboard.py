@@ -359,6 +359,11 @@ class RetrySubmissionPayload(BaseModel):
     user_notes: Optional[str] = Field(default=None, description="Optional user notes explaining the retry justification.")
 
 
+class ManualSubmissionPayload(BaseModel):
+    """Payload for marking an application submitted manually by the candidate."""
+    user_notes: Optional[str] = Field(default=None, description="Optional user notes regarding the manual submission.")
+
+
 # ==============================================================================
 # Source & Session Monitoring Models
 # ==============================================================================

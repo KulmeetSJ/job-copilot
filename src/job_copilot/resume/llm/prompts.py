@@ -23,23 +23,33 @@ def build_resume_system_prompt(
         except (OSError, yaml.YAMLError, ValueError):
             profile = None
 
-    # Canonical defaults if profile unavailable
-    company = "HSBC"
+    if evidence_facts is None:
+        try:
+            ev_path = Path("data/candidate/evidence.yaml")
+            if ev_path.exists():
+                with open(ev_path, "r", encoding="utf-8") as f:
+                    ev_data = yaml.safe_load(f)
+                if ev_data and "facts" in ev_data:
+                    evidence_facts = {fact["id"]: fact for fact in ev_data["facts"] if "id" in fact}
+        except (OSError, yaml.YAMLError, ValueError):
+            evidence_facts = {}
+
+    company = "Candidate Employer"
     role = "Software Engineer"
-    location = "Pune, India"
-    dates = "Jul 2024 – Present"
-    confirmed_techs_str = "Java, Spring Boot, Google Cloud Platform (GCP), Terraform, Kubernetes (GKE), Apache Beam, GCP Dataflow, BigQuery, Docker, Jenkins, Python, PostgreSQL, Redis, Helm"
-    verified_metrics_str = "'2,000+ GCP resources', '60% provisioning acceleration', '10M+ daily payment transactions', '99.9% uptime', '100+ Cloud Composer DAG workflows', '30% compute cost reduction', '$150K+ annual savings', '40% MTTR reduction', '12+ misconfigurations caught', '1TB+ BigQuery data converted', '100K+ RPS benchmark'"
-    benchmarks_str = "'Distributed Rate Limiter Service'"
-    portfolios_str = "MCP Diagnostic Tools for Data Pipelines, Terraform Log Summarizer & Shift-Left Compliance Checker, Smart Data Storage Pipeline, GuruGranthi – Services Marketplace, AI-Powered RFP Management System, Distributed Rate Limiter Service"
+    location = ""
+    dates = "Present"
+    confirmed_techs_str = "candidate confirmed technologies"
+    verified_metrics_str = "supplied verified metrics"
+    benchmarks_str = "simulated benchmark projects"
+    portfolios_str = "portfolio/demo projects"
 
     if profile:
         if profile.employment:
             emp = profile.employment[0]
-            company = emp.company
+            company = emp.company or "Candidate Employer"
             role = emp.role or emp.canonical_role or "Software Engineer"
-            location = emp.location or "Pune, India"
-            dates = f"{emp.start_date or 'Jul 2024'} – {emp.end_date or 'Present'}"
+            location = emp.location or ""
+            dates = f"{emp.start_date or ''} – {emp.end_date or 'Present'}"
 
         techs = []
         for cat in profile.skills:
@@ -69,6 +79,8 @@ def build_resume_system_prompt(
         if port_list:
             portfolios_str = ", ".join(port_list)
 
+    loc_clause = f" in {location}" if location else ""
+
     return f"""You are an elite, executive-level technical resume writer and career strategist specializing in software engineering, distributed systems, cloud infrastructure, and fintech platforms.
 
 YOUR MISSION:
@@ -76,8 +88,8 @@ Given a target Job Description and the candidate's verified background, write a 
 
 STRICT TRUTH SAFETY & EVIDENCE INVARIANTS (NON-NEGOTIABLE):
 1. ZERO FABRICATION OF EMPLOYMENT FACTS:
-   - Candidate is currently employed at {company} in {location} as '{role}' from {dates}.
-   - You MUST NOT alter the employer name ('{company}'), corporate job title ('{role}'), location ('{location}'), or dates ('{dates}').
+   - Candidate is currently employed at {company}{loc_clause} as '{role}' from {dates}.
+   - You MUST NOT alter the employer name ('{company}'), corporate job title ('{role}'), or dates ('{dates}').
    - You MUST NOT invent past employers, contracts, or fake positions.
    - Experience bullets must cite ONLY employment evidence IDs from {company}.
 
@@ -152,9 +164,17 @@ def build_grounded_resume_prompt(
         jd_section += f"- General Strategy: {strategy_name}\n"
 
     # 2. Candidate Verified Experience Catalog
-    exp_section = "\n### CANDIDATE VERIFIED EMPLOYMENT (HSBC):\n"
-    exp_section += "Company: HSBC | Official Role: Software Engineer | Location: Pune, India | Dates: Jul 2024 – Present\n"
-    exp_section += "Team: Payments Data Platform\n"
+    canonical_emp = profile.employment[0] if profile.employment else None
+    emp_company = canonical_emp.company if canonical_emp else "Candidate Employer"
+    emp_role = (canonical_emp.role or canonical_emp.canonical_role) if canonical_emp else "Software Engineer"
+    emp_loc = canonical_emp.location if canonical_emp else ""
+    emp_dates = f"{canonical_emp.start_date or ''} – {canonical_emp.end_date or 'Present'}" if canonical_emp else ""
+    emp_team = canonical_emp.team or ""
+
+    exp_section = f"\n### CANDIDATE VERIFIED EMPLOYMENT ({emp_company}):\n"
+    exp_section += f"Company: {emp_company} | Official Role: {emp_role} | Location: {emp_loc} | Dates: {emp_dates}\n"
+    if emp_team:
+        exp_section += f"Team: {emp_team}\n"
     exp_section += "Available Verified Achievements (Select 4 to 5 that best align with target JD):\n"
 
     for emp in profile.employment:
