@@ -356,8 +356,9 @@ def test_continue_application_missing_session_sets_login_required(in_memory_db):
 
     assert detail.browser_review is not None
     assert detail.browser_review.status == BrowserTaskStatus.LOGIN_REQUIRED.value
-    expected_msg = "Please log in to the employer portal first, then connect/authorize the browser session."
+    expected_msg = "Log in to the employer portal first, then connect an authenticated browser session to Job Copilot."
     assert detail.browser_review.pause_reason == expected_msg
+    assert detail.blocker_instruction == expected_msg
 
 
 def test_continue_application_with_active_session_enqueues_task(in_memory_db):
@@ -542,3 +543,200 @@ def test_prepare_application_does_not_fabricate_dummy_url(in_memory_db):
 
     detail = service.prepare_application("job-valid-no-url")
     assert detail.canonical_job_url is None
+
+
+def test_portal_opened_state_is_backend_driven(in_memory_db, tmp_path):
+    """Test that portal-opened state is entirely determined by backend application/timeline state."""
+    track_store = TrackingStore(tracking_dir=tmp_path / "tracking")
+    tracking_service = TrackingService(store=track_store)
+    service = DashboardService(db=in_memory_db, tracking_service=tracking_service)
+
+    job = Job(
+        job_id="job-backend-driven-01",
+        title="Site Reliability Engineer",
+        company="Datadog",
+        description="Core infra and SRE",
+        lifecycle_status="DISCOVERED",
+    )
+    in_memory_db.add(job)
+    in_memory_db.commit()
+
+    app = Application(
+        application_id="app-backend-driven-01",
+        job_id=job.id,
+        job_id_str="job-backend-driven-01",
+        company="Datadog",
+        role="Site Reliability Engineer",
+        canonical_job_url="https://boards.greenhouse.io/datadog/jobs/5544",
+        source="greenhouse",
+        status=ApplicationStatus.READY_TO_APPLY,
+    )
+    in_memory_db.add(app)
+    in_memory_db.commit()
+
+    # 1. Initially, no portal opened event on backend
+    initial_detail = service.get_application_detail("app-backend-driven-01")
+    assert not any(evt.event_type == "PORTAL_OPENED" for evt in initial_detail.timeline)
+
+    # 2. Record portal opened via backend service
+    updated_detail = service.record_portal_opened("app-backend-driven-01")
+    assert any(evt.event_type == "PORTAL_OPENED" for evt in updated_detail.timeline)
+
+    # 3. Simulate page reload / separate client request fetching detail fresh from backend
+    reloaded_detail = service.get_application_detail("app-backend-driven-01")
+    portal_events = [evt for evt in reloaded_detail.timeline if evt.event_type == "PORTAL_OPENED"]
+    assert len(portal_events) == 1
+    assert portal_events[0].source == "USER"
+
+
+def test_continue_does_not_assume_ordinary_browser_login_available(in_memory_db):
+    """Test continue application does not assume ordinary browser login is available to remote worker."""
+    service = DashboardService(db=in_memory_db)
+
+    job = Job(
+        job_id="job-no-assumed-auth",
+        title="Security Engineer",
+        company="Stripe",
+        description="Application security",
+        lifecycle_status="DISCOVERED",
+    )
+    in_memory_db.add(job)
+    in_memory_db.commit()
+
+    # Application where portal was opened, but user has NOT connected browser session
+    app = Application(
+        application_id="app-no-assumed-auth",
+        job_id=job.id,
+        job_id_str="job-no-assumed-auth",
+        company="Stripe",
+        role="Security Engineer",
+        canonical_job_url="https://boards.greenhouse.io/stripe/jobs/1122",
+        source="greenhouse",
+        status=ApplicationStatus.READY_TO_APPLY,
+    )
+    in_memory_db.add(app)
+    in_memory_db.commit()
+
+    # Pre-record portal opened event
+    service.record_portal_opened("app-no-assumed-auth")
+
+    # Continue must check for real authenticated session; finding none, must pause with clear required prompt
+    detail = service.continue_application("app-no-assumed-auth")
+    assert detail.browser_review is not None
+    assert detail.browser_review.status == BrowserTaskStatus.LOGIN_REQUIRED.value
+    expected_prompt = "Log in to the employer portal first, then connect an authenticated browser session to Job Copilot."
+    assert detail.browser_review.pause_reason == expected_prompt
+    assert detail.blocker_type == "LOGIN"
+    assert detail.blocker_instruction == expected_prompt
+
+
+def test_continue_never_submits_automatically(in_memory_db):
+    """Test continue_application with active session queues task but never submits automatically."""
+    service = DashboardService(db=in_memory_db)
+
+    # Register an active authenticated session
+    session = BrowserSessionModel(
+        session_id="sess-active-valid-99",
+        source="greenhouse",
+        status=AuthenticatedSessionStatus.ACTIVE,
+    )
+    in_memory_db.add(session)
+
+    job = Job(
+        job_id="job-never-auto-submit",
+        title="Cloud Engineer",
+        company="Stripe",
+        description="Cloud engineering role",
+        lifecycle_status="DISCOVERED",
+    )
+    in_memory_db.add(job)
+    in_memory_db.commit()
+
+    app = Application(
+        application_id="app-never-auto-submit",
+        job_id=job.id,
+        job_id_str="job-never-auto-submit",
+        company="Stripe",
+        role="Cloud Engineer",
+        canonical_job_url="https://boards.greenhouse.io/stripe/jobs/3344",
+        source="greenhouse",
+        status=ApplicationStatus.READY_TO_APPLY,
+    )
+    in_memory_db.add(app)
+    in_memory_db.commit()
+
+    detail = service.continue_application("app-never-auto-submit")
+
+    # Browser task is QUEUED for filling safe fields, NOT completed or authorized
+    assert detail.browser_review is not None
+    assert detail.browser_review.status == BrowserTaskStatus.QUEUED.value
+
+    # Application status must NEVER be APPLIED
+    db_app = in_memory_db.query(Application).filter_by(application_id="app-never-auto-submit").first()
+    assert db_app.status == ApplicationStatus.READY_TO_APPLY
+    assert db_app.submitted_at is None
+    assert detail.status != "SUBMITTED"
+
+    # No submission event on timeline
+    submission_events = [evt for evt in detail.timeline if evt.event_type == "SUBMITTED"]
+    assert len(submission_events) == 0
+
+
+def test_manual_submission_remains_distinct_from_automated_submission(in_memory_db, tmp_path):
+    """Test that manual submission is distinct from automated submission and requires candidate confirmation."""
+    track_store = TrackingStore(tracking_dir=tmp_path / "tracking")
+    tracking_service = TrackingService(store=track_store)
+    service = DashboardService(db=in_memory_db, tracking_service=tracking_service)
+
+    job = Job(
+        job_id="job-distinct-paths",
+        title="Lead Platform Engineer",
+        company="Linear",
+        description="Platform architecture",
+        lifecycle_status="DISCOVERED",
+    )
+    in_memory_db.add(job)
+    in_memory_db.commit()
+
+    app = Application(
+        application_id="app-distinct-paths",
+        job_id=job.id,
+        job_id_str="job-distinct-paths",
+        company="Linear",
+        role="Lead Platform Engineer",
+        canonical_job_url="https://jobs.lever.co/linear/9900",
+        source="lever",
+        status=ApplicationStatus.READY_TO_APPLY,
+    )
+    in_memory_db.add(app)
+    in_memory_db.commit()
+
+    track_rec = ApplicationRecord(
+        application_id="app-distinct-paths",
+        job_id="job-distinct-paths",
+        company="Linear",
+        role="Lead Platform Engineer",
+        current_status=ApplicationLifecycleStatus.PREPARED,
+    )
+    track_store.save_application(track_rec)
+
+    # Manual submission requires explicit call to mark_application_submitted_manually
+    manual_notes = "Candidate applied manually on Lever, ref #LIN-8821"
+    detail = service.mark_application_submitted_manually("app-distinct-paths", user_notes=manual_notes)
+
+    # Status updated
+    assert detail.status == "SUBMITTED"
+    assert detail.submitted_at is not None
+
+    # Source is strictly MANUAL_CANDIDATE in DB and EventSource.MANUAL in TrackingStore
+    db_events = in_memory_db.query(ApplicationEventModel).filter_by(application_id="app-distinct-paths").all()
+    sub_events = [e for e in db_events if e.event_type == "SUBMITTED"]
+    assert len(sub_events) == 1
+    assert sub_events[0].source == "MANUAL_CANDIDATE"
+    assert sub_events[0].metadata_json.get("submission_mode") == "MANUAL"
+    assert manual_notes in sub_events[0].notes
+
+    saved_rec = track_store.get_application("app-distinct-paths")
+    tracking_sub_events = [e for e in saved_rec.events if e.event_type == ApplicationLifecycleStatus.SUBMITTED]
+    assert len(tracking_sub_events) == 1
+    assert tracking_sub_events[0].source == EventSource.MANUAL

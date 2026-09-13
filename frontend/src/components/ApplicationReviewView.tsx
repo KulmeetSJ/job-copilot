@@ -245,9 +245,8 @@ export const ApplicationReviewView: React.FC<ApplicationReviewViewProps> = ({
       .then((data) => {
         setDetail(data);
         setReshareUrl(data.canonical_job_url || data.browser_review?.target_url || '');
-        const storedPortal = typeof window !== 'undefined' && localStorage.getItem(`portal_opened_${data.application_id}`) === 'true';
         const eventRecorded = Boolean(data.timeline?.some((e: any) => e.event_type === 'PORTAL_OPENED'));
-        setPortalOpened(storedPortal || eventRecorded);
+        setPortalOpened(eventRecorded);
         // Prepopulate human answers if empty
         const initialMap: Record<string, string> = {};
         data.user_inputs_required.forEach((u) => {
@@ -373,11 +372,14 @@ export const ApplicationReviewView: React.FC<ApplicationReviewViewProps> = ({
     setPortalOpened(true);
     if (detail.application_id) {
       try {
-        localStorage.setItem(`portal_opened_${detail.application_id}`, 'true');
         const updated = await api.recordPortalOpened(detail.application_id);
         setDetail(updated);
+        const hasPortal = Boolean(updated.timeline?.some((e: any) => e.event_type === 'PORTAL_OPENED'));
+        setPortalOpened(hasPortal);
       } catch (err) {
         console.error('Failed to record portal opened event:', err);
+        const hasPortal = Boolean(detail.timeline?.some((e: any) => e.event_type === 'PORTAL_OPENED'));
+        setPortalOpened(hasPortal);
       }
     }
   };
@@ -908,7 +910,7 @@ export const ApplicationReviewView: React.FC<ApplicationReviewViewProps> = ({
                     <p className="text-xs sm:text-sm text-slate-200 leading-relaxed font-medium">
                       {detail.blocker_instruction || detail.browser_review?.pause_reason || (
                         detail.blocker_type === 'LOGIN'
-                          ? 'Please log in to the employer portal first, then connect/authorize the browser session.'
+                          ? 'Log in to the employer portal first, then connect an authenticated browser session to Job Copilot.'
                           : detail.can_resume
                           ? 'Please provide the missing information in the Needs Input tab, then click Resume.'
                           : 'The automated browser cannot safely continue because human interaction is required. Complete this application manually in the employer portal. The automation will not submit or retry automatically.'

@@ -989,7 +989,7 @@ class DashboardService:
                     can_resume = False
                 elif browser_task.status == BrowserTaskStatus.LOGIN_REQUIRED:
                     blocker_type = "LOGIN"
-                    blocker_instruction = "The automated browser cannot safely continue because authentication login is required. Complete this application manually in the employer portal. The automation will not submit or retry automatically."
+                    blocker_instruction = browser_task.pause_reason or "The automated browser cannot safely continue because authentication login is required. Complete this application manually in the employer portal. The automation will not submit or retry automatically."
                     can_resume = False
                 elif browser_task.status == BrowserTaskStatus.MFA_REQUIRED:
                     blocker_type = "MFA"
@@ -1707,7 +1707,7 @@ class DashboardService:
         3. Checks whether an authenticated browser session is available.
         4. If no usable authenticated session exists:
            Transitions task to LOGIN_REQUIRED with prompt:
-           'Please log in to the employer portal first, then connect/authorize the browser session.'
+           'Log in to the employer portal first, then connect an authenticated browser session to Job Copilot.'
         5. If a usable authenticated session exists:
            Queues/starts browser workflow to fill safe fields, pausing for sensitive fields/CAPTCHA/MFA,
            reaching READY_FOR_REVIEW.
@@ -1749,7 +1749,7 @@ class DashboardService:
 
             if not active_session:
                 # No active authenticated session -> produce LOGIN_REQUIRED state with required prompt
-                login_msg = "Please log in to the employer portal first, then connect/authorize the browser session."
+                login_msg = "Log in to the employer portal first, then connect an authenticated browser session to Job Copilot."
                 if task:
                     task_repo.update_status(task.task_id, BrowserTaskStatus.LOGIN_REQUIRED, pause_reason=login_msg)
                     task_repo.append_audit_event(
@@ -1862,6 +1862,26 @@ class DashboardService:
                         "timestamp": now.isoformat(),
                     },
                 )
+            else:
+                task_id = f"task-bw-{uuid.uuid4().hex[:8]}"
+                target_url = app.canonical_job_url or f"https://manual.application.portal/{app.application_id}"
+                task = BrowserTaskModel(
+                    task_id=task_id,
+                    application_id=app.application_id,
+                    job_id=app.job_id_str or str(app.job_id),
+                    source=app.source or "manual",
+                    target_url=target_url,
+                    status=BrowserTaskStatus.COMPLETED,
+                    audit_events=[
+                        {
+                            "event": "manual_submission_confirmed",
+                            "submission_mode": "MANUAL",
+                            "notes": notes_str,
+                            "timestamp": now.isoformat(),
+                        }
+                    ],
+                )
+                task_repo.create(task)
 
             db.commit()
 

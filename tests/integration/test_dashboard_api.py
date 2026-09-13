@@ -7,10 +7,11 @@ from sqlalchemy.orm import sessionmaker
 
 from job_copilot.api.app import app
 from job_copilot.db.database import get_db
-from job_copilot.domain.browser_worker_enums import BrowserTaskStatus
+from job_copilot.domain.browser_worker_enums import AuthenticatedSessionStatus, BrowserTaskStatus
 from job_copilot.domain.enums import ApplicationStatus
 from job_copilot.models.base import Base
 from job_copilot.models.application import Application
+from job_copilot.models.browser_session import BrowserSessionModel
 from job_copilot.models.browser_task import BrowserTaskModel
 from job_copilot.models.job import Job
 
@@ -378,7 +379,8 @@ def test_api_portal_opened_and_continue_and_manual_submit_flow(client_with_db):
     assert res_continue.status_code == 200
     data_continue = res_continue.json()
     assert data_continue["browser_review"]["status"] == "LOGIN_REQUIRED"
-    assert "Please log in to the employer portal first" in data_continue["browser_review"]["pause_reason"]
+    assert data_continue["browser_review"]["pause_reason"] == "Log in to the employer portal first, then connect an authenticated browser session to Job Copilot."
+    assert data_continue["blocker_instruction"] == "Log in to the employer portal first, then connect an authenticated browser session to Job Copilot."
 
     # 3. POST /mark-submitted
     manual_notes = "Finished application manually on Stripe Greenhouse portal #GH-771"
@@ -432,6 +434,105 @@ def test_api_portal_opened_and_continue_ssrf_protection(client_with_db):
     res_continue = client.post("/api/dashboard/applications/app-api-ssrf-01/continue")
     assert res_continue.status_code == 400
     assert "Security Violation" in res_continue.json()["detail"] or "disallowed" in res_continue.json()["detail"].lower()
+
+
+def test_api_portal_opened_backend_driven_across_requests(client_with_db):
+    """Ensure portal opened state is maintained on backend across requests and does not rely on client storage."""
+    client, SessionLocal = client_with_db
+    session = SessionLocal()
+
+    job = Job(
+        job_id="job-api-backend-01",
+        title="Backend Infrastructure Engineer",
+        company="Stripe",
+        description="Infra platform",
+        source="greenhouse",
+        canonical_url="https://boards.greenhouse.io/stripe/jobs/1100",
+    )
+    session.add(job)
+    session.commit()
+
+    app_record = Application(
+        application_id="app-api-backend-01",
+        job_id=job.id,
+        job_id_str="job-api-backend-01",
+        company="Stripe",
+        role="Backend Infrastructure Engineer",
+        canonical_job_url="https://boards.greenhouse.io/stripe/jobs/1100",
+        source="greenhouse",
+        status=ApplicationStatus.READY_TO_APPLY,
+    )
+    session.add(app_record)
+    session.commit()
+    session.close()
+
+    # Initial GET has no portal opened event
+    res1 = client.get("/api/dashboard/applications/app-api-backend-01")
+    assert res1.status_code == 200
+    assert not any(evt["event_type"] == "PORTAL_OPENED" for evt in res1.json()["timeline"])
+
+    # POST portal opened
+    res_post = client.post("/api/dashboard/applications/app-api-backend-01/portal-opened")
+    assert res_post.status_code == 200
+    assert any(evt["event_type"] == "PORTAL_OPENED" for evt in res_post.json()["timeline"])
+
+    # Subsequent GET (as from a refreshed page or different browser/device) has portal opened event
+    res2 = client.get("/api/dashboard/applications/app-api-backend-01")
+    assert res2.status_code == 200
+    timeline = res2.json()["timeline"]
+    portal_evts = [evt for evt in timeline if evt["event_type"] == "PORTAL_OPENED"]
+    assert len(portal_evts) == 1
+    assert portal_evts[0]["source"] == "USER"
+
+
+def test_api_continue_with_valid_session_queues_task_and_never_submits(client_with_db):
+    """Ensure Continue with active authenticated session queues browser task and never submits automatically."""
+    client, SessionLocal = client_with_db
+    session = SessionLocal()
+
+    browser_sess = BrowserSessionModel(
+        session_id="sess-active-lever-01",
+        source="lever",
+        status=AuthenticatedSessionStatus.ACTIVE,
+    )
+    session.add(browser_sess)
+
+    job = Job(
+        job_id="job-api-continue-never-sub",
+        title="Software Engineer",
+        company="Linear",
+        description="Linear app engineer",
+        source="lever",
+        canonical_url="https://jobs.lever.co/linear/4455",
+    )
+    session.add(job)
+    session.commit()
+
+    app_record = Application(
+        application_id="app-api-continue-never-sub",
+        job_id=job.id,
+        job_id_str="job-api-continue-never-sub",
+        company="Linear",
+        role="Software Engineer",
+        canonical_job_url="https://jobs.lever.co/linear/4455",
+        source="lever",
+        status=ApplicationStatus.READY_TO_APPLY,
+    )
+    session.add(app_record)
+    session.commit()
+    session.close()
+
+    res_continue = client.post("/api/dashboard/applications/app-api-continue-never-sub/continue")
+    assert res_continue.status_code == 200
+    data = res_continue.json()
+
+    # Browser review task is QUEUED
+    assert data["browser_review"]["status"] == "QUEUED"
+
+    # Status must NOT be SUBMITTED
+    assert data["status"] != "SUBMITTED"
+    assert data["submitted_at"] is None
+    assert not any(evt["event_type"] == "SUBMITTED" for evt in data["timeline"])
 
 
 
