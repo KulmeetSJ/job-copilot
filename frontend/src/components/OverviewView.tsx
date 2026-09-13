@@ -19,11 +19,18 @@ import {
   ChevronRight,
   Loader2,
   CheckCircle2,
-  Info
+  Info,
+  Zap,
+  Copy,
+  Check,
+  Bookmark,
+  Smartphone
 } from 'lucide-react';
-import { DashboardOverviewResponse, AnalyzeOpportunityResponse } from '../types';
+import { DashboardOverviewResponse, AnalyzeOpportunityResponse, DashboardQueueItem } from '../types';
 import { api } from '../api';
 import { formatSource } from '../utils/formatters';
+
+export const AUTOFILL_BOOKMARKLET = `javascript:(function(){const c={f:"Kulmeet Singh",l:"Jaggi",fn:"Kulmeet Singh Jaggi",e:"singhkulmeet3@gmail.com",p:"+91-7906490585",loc:"Pune, India",city:"Pune",co:"India",port:"https://portfolio-one-ashen-c8e7anc8i0.vercel.app/",li:"https://linkedin.com/in/kulmeet-singh",gh:"https://github.com/KulmeetSJ",comp:"HSBC",role:"Software Engineer",sch:"Graphic Era Deemed to be University",deg:"B.Tech Computer Science and Engineering",gpa:"8.81",sp:"Yes",spLong:"Open to international opportunities requiring visa sponsorship.",not:"30 days"};let n=0;document.querySelectorAll("input,textarea,select").forEach(el=>{if(el.type==="hidden"||el.type==="submit"||el.type==="button")return;const s=((el.name||"")+" "+(el.id||"")+" "+(el.placeholder||"")+" "+(el.getAttribute("aria-label")||"")+" "+(el.labels&&el.labels[0]?el.labels[0].innerText:"")+" "+(el.closest("div")?el.closest("div").innerText.slice(0,100):"")).toLowerCase();const sv=(v)=>{if(!v)return;el.value=v;el.dispatchEvent(new Event("input",{bubbles:true}));el.dispatchEvent(new Event("change",{bubbles:true}));el.style.backgroundColor="#ecfdf5";el.style.border="2px solid #10b981";n++;};if(s.includes("first name")||s.includes("given name"))sv(c.f);else if(s.includes("last name")||s.includes("family name")||s.includes("surname"))sv(c.l);else if(s.includes("full name")||s.includes("candidate name")||s.includes("name"))sv(c.fn);else if(s.includes("email"))sv(c.e);else if(s.includes("phone")||s.includes("mobile")||s.includes("contact"))sv(c.p);else if(s.includes("linkedin"))sv(c.li);else if(s.includes("github"))sv(c.gh);else if(s.includes("portfolio")||s.includes("website"))sv(c.port);else if(s.includes("city")||s.includes("location"))sv(c.city);else if(s.includes("country"))sv(c.co);else if(s.includes("current company")||s.includes("employer")||s.includes("organization"))sv(c.comp);else if(s.includes("current title")||s.includes("job title")||s.includes("designation"))sv(c.role);else if(s.includes("school")||s.includes("university")||s.includes("college"))sv(c.sch);else if(s.includes("degree"))sv(c.deg);else if(s.includes("gpa")||s.includes("grade"))sv(c.gpa);else if(s.includes("sponsor")||s.includes("visa"))sv(c.sp);});const t=document.createElement("div");t.innerText="⚡ Job Copilot: "+n+" fields autofilled!";t.style.cssText="position:fixed;top:20px;right:20px;z-index:999999;background:#0f172a;color:#10b981;border:2px solid #10b981;padding:14px 20px;border-radius:12px;font-family:sans-serif;font-weight:bold;font-size:14px;box-shadow:0 10px 25px rgba(0,0,0,0.5);";document.body.appendChild(t);setTimeout(()=>t.remove(),4000);})();`;
 
 interface OverviewViewProps {
   overview: DashboardOverviewResponse | null;
@@ -96,6 +103,28 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
     setAnalysisResult(null);
     setAnalysisError(null);
     setIsAnalyzing(false);
+  };
+
+  const [bookmarkletCopied, setBookmarkletCopied] = useState(false);
+  const [preparingJobId, setPreparingJobId] = useState<string | null>(null);
+
+  const copyBookmarklet = () => {
+    navigator.clipboard.writeText(AUTOFILL_BOOKMARKLET);
+    setBookmarkletCopied(true);
+    setTimeout(() => setBookmarkletCopied(false), 2500);
+  };
+
+  const handleApplyFeatured = async (job: DashboardQueueItem) => {
+    try {
+      setPreparingJobId(job.job_id);
+      await api.prepareApplication(job.job_id);
+      if (onSelectJob) onSelectJob(job.job_id);
+      onNavigateTab('applications');
+    } catch (err: any) {
+      alert(err.message || 'Failed to prepare application');
+    } finally {
+      setPreparingJobId(null);
+    }
   };
 
   if (!overview) {
@@ -433,6 +462,135 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
         )}
       </div>
 
+      {/* Featured Openings (Ready to Tailor & Apply) */}
+      <div className="glass-panel p-5 sm:p-6 rounded-2xl border border-slate-700/80 space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-800">
+          <div>
+            <div className="flex items-center space-x-2">
+              <span className="text-base sm:text-lg font-bold text-white flex items-center space-x-2">
+                <Sparkles className="w-5 h-5 text-amber-400" />
+                <span>Featured Tech Openings (Ready to Tailor & Apply)</span>
+              </span>
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 font-semibold uppercase">
+                Curated
+              </span>
+            </div>
+            <p className="text-xs text-slate-400 mt-1">
+              Top verified software engineering and cloud roles matching your background. 1-tap generates your tailored ATS resume.
+            </p>
+          </div>
+
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={copyBookmarklet}
+              className="px-3 py-1.5 bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/30 text-xs font-semibold rounded-lg transition-colors flex items-center space-x-1.5 shrink-0"
+              title="Copy 1-tap browser autofill script"
+            >
+              {bookmarkletCopied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Zap className="w-3.5 h-3.5 text-amber-400" />}
+              <span>{bookmarkletCopied ? 'AutoFill Script Copied!' : '⚡ 1-Tap AutoFill Script'}</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Openings Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5 pt-1">
+          {(overview.featured_openings || []).map((job) => {
+            const isPreparing = preparingJobId === job.job_id;
+            return (
+              <div
+                key={job.job_id}
+                className="p-4 rounded-xl bg-slate-950/80 border border-slate-800 hover:border-blue-500/40 transition-all flex flex-col justify-between space-y-3 group shadow-md"
+              >
+                <div className="space-y-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <span className="text-xs font-bold text-blue-400 uppercase tracking-wider block">
+                        {job.company}
+                      </span>
+                      <h4 className="text-sm font-semibold text-white group-hover:text-blue-200 transition-colors leading-snug">
+                        {job.title}
+                      </h4>
+                    </div>
+                    {job.match_score !== undefined && (
+                      <span className={`px-2 py-0.5 rounded-lg text-xs font-mono font-bold border shrink-0 ${
+                        job.match_score >= 90
+                          ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                          : 'bg-blue-500/15 text-blue-300 border-blue-500/30'
+                      }`}>
+                        {Math.round(job.match_score)}%
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="text-[11px] text-slate-400 flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <span>{job.location || 'Remote'}</span>
+                    <span>•</span>
+                    <span className="text-slate-300">{job.source}</span>
+                  </div>
+
+                  {job.key_matched_skills && job.key_matched_skills.length > 0 && (
+                    <div className="flex flex-wrap gap-1 pt-1">
+                      {job.key_matched_skills.slice(0, 3).map((sk) => (
+                        <span key={sk} className="text-[10px] px-1.5 py-0.5 rounded bg-slate-900 border border-slate-800 text-slate-300">
+                          {sk}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex items-center space-x-2 pt-2 border-t border-slate-900">
+                  <button
+                    onClick={() => handleApplyFeatured(job)}
+                    disabled={isPreparing}
+                    className="flex-1 py-2 px-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 disabled:opacity-50 text-white font-semibold text-xs rounded-lg shadow-sm flex items-center justify-center space-x-1.5 transition-all cursor-pointer"
+                  >
+                    {isPreparing ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>Tailoring...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Zap className="w-3.5 h-3.5 text-amber-300" />
+                        <span>Tailor & Apply</span>
+                      </>
+                    )}
+                  </button>
+
+                  {job.canonical_url && (
+                    <a
+                      href={job.canonical_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="p-2 bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-800 rounded-lg transition-colors shrink-0"
+                      title="Open job posting"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </a>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Mobile-Friendly Helper Tip */}
+        <div className="p-3.5 rounded-xl bg-blue-950/20 border border-blue-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs text-slate-300">
+          <div className="flex items-center space-x-2">
+            <Smartphone className="w-4 h-4 text-blue-400 shrink-0" />
+            <span>
+              <strong>Applying from your phone?</strong> Tap <strong>"⚡ Tailor & Apply"</strong> to generate your tailored PDF resume, then use the <strong>AutoFill Script</strong> to fill any employer login page in 1 second.
+            </span>
+          </div>
+          <button
+            onClick={copyBookmarklet}
+            className="text-xs font-semibold text-blue-400 hover:text-blue-300 underline self-start sm:self-auto shrink-0"
+          >
+            {bookmarkletCopied ? 'Copied to Clipboard!' : 'Copy AutoFill Script'}
+          </button>
+        </div>
+      </div>
 
       {/* KPI Stat Cards Grid */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3.5">

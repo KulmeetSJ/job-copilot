@@ -50,6 +50,7 @@ export interface DashboardOverviewResponse {
     notes?: string;
     timestamp?: string;
   }>;
+  featured_openings?: DashboardQueueItem[];
   timestamp: string;
 }
 

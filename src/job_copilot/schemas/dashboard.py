@@ -53,18 +53,6 @@ class QueueCounts(BaseModel):
     total_active: int = 0
 
 
-class DashboardOverviewResponse(BaseModel):
-    """Consolidated summary for the main Dashboard Control Center."""
-    queue_counts: QueueCounts
-    pipeline_counts: PipelineCounts
-    recent_submissions_count: int = 0
-    active_sources_count: int = 0
-    healthy_sources_count: int = 0
-    authenticated_sessions_count: int = 0
-    recent_activity: List[Dict[str, Any]] = Field(default_factory=list)
-    timestamp: datetime = Field(default_factory=utc_now)
-
-
 # ==============================================================================
 # Priority Queue Models
 # ==============================================================================
@@ -92,6 +80,19 @@ class DashboardQueueItem(BaseModel):
     tracking_application_id: Optional[str] = None
     application_status: Optional[str] = None
     discovered_at: datetime = Field(default_factory=utc_now)
+
+
+class DashboardOverviewResponse(BaseModel):
+    """Consolidated summary for the main Dashboard Control Center."""
+    queue_counts: QueueCounts
+    pipeline_counts: PipelineCounts
+    recent_submissions_count: int = 0
+    active_sources_count: int = 0
+    healthy_sources_count: int = 0
+    authenticated_sessions_count: int = 0
+    recent_activity: List[Dict[str, Any]] = Field(default_factory=list)
+    featured_openings: List[DashboardQueueItem] = Field(default_factory=list)
+    timestamp: datetime = Field(default_factory=utc_now)
 
 
 class DashboardQueueResponse(BaseModel):

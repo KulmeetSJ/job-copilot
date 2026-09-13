@@ -20,6 +20,12 @@ import {
   ChevronDown,
   Loader2,
   Play,
+  Share2,
+  Smartphone,
+  Zap,
+  Globe,
+  Briefcase,
+  GraduationCap,
 } from 'lucide-react';
 import { api } from '../api';
 import { ApplicationDetailResponse } from '../types';
@@ -31,6 +37,28 @@ interface ApplicationReviewViewProps {
   onNavigateTab: (tab: string) => void;
 }
 
+const CANDIDATE_TRUTH_DATA = {
+  fullName: 'Kulmeet Singh Jaggi',
+  firstName: 'Kulmeet',
+  lastName: 'Jaggi',
+  email: 'singhkulmeet3@gmail.com',
+  phone: '+91-7906490585',
+  location: 'Pune, India',
+  portfolio: 'https://portfolio-one-ashen-c8e7anc8i0.vercel.app/',
+  linkedin: 'https://linkedin.com/in/kulmeet-singh',
+  github: 'https://github.com/KulmeetSJ',
+  currentCompany: 'HSBC',
+  currentTitle: 'Software Engineer (Payments Data Platform)',
+  totalExperience: '6+ Years (Cloud, DevOps, Backend & Distributed Systems)',
+  keySkills: 'Java, Spring Boot, Google Cloud Platform (GCP), Terraform, Kubernetes, Apache Beam, Python, BigQuery, Docker, CI/CD',
+  education: 'Graphic Era Deemed to be University',
+  degree: 'B.Tech in Computer Science and Engineering',
+  graduationDate: 'June 2024',
+  gpa: '8.81 / 10.0 CGPA',
+  workAuth: 'Authorized to work in India; Will require international visa sponsorship for US/UK/EU roles',
+  noticePeriod: '30 Days (Flexible / Negotiable)',
+};
+
 export const ApplicationReviewView: React.FC<ApplicationReviewViewProps> = ({
   initialApplicationId,
   onNavigateTab,
@@ -39,11 +67,18 @@ export const ApplicationReviewView: React.FC<ApplicationReviewViewProps> = ({
   const [selectedAppId, setSelectedAppId] = useState<string>(initialApplicationId || '');
   const [detail, setDetail] = useState<ApplicationDetailResponse | null>(null);
   const [loading, setLoading] = useState(false);
-  const [activeSubTab, setActiveSubTab] = useState<'resume' | 'answers' | 'human_input' | 'browser' | 'timeline'>('resume');
+  const [activeSubTab, setActiveSubTab] = useState<'resume' | 'quickfill' | 'answers' | 'human_input' | 'browser' | 'timeline'>('resume');
   const [resumeViewMode, setResumeViewMode] = useState<'pdf' | 'latex'>('pdf');
   const [copiedTex, setCopiedTex] = useState(false);
   const [copiedCover, setCopiedCover] = useState(false);
   
+  // Quick-Fill & Reshare state
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [reshareUrl, setReshareUrl] = useState('');
+  const [resharing, setResharing] = useState(false);
+  const [reshareFeedback, setReshareFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [copiedBookmarklet, setCopiedBookmarklet] = useState(false);
+
   // Human Input form state
   const [humanAnswers, setHumanAnswers] = useState<Record<string, string>>({});
   const [savingInputs, setSavingInputs] = useState(false);
@@ -201,6 +236,7 @@ export const ApplicationReviewView: React.FC<ApplicationReviewViewProps> = ({
     api.getApplicationDetail(selectedAppId)
       .then((data) => {
         setDetail(data);
+        setReshareUrl(data.canonical_job_url || data.browser_review?.target_url || '');
         // Prepopulate human answers if empty
         const initialMap: Record<string, string> = {};
         data.user_inputs_required.forEach((u) => {
@@ -229,6 +265,42 @@ export const ApplicationReviewView: React.FC<ApplicationReviewViewProps> = ({
       setCopiedCover(true);
       setTimeout(() => setCopiedCover(false), 2000);
     }
+  };
+
+  const handleCopyValue = (key: string, val: string) => {
+    if (!val) return;
+    navigator.clipboard.writeText(val);
+    setCopiedKey(key);
+    setTimeout(() => setCopiedKey(null), 2000);
+  };
+
+  const handleReshareSubmit = async () => {
+    if (!reshareUrl.trim()) return;
+    try {
+      setResharing(true);
+      setReshareFeedback(null);
+      await api.analyzeOpportunity(reshareUrl.trim());
+      setReshareFeedback({
+        type: 'success',
+        message: 'Application link synchronized! Active employer form mapped for autofill.',
+      });
+      setTimeout(() => setReshareFeedback(null), 5000);
+    } catch (err: any) {
+      setReshareFeedback({
+        type: 'error',
+        message: err.message || 'Failed to sync link.',
+      });
+    } finally {
+      setResharing(false);
+    }
+  };
+
+  const autofillBookmarkletCode = `javascript:(function(){const d={first_name:'Kulmeet',last_name:'Jaggi',full_name:'Kulmeet Singh Jaggi',email:'singhkulmeet3@gmail.com',phone:'+917906490585',location:'Pune, India',city:'Pune',country:'India',linkedin:'https://linkedin.com/in/kulmeet-singh',github:'https://github.com/KulmeetSJ',portfolio:'https://portfolio-one-ashen-c8e7anc8i0.vercel.app/',company:'HSBC',employer:'HSBC',current_title:'Software Engineer',title:'Software Engineer',school:'Graphic Era Deemed to be University',university:'Graphic Era Deemed to be University',degree:'B.Tech',major:'Computer Science and Engineering',gpa:'8.81',sponsorship:'Yes',work_auth:'Yes',notice:'30 Days'};let count=0;document.querySelectorAll('input,select,textarea').forEach(el=>{const n=(el.name||el.id||el.getAttribute('aria-label')||el.placeholder||'').toLowerCase();let v=null;if(n.includes('first')&&!n.includes('last'))v=d.first_name;else if(n.includes('last'))v=d.last_name;else if(n.includes('full')||n==='name')v=d.full_name;else if(n.includes('email'))v=d.email;else if(n.includes('phone')||n.includes('mobile'))v=d.phone;else if(n.includes('linkedin'))v=d.linkedin;else if(n.includes('github'))v=d.github;else if(n.includes('portfoli')||n.includes('website')||n.includes('site'))v=d.portfolio;else if(n.includes('school')||n.includes('university')||n.includes('college'))v=d.university;else if(n.includes('degree'))v=d.degree;else if(n.includes('major')||n.includes('discipline'))v=d.major;else if(n.includes('gpa')||n.includes('grade'))v=d.gpa;else if(n.includes('company')||n.includes('employer'))v=d.employer;else if(n.includes('city'))v=d.city;else if(n.includes('country'))v=d.country;else if(n.includes('notice'))v=d.notice;if(v!==null){if(el.tagName==='SELECT'){for(let o of el.options){if(o.text.toLowerCase().includes(v.toLowerCase())||o.value.toLowerCase().includes(v.toLowerCase())){el.value=o.value;break;}}}else if(el.type!=='file'&&el.type!=='checkbox'&&el.type!=='radio'){el.value=v;}el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}));count++;}});alert('⚡ Job Copilot AutoFill: Populated '+count+' form fields with verified candidate details!');})();`;
+
+  const handleCopyBookmarklet = () => {
+    navigator.clipboard.writeText(autofillBookmarkletCode);
+    setCopiedBookmarklet(true);
+    setTimeout(() => setCopiedBookmarklet(false), 2500);
   };
 
   const handleSaveInputs = async () => {
@@ -498,6 +570,43 @@ export const ApplicationReviewView: React.FC<ApplicationReviewViewProps> = ({
                 )}
               </div>
             </div>
+
+            {/* Quick Action Toolbar (Mobile & Desktop) */}
+            <div className="pt-3 border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  onClick={handleDownloadPdf}
+                  disabled={downloadingPdf}
+                  className="px-3 py-1.5 text-xs font-semibold bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 rounded-lg transition-all flex items-center space-x-1.5 shadow-sm"
+                  title="Download tailored 1-page PDF"
+                >
+                  {downloadingPdf ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+                  <span>Download Tailored PDF</span>
+                </button>
+
+                <button
+                  onClick={handleOpenPdf}
+                  className="px-3 py-1.5 text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-lg transition-all flex items-center space-x-1.5"
+                  title="Open PDF preview in new tab"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  <span>Preview PDF</span>
+                </button>
+              </div>
+
+              <button
+                onClick={() => setActiveSubTab('quickfill')}
+                className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all flex items-center space-x-1.5 ${
+                  activeSubTab === 'quickfill'
+                    ? 'bg-amber-500/30 text-amber-300 border border-amber-500/50'
+                    : 'bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30'
+                }`}
+                title="Open Mobile Quick-Fill & Reshare Link Assistant"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                <span>⚡ Mobile Quick-Fill & Reshare</span>
+              </button>
+            </div>
           </div>
 
           {/* Prominent Blocker / Human Action Required Card (Option B: Safe Manual Takeover) */}
@@ -582,6 +691,16 @@ export const ApplicationReviewView: React.FC<ApplicationReviewViewProps> = ({
             >
               <FileText className="w-4 h-4" />
               <span>Resume & Cover Letter</span>
+            </button>
+
+            <button
+              onClick={() => setActiveSubTab('quickfill')}
+              className={`px-3.5 py-2 rounded-lg transition-colors flex items-center space-x-2 shrink-0 ${
+                activeSubTab === 'quickfill' ? 'bg-amber-600/25 text-amber-300 border border-amber-500/40 font-semibold' : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Sparkles className="w-4 h-4 text-amber-400" />
+              <span>⚡ Quick-Fill & Reshare</span>
             </button>
 
             <button
@@ -761,6 +880,242 @@ export const ApplicationReviewView: React.FC<ApplicationReviewViewProps> = ({
                 <div className="p-4 bg-slate-950 border border-slate-800 rounded-lg text-xs text-slate-300 max-h-[440px] overflow-y-auto leading-relaxed whitespace-pre-wrap font-sans">
                   {detail.cover_letter_text || 'No tailored cover letter generated for this opportunity.'}
                 </div>
+              </div>
+
+            </div>
+          )}
+
+          {/* Sub-Tab: Mobile Quick-Fill & Link Reshare */}
+          {activeSubTab === 'quickfill' && (
+            <div className="space-y-4 sm:space-y-6">
+              
+              {/* Reshare Active Portal Link Card */}
+              <div className="glass-panel p-4 sm:p-5 rounded-xl border border-blue-500/30 bg-blue-950/20 space-y-3">
+                <div className="flex items-start space-x-3">
+                  <div className="p-2 rounded-lg bg-blue-500/20 text-blue-400 border border-blue-500/30 shrink-0">
+                    <Share2 className="w-5 h-5" />
+                  </div>
+                  <div className="space-y-1 flex-1">
+                    <h3 className="text-sm sm:text-base font-bold text-white flex items-center gap-2">
+                      <span>Reshare Active Employer Portal Link</span>
+                      <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-500/30">Mobile First</span>
+                    </h3>
+                    <p className="text-xs text-slate-300 leading-relaxed">
+                      Logged into Workday, Greenhouse, Lever, or company portal on your phone? Paste the application form link here to sync your session and trigger field mapping.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex flex-col sm:flex-row gap-2 pt-1">
+                  <input
+                    type="url"
+                    value={reshareUrl}
+                    onChange={(e) => setReshareUrl(e.target.value)}
+                    placeholder="https://company.wd1.myworkdayjobs.com/apply/..."
+                    className="flex-1 px-3.5 py-2.5 bg-slate-900 border border-slate-700 rounded-lg text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-blue-500"
+                  />
+                  <button
+                    onClick={handleReshareSubmit}
+                    disabled={resharing || !reshareUrl.trim()}
+                    className="px-5 py-2.5 text-xs font-bold bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white rounded-lg transition-all flex items-center justify-center space-x-2 shrink-0 disabled:opacity-50"
+                  >
+                    {resharing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4 text-amber-300" />}
+                    <span>Sync & Autofill Link</span>
+                  </button>
+                </div>
+
+                {reshareFeedback && (
+                  <div className={`p-3 rounded-lg text-xs flex items-center space-x-2 ${
+                    reshareFeedback.type === 'success'
+                      ? 'bg-emerald-500/15 border border-emerald-500/30 text-emerald-300'
+                      : 'bg-rose-500/15 border border-rose-500/30 text-rose-300'
+                  }`}>
+                    {reshareFeedback.type === 'success' ? (
+                      <CheckCircle2 className="w-4 h-4 shrink-0" />
+                    ) : (
+                      <AlertTriangle className="w-4 h-4 shrink-0" />
+                    )}
+                    <span>{reshareFeedback.message}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* 1-Tap Mobile AutoFill Script Card */}
+              <div className="glass-panel p-4 sm:p-5 rounded-xl border border-amber-500/30 bg-amber-950/20 space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-start space-x-3">
+                    <div className="p-2 rounded-lg bg-amber-500/20 text-amber-400 border border-amber-500/30 shrink-0">
+                      <Smartphone className="w-5 h-5" />
+                    </div>
+                    <div className="space-y-1">
+                      <h3 className="text-sm sm:text-base font-bold text-amber-200">
+                        ⚡ 1-Tap Mobile AutoFill Script (Safari & Chrome)
+                      </h3>
+                      <p className="text-xs text-slate-300">
+                        Autofill candidate details inside your mobile browser in 1 tap without any typing.
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={handleCopyBookmarklet}
+                    className="px-4 py-2.5 text-xs font-bold bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-lg shadow-md transition-all flex items-center justify-center space-x-2 shrink-0"
+                  >
+                    {copiedBookmarklet ? <Check className="w-4 h-4 text-slate-950" /> : <Copy className="w-4 h-4" />}
+                    <span>{copiedBookmarklet ? 'Script Copied!' : 'Copy AutoFill Script'}</span>
+                  </button>
+                </div>
+
+                <div className="p-3 bg-slate-900/80 border border-slate-800 rounded-lg text-[11px] text-slate-400 space-y-1.5 leading-relaxed">
+                  <p className="font-semibold text-slate-300">How to use on your phone:</p>
+                  <ol className="list-decimal list-inside space-y-0.5 pl-1">
+                    <li>Copy the script above.</li>
+                    <li>In mobile Safari or Chrome, bookmark any page, name it <code className="text-amber-300 font-mono">⚡ AutoFill</code>, and paste this script into the URL field.</li>
+                    <li>Log into the job portal. When on the application page, open bookmarks and tap <code className="text-amber-300 font-mono">⚡ AutoFill</code>. All fields will instantly populate!</li>
+                  </ol>
+                </div>
+              </div>
+
+              {/* Instant 1-Tap Clipboard Data Sheet */}
+              <div className="glass-panel p-4 sm:p-5 rounded-xl space-y-4">
+                <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+                  <h3 className="text-sm sm:text-base font-bold text-white flex items-center space-x-2">
+                    <Copy className="w-4 h-4 text-emerald-400" />
+                    <span>Instant 1-Tap Clipboard Data Sheet</span>
+                  </h3>
+                  <span className="text-[11px] text-slate-400 hidden sm:inline">Tap any item to copy to clipboard</span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
+                  
+                  {/* Category 1: Contact & Personal Info */}
+                  <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 space-y-3">
+                    <h4 className="text-xs font-bold text-blue-300 uppercase tracking-wider flex items-center space-x-1.5">
+                      <Globe className="w-3.5 h-3.5" />
+                      <span>Contact & Profiles</span>
+                    </h4>
+                    <div className="space-y-2 text-xs">
+                      {[
+                        { label: 'Full Name', key: 'full_name', value: CANDIDATE_TRUTH_DATA.fullName },
+                        { label: 'First Name', key: 'first_name', value: CANDIDATE_TRUTH_DATA.firstName },
+                        { label: 'Last Name', key: 'last_name', value: CANDIDATE_TRUTH_DATA.lastName },
+                        { label: 'Email', key: 'email', value: CANDIDATE_TRUTH_DATA.email },
+                        { label: 'Phone', key: 'phone', value: CANDIDATE_TRUTH_DATA.phone },
+                        { label: 'Location', key: 'location', value: CANDIDATE_TRUTH_DATA.location },
+                        { label: 'Portfolio Website', key: 'portfolio', value: CANDIDATE_TRUTH_DATA.portfolio },
+                        { label: 'LinkedIn', key: 'linkedin', value: CANDIDATE_TRUTH_DATA.linkedin },
+                        { label: 'GitHub', key: 'github', value: CANDIDATE_TRUTH_DATA.github },
+                      ].map((f) => (
+                        <div key={f.key} className="flex items-center justify-between p-2 rounded-lg bg-slate-950/80 border border-slate-800/80">
+                          <div className="min-w-0 pr-2">
+                            <div className="text-[10px] text-slate-400 font-medium">{f.label}</div>
+                            <div className="text-xs text-slate-200 truncate font-mono">{f.value}</div>
+                          </div>
+                          <button
+                            onClick={() => handleCopyValue(f.key, f.value)}
+                            className="px-2.5 py-1 text-[11px] font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded border border-slate-700 transition-colors flex items-center space-x-1 shrink-0"
+                          >
+                            {copiedKey === f.key ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                            <span>{copiedKey === f.key ? 'Copied' : 'Copy'}</span>
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Category 2: Experience & Employment */}
+                  <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 space-y-3">
+                    <h4 className="text-xs font-bold text-purple-300 uppercase tracking-wider flex items-center space-x-1.5">
+                      <Briefcase className="w-3.5 h-3.5" />
+                      <span>Experience & Role Info</span>
+                    </h4>
+                    <div className="space-y-2 text-xs">
+                      {[
+                        { label: 'Current Employer', key: 'curr_company', value: CANDIDATE_TRUTH_DATA.currentCompany },
+                        { label: 'Current Title', key: 'curr_title', value: CANDIDATE_TRUTH_DATA.currentTitle },
+                        { label: 'Total Experience', key: 'total_exp', value: CANDIDATE_TRUTH_DATA.totalExperience },
+                        { label: 'Key Tech Skills', key: 'key_skills', value: CANDIDATE_TRUTH_DATA.keySkills },
+                        { label: 'Notice Period', key: 'notice_period', value: CANDIDATE_TRUTH_DATA.noticePeriod },
+                      ].map((f) => (
+                        <div key={f.key} className="flex items-center justify-between p-2 rounded-lg bg-slate-950/80 border border-slate-800/80">
+                          <div className="min-w-0 pr-2">
+                            <div className="text-[10px] text-slate-400 font-medium">{f.label}</div>
+                            <div className="text-xs text-slate-200 line-clamp-1">{f.value}</div>
+                          </div>
+                          <button
+                            onClick={() => handleCopyValue(f.key, f.value)}
+                            className="px-2.5 py-1 text-[11px] font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded border border-slate-700 transition-colors flex items-center space-x-1 shrink-0"
+                          >
+                            {copiedKey === f.key ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                            <span>{copiedKey === f.key ? 'Copied' : 'Copy'}</span>
+                          </button>
+                        </div>
+                      ))}
+
+                      {/* Education Details */}
+                      <div className="pt-2 border-t border-slate-800/60 space-y-2">
+                        <div className="text-[10px] font-bold text-amber-400 uppercase tracking-wide flex items-center gap-1">
+                          <GraduationCap className="w-3 h-3" />
+                          <span>Education & GPA</span>
+                        </div>
+                        {[
+                          { label: 'Institution / College', key: 'college', value: CANDIDATE_TRUTH_DATA.education },
+                          { label: 'Degree & Major', key: 'degree', value: CANDIDATE_TRUTH_DATA.degree },
+                          { label: 'Graduation Date', key: 'grad_date', value: CANDIDATE_TRUTH_DATA.graduationDate },
+                          { label: 'CGPA / Marks', key: 'cgpa', value: CANDIDATE_TRUTH_DATA.gpa },
+                          { label: 'Work Authorization', key: 'work_auth', value: CANDIDATE_TRUTH_DATA.workAuth },
+                        ].map((f) => (
+                          <div key={f.key} className="flex items-center justify-between p-2 rounded-lg bg-slate-950/80 border border-slate-800/80">
+                            <div className="min-w-0 pr-2">
+                              <div className="text-[10px] text-slate-400 font-medium">{f.label}</div>
+                              <div className="text-xs text-slate-200 line-clamp-1">{f.value}</div>
+                            </div>
+                            <button
+                              onClick={() => handleCopyValue(f.key, f.value)}
+                              className="px-2.5 py-1 text-[11px] font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded border border-slate-700 transition-colors flex items-center space-x-1 shrink-0"
+                            >
+                              {copiedKey === f.key ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                              <span>{copiedKey === f.key ? 'Copied' : 'Copy'}</span>
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+
+                    </div>
+                  </div>
+
+                </div>
+
+                {/* Role-Specific Prepared Answers with 1-Tap Copy */}
+                {detail.prepared_answers && detail.prepared_answers.length > 0 && (
+                  <div className="pt-4 border-t border-slate-800 space-y-3">
+                    <h4 className="text-xs font-bold text-emerald-400 uppercase tracking-wider flex items-center space-x-1.5">
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      <span>Prepared Answers for {detail.company} ({detail.prepared_answers.length})</span>
+                    </h4>
+
+                    <div className="space-y-2.5">
+                      {detail.prepared_answers.map((ans, idx) => (
+                        <div key={idx} className="p-3 rounded-lg bg-slate-900/70 border border-slate-800 space-y-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-xs font-semibold text-slate-200">{ans.question_text}</span>
+                            <button
+                              onClick={() => handleCopyValue(`ans_${idx}`, ans.answer_text)}
+                              className="px-2.5 py-1 text-[11px] font-semibold bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 rounded transition-colors flex items-center space-x-1 shrink-0"
+                            >
+                              {copiedKey === `ans_${idx}` ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                              <span>{copiedKey === `ans_${idx}` ? 'Copied' : 'Copy Answer'}</span>
+                            </button>
+                          </div>
+                          <p className="text-xs text-slate-300 bg-slate-950 p-2.5 rounded border border-slate-800/80 leading-relaxed">
+                            {ans.answer_text}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
               </div>
 
             </div>

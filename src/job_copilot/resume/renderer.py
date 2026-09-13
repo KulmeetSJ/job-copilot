@@ -17,16 +17,24 @@ logger = get_logger(__name__)
 
 def escape_latex(s: str) -> str:
     r"""
-    Escape LaTeX special characters safely.
+    Escape LaTeX special characters safely while converting markdown bold (**bold**) into \textbf{...}.
     Characters: \, %, &, _, {, }, $, ^, ~, #
     """
     if s is None:
         return ""
     text = str(s)
-    
-    # Backslash first to prevent escaping subsequent escape backslashes
+
+    # 1. Stash markdown bold tokens: **bold content** -> placeholder
+    bolds = []
+    def _stash_bold(m):
+        bolds.append(m.group(1))
+        return f"XYZLATEXBOLD{len(bolds) - 1}XYZ"
+
+    text = re.sub(r"\*\*([^*]+)\*\*", _stash_bold, text)
+
+    # 2. Backslash first to prevent escaping subsequent escape backslashes
     text = text.replace("\\", r"\textbackslash{}")
-    
+
     replacements = {
         "&": r"\&",
         "%": r"\%",
@@ -38,10 +46,17 @@ def escape_latex(s: str) -> str:
         "~": r"\textasciitilde{}",
         "^": r"\textasciicircum{}",
     }
-    
+
     for char, escaped in replacements.items():
         text = text.replace(char, escaped)
-        
+
+    # 3. Restore bold tokens with proper LaTeX \textbf{...} and escaped content
+    for idx, bold_content in enumerate(bolds):
+        escaped_bold = str(bold_content).replace("\\", r"\textbackslash{}")
+        for char, escaped in replacements.items():
+            escaped_bold = escaped_bold.replace(char, escaped)
+        text = text.replace(f"XYZLATEXBOLD{idx}XYZ", rf"\textbf{{{escaped_bold}}}")
+
     return text
 
 

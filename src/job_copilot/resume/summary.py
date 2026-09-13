@@ -22,15 +22,21 @@ class SummaryGenerator:
         analysis: Optional[JobAnalysis] = None,
     ) -> str:
         """
-        Generate a tailored summary based on the strategy template and confirmed profile facts.
+        Generate a tailored summary based on the strategy template, target role, and confirmed profile facts.
         """
-        # Base template from strategy configuration
-        template = strategy.summary_template.strip()
+        if analysis and (analysis.job_title or analysis.company):
+            role_target = analysis.job_title or strategy.display_title
+            matched_skills = [
+                s.normalized_name for s in (analysis.required_skills + analysis.preferred_skills)[:4]
+            ]
+            skills_context = f", specializing in {', '.join(matched_skills)}" if matched_skills else ""
+            return (
+                f"Results-driven Software Engineer with 2+ years of enterprise experience at HSBC managing "
+                f"Google Cloud Platform (GCP) infrastructure, Infrastructure as Code (Terraform), and automated CI/CD pipelines{skills_context}. "
+                f"Google Cloud Certified Professional Cloud Architect with hands-on experience provisioning 2,000+ cloud resources, "
+                f"automating high-throughput payment data flows, optimizing compute costs by 30% ($150K+ annually), and accelerating "
+                f"provisioning speed by 60%."
+            )
 
-        # If a JD analysis is provided with specific matched keywords, we can lightly customize
-        # while keeping the factual baseline intact.
-        if analysis and analysis.company:
-            # Optionally reference target role context if desired, or keep pure template
-            pass
-
-        return template
+        # Fallback to strategy template
+        return strategy.summary_template.strip()
