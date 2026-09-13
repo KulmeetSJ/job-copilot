@@ -117,8 +117,10 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
   const handleApplyFeatured = async (job: DashboardQueueItem) => {
     try {
       setPreparingJobId(job.job_id);
-      await api.prepareApplication(job.job_id);
-      if (onSelectJob) onSelectJob(job.job_id);
+      const targetId = job.tracking_application_id || job.job_id;
+      const res = await api.prepareApplication(targetId);
+      const chosenId = res?.application_id || res?.job_id || targetId;
+      if (onSelectJob) onSelectJob(chosenId);
       onNavigateTab('applications');
     } catch (err: any) {
       alert(err.message || 'Failed to prepare application');

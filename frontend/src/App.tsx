@@ -66,10 +66,10 @@ export function App() {
 
   const handlePrepareJob = async (jobId: string) => {
     try {
-      await api.prepareApplication(jobId);
+      const res = await api.prepareApplication(jobId);
       loadOverview();
       loadQueue();
-      setActiveAppId(jobId);
+      setActiveAppId(res?.application_id || jobId);
       setActiveTab('applications');
     } catch (err) {
       console.error(err);
@@ -108,7 +108,10 @@ export function App() {
           <OverviewView
             overview={overview}
             onNavigateTab={setActiveTab}
-            onSelectJob={(id) => setInspectJobId(id)}
+            onSelectJob={(id) => {
+              setInspectJobId(id);
+              setActiveAppId(id);
+            }}
           />
         )}
 

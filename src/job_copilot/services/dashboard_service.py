@@ -23,6 +23,7 @@ from job_copilot.db.database import get_db
 from job_copilot.domain.artifact_enums import ArtifactType
 from job_copilot.domain.browser_worker_enums import BrowserTaskStatus
 from job_copilot.domain.enums import ApplicationStatus, RemoteStatus, ResumeStrategy
+from job_copilot.domain.featured_jobs import CURATED_FEATURED_JOBS
 from job_copilot.ingestion.deduplicator import JobDeduplicator
 from job_copilot.ingestion.normalizer import JobNormalizer
 from job_copilot.ingestion.sources.url import UrlJobSource
@@ -187,6 +188,103 @@ class DashboardService:
             return self._db, False
         gen = get_db()
         return next(gen), True
+
+    def _ensure_curated_job_exists(self, db: Session, identifier: str) -> Optional[Job]:
+        """Ensure a curated featured job exists in the DB jobs table and application tracking."""
+        if not identifier:
+            return None
+
+        target_job_id = identifier
+        app_repo = ApplicationRepository(db)
+        existing_app = app_repo.get_by_application_id(identifier)
+        if existing_app and existing_app.job_id_str:
+            target_job_id = existing_app.job_id_str
+
+        curated_key = None
+        if target_job_id in CURATED_FEATURED_JOBS:
+            curated_key = target_job_id
+        else:
+            for k, v in CURATED_FEATURED_JOBS.items():
+                if v.get("tracking_app_id") == target_job_id or k in target_job_id or target_job_id in k:
+                    curated_key = k
+                    break
+
+        if not curated_key:
+            return None
+
+        job_repo = JobRepository(db)
+        db_job = job_repo.get_by_job_id(curated_key)
+        job_def = CURATED_FEATURED_JOBS[curated_key]
+
+        if not db_job:
+            db_job = Job(
+                job_id=curated_key,
+                company=job_def["company"],
+                title=job_def["title"],
+                location=job_def["location"],
+                remote_status=job_def["remote_status"],
+                source=job_def["source"],
+                canonical_url=job_def["canonical_url"],
+                url=job_def["canonical_url"],
+                description=job_def["description"],
+                requirements=job_def["requirements"],
+                preferred_qualifications=job_def["preferred_qualifications"],
+                technologies=job_def["technologies"],
+                years_experience=job_def["years_experience"],
+                lifecycle_status="DISCOVERED",
+            )
+            db.add(db_job)
+            db.commit()
+            db.refresh(db_job)
+
+        # Ensure canonical job is in discovery store if available
+        try:
+            if hasattr(self, "copilot_service") and self.copilot_service and hasattr(self.copilot_service, "orchestrator"):
+                orch = self.copilot_service.orchestrator
+                if hasattr(orch, "discovery_service") and hasattr(orch.discovery_service, "store"):
+                    d_store = orch.discovery_service.store
+                    if not d_store.get_canonical_job(curated_key):
+                        from job_copilot.ingestion.models import CanonicalJob
+                        c_job = CanonicalJob(
+                            job_id=curated_key,
+                            title=job_def["title"],
+                            company=job_def["company"],
+                            location=job_def["location"],
+                            remote_status=job_def["remote_status"],
+                            canonical_url=job_def["canonical_url"],
+                            source_url=job_def["canonical_url"],
+                            source=job_def["source"],
+                            raw_description=job_def["description"],
+                            requirements=job_def["requirements"],
+                            preferred_qualifications=job_def["preferred_qualifications"],
+                            technologies=job_def["technologies"],
+                            years_experience=job_def["years_experience"],
+                        )
+                        d_store.save(c_job)
+        except Exception:
+            pass
+
+        # Ensure Application record exists
+        target_app_id = job_def.get("tracking_app_id") or f"app-{curated_key[:16]}"
+        app = app_repo.get_by_job_id_str(curated_key) or app_repo.get_by_application_id(target_app_id)
+        if not app:
+            app = Application(
+                application_id=target_app_id,
+                job_id=db_job.id,
+                job_id_str=curated_key,
+                company=job_def["company"],
+                role=job_def["title"],
+                canonical_job_url=job_def["canonical_url"],
+                source=job_def["source"],
+                status=ApplicationStatus.DISCOVERED,
+                match_score=job_def["match_score"],
+                resume_strategy=job_def["strategy"],
+            )
+            db.add(app)
+            db.commit()
+            db.refresh(app)
+
+        return db_job
 
     # ==========================================================================
     # 1. Overview & Metrics
@@ -376,11 +474,6 @@ class DashboardService:
 
     def _get_featured_openings(self, db: Session, queue_jobs: List[Any]) -> List[DashboardQueueItem]:
         """Return curated high-match job openings ready for 1-tap tailoring on mobile and desktop."""
-        converted = [self._to_dashboard_queue_item(j) for j in queue_jobs]
-        high_matches = [j for j in converted if (j.match_score or 0) >= 75]
-        if len(high_matches) >= 4:
-            return high_matches[:6]
-
         curated_defaults = [
             DashboardQueueItem(
                 job_id="barclays-software-engineer-infrastructure-ce0266",
@@ -399,6 +492,7 @@ class DashboardService:
                 key_matched_skills=["Google Cloud Platform (GCP)", "Terraform", "CI/CD", "Docker", "Python"],
                 primary_reason="Direct alignment with 2,000+ GCP resources & Terraform experience at HSBC.",
                 selected_strategy="cloud_devops",
+                tracking_application_id="app-barclays-ce0266",
             ),
             DashboardQueueItem(
                 job_id="hsbc-fintech-senior-software-engineer-backend-0da84f",
@@ -417,6 +511,7 @@ class DashboardService:
                 key_matched_skills=["Apache Beam", "GCP Dataflow", "BigQuery", "Java", "Spring Boot"],
                 primary_reason="Direct match for 10M+ daily payment transaction ingestion pipelines.",
                 selected_strategy="cloud_devops",
+                tracking_application_id="app-hsbc-fintech-0da84f",
             ),
             DashboardQueueItem(
                 job_id="mastercard-software-engineer-backend-java-b5bb2c",
@@ -435,6 +530,7 @@ class DashboardService:
                 key_matched_skills=["Java", "Spring Boot", "Microservices", "REST APIs", "PostgreSQL"],
                 primary_reason="Strong match for Java backend and electronic payment platform experience.",
                 selected_strategy="backend_java",
+                tracking_application_id="app-mastercard-b5bb2c",
             ),
             DashboardQueueItem(
                 job_id="stripe-staff-backend-engineer-payments-platform-8eadc9",
@@ -453,8 +549,17 @@ class DashboardService:
                 key_matched_skills=["Distributed Systems", "GCP", "High Throughput", "Reliability", "Python"],
                 primary_reason="Enterprise fintech scale and high-reliability data pipeline alignment.",
                 selected_strategy="cloud_devops",
+                tracking_application_id="app-stripe-8eadc9",
             ),
         ]
+        for item in curated_defaults:
+            try:
+                self._ensure_curated_job_exists(db, item.job_id)
+            except Exception as e:
+                logger.debug(f"Curated opening auto-seed notice: {e}")
+
+        converted = [self._to_dashboard_queue_item(j) for j in queue_jobs]
+        high_matches = [j for j in converted if (j.match_score or 0) >= 75]
         seen = set()
         combined = []
         for item in high_matches + curated_defaults:
@@ -518,6 +623,7 @@ class DashboardService:
         """
         db, should_close = self._get_db_session()
         try:
+            self._ensure_curated_job_exists(db, job_id)
             job_repo = JobRepository(db)
             job_model = job_repo.get_by_job_id(job_id)
             copilot_job = self.copilot_service.get_job(job_id)
@@ -678,6 +784,7 @@ class DashboardService:
         """
         db, should_close = self._get_db_session()
         try:
+            self._ensure_curated_job_exists(db, application_id)
             app_repo = ApplicationRepository(db)
             app_model = app_repo.get_by_application_id(application_id)
             if not app_model:
@@ -1206,6 +1313,7 @@ class DashboardService:
         """Prepare tailored resume, cover letter, and Q&A answers for an application."""
         db, should_close = self._get_db_session()
         try:
+            self._ensure_curated_job_exists(db, application_id)
             app_repo = ApplicationRepository(db)
             app = app_repo.get_by_application_id(application_id) or app_repo.get_by_job_id_str(application_id)
             job_id = app.job_id_str if app and app.job_id_str else application_id
@@ -1217,8 +1325,30 @@ class DashboardService:
                 db_session=db,
             )
 
-            # Update application record if existing
-            if app:
+            # Update application record if existing or create if missing
+            if not app:
+                app = app_repo.get_by_application_id(application_id) or app_repo.get_by_job_id_str(job_id)
+
+            if not app:
+                job_repo = JobRepository(db)
+                db_job = job_repo.get_by_job_id(job_id)
+                app_id = f"app-{job_id[:16]}"
+                app = Application(
+                    application_id=app_id,
+                    job_id=db_job.id if db_job else None,
+                    job_id_str=job_id,
+                    company=db_job.company if db_job else "Target Company",
+                    role=db_job.title if db_job else "Software Engineer",
+                    canonical_job_url=(db_job.canonical_url or db_job.url) if db_job else None,
+                    source=db_job.source if db_job else "direct",
+                    status=ApplicationStatus.READY_TO_APPLY,
+                    resume_strategy=pkg.selected_resume_strategy,
+                    prepared_at=utc_now(),
+                )
+                db.add(app)
+                db.commit()
+                db.refresh(app)
+            else:
                 app.status = ApplicationStatus.READY_TO_APPLY
                 app.resume_strategy = pkg.selected_resume_strategy
                 app.prepared_at = utc_now()
@@ -1232,10 +1362,12 @@ class DashboardService:
                 )
                 db.commit()
 
+            target_app_id = app.application_id if app else application_id
+
             # Ensure browser task exists in QUEUED status
             task_repo = BrowserTaskRepository(db)
             existing_task = task_repo.get_by_application_or_job_id(
-                application_id=app.application_id if app else application_id,
+                application_id=target_app_id,
                 job_id=job_id,
             )
             review_pkg_json = {
@@ -1251,7 +1383,7 @@ class DashboardService:
                 target_url = app.canonical_job_url if app and app.canonical_job_url else (db_job.canonical_url or db_job.url if db_job else None)
                 new_task = BrowserTaskModel(
                     task_id=task_id,
-                    application_id=app.application_id if app else application_id,
+                    application_id=target_app_id,
                     job_id=job_id,
                     source=app.source if app else (db_job.source if db_job else "manual"),
                     target_url=target_url or f"https://jobs.example.com/apply/{job_id}",
@@ -1262,7 +1394,7 @@ class DashboardService:
                 )
                 task_repo.create(new_task)
 
-            return self.get_application_detail(application_id)
+            return self.get_application_detail(target_app_id)
         finally:
             if should_close:
                 db.close()
@@ -1698,6 +1830,7 @@ class DashboardService:
         """Fetch binary PDF for an application resume for inline viewing or download with canonical filename."""
         db, should_close = self._get_db_session()
         try:
+            self._ensure_curated_job_exists(db, application_id)
             app_repo = ApplicationRepository(db)
             app = app_repo.get_by_application_id(application_id) or app_repo.get_by_job_id_str(application_id)
             job_id = app.job_id_str if app and app.job_id_str else application_id
@@ -1723,6 +1856,12 @@ class DashboardService:
 
             # 2. Check application package or generated output
             pkg = self.prep_service.get_application_package(job_id)
+            if not pkg or not pkg.resume_pdf_path or not Path(pkg.resume_pdf_path).exists():
+                try:
+                    pkg = self.prep_service.prepare_application(job_id, db_session=db)
+                except Exception as prep_e:
+                    logger.debug(f"On-demand prep during PDF fetch notice: {prep_e}")
+
             if pkg and pkg.resume_pdf_path and Path(pkg.resume_pdf_path).exists():
                 data = Path(pkg.resume_pdf_path).read_bytes()
                 return data, "application/pdf", canonical_filename

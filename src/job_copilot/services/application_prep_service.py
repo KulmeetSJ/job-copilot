@@ -121,6 +121,8 @@ class ApplicationPrepService:
         profile = self.load_master_profile()
 
         # 1. Resolve Job & Phase 4 Assessment
+        db_job = None
+        target_job_id = None
         canonical = self.discovery_service.store.get_canonical_job(job_id_or_text)
         if canonical:
             assessment = self.intelligence_service.evaluate_job(
@@ -129,9 +131,9 @@ class ApplicationPrepService:
                 title_override=canonical.title,
                 save_artifacts=True,
             )
+            target_job_id = canonical.job_id
         else:
             # Check database for existing Job record
-            db_job = None
             try:
                 from job_copilot.repositories.job_repository import JobRepository
                 from job_copilot.repositories.application_repository import ApplicationRepository
@@ -160,6 +162,55 @@ class ApplicationPrepService:
             except Exception:
                 db_job = None
 
+            if not db_job:
+                try:
+                    from job_copilot.domain.featured_jobs import CURATED_FEATURED_JOBS
+                    matching_key = None
+                    if job_id_or_text in CURATED_FEATURED_JOBS:
+                        matching_key = job_id_or_text
+                    else:
+                        for k, v in CURATED_FEATURED_JOBS.items():
+                            if v.get("tracking_app_id") == job_id_or_text or k in job_id_or_text or job_id_or_text in k:
+                                matching_key = k
+                                break
+                    if matching_key:
+                        job_def = CURATED_FEATURED_JOBS[matching_key]
+                        active_db = db_session
+                        should_close_active = False
+                        if active_db is None:
+                            from job_copilot.db.database import get_db
+                            active_db = next(get_db())
+                            should_close_active = True
+                        try:
+                            from job_copilot.models.job import Job
+                            j_repo = JobRepository(active_db)
+                            db_job = j_repo.get_by_job_id(matching_key)
+                            if not db_job:
+                                db_job = Job(
+                                    job_id=matching_key,
+                                    company=job_def["company"],
+                                    title=job_def["title"],
+                                    location=job_def["location"],
+                                    remote_status=job_def["remote_status"],
+                                    source=job_def["source"],
+                                    canonical_url=job_def["canonical_url"],
+                                    url=job_def["canonical_url"],
+                                    description=job_def["description"],
+                                    requirements=job_def["requirements"],
+                                    preferred_qualifications=job_def["preferred_qualifications"],
+                                    technologies=job_def["technologies"],
+                                    years_experience=job_def["years_experience"],
+                                    lifecycle_status="DISCOVERED",
+                                )
+                                active_db.add(db_job)
+                                active_db.commit()
+                                active_db.refresh(db_job)
+                        finally:
+                            if should_close_active and active_db:
+                                active_db.close()
+                except Exception as seed_err:
+                    logger.debug(f"Featured job seed fallback error: {seed_err}")
+
             if db_job:
                 assessment = self.intelligence_service.evaluate_job(
                     raw_text=db_job.description,
@@ -183,7 +234,7 @@ class ApplicationPrepService:
                     save_artifacts=True,
                 )
 
-        job_id = assessment.job.job_id
+        job_id = target_job_id or (db_job.job_id if db_job and db_job.job_id else None) or assessment.job.job_id
         strategy = strategy_override or assessment.recommended_strategy
 
         # 2. Phase 3 Tailored Resume Generation
@@ -378,6 +429,10 @@ class ApplicationPrepService:
 
         # 1. package.json
         (job_dir / "package.json").write_text(package.model_dump_json(indent=2), encoding="utf-8")
+        if package.assessment and package.assessment.job and package.assessment.job.job_id and package.assessment.job.job_id != package.job_id:
+            alt_dir = self.applications_data_dir / package.assessment.job.job_id
+            alt_dir.mkdir(parents=True, exist_ok=True)
+            (alt_dir / "package.json").write_text(package.model_dump_json(indent=2), encoding="utf-8")
 
         # 2. cover_letter.md and cover_letter.json
         (job_dir / "cover_letter.md").write_text(package.cover_letter.letter_text, encoding="utf-8")
