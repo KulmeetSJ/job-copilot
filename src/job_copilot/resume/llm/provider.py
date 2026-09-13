@@ -1,12 +1,12 @@
 """LLM Provider Abstraction for Resume Generation."""
 
-from abc import ABC, abstractmethod
-import json
 import os
 import re
-from typing import Any, Dict, List, Optional
+from abc import ABC, abstractmethod
+from typing import Any
 
 import httpx
+from pydantic import ValidationError
 
 from job_copilot.resume.llm.models import LLMResumeDraft
 from job_copilot.utils.logging import get_logger
@@ -22,15 +22,13 @@ class LLMResumeProvider(ABC):
         self,
         system_prompt: str,
         user_prompt: str,
-        retry_error: Optional[str] = None,
-    ) -> Optional[LLMResumeDraft]:
+        retry_error: str | None = None,
+    ) -> LLMResumeDraft | None:
         """Generate a structured resume draft or return None if unavailable/failed."""
-        pass
 
     @abstractmethod
     def is_available(self) -> bool:
         """Check if this provider is configured and available to handle requests."""
-        pass
 
 
 class OpenAICompatibleResumeProvider(LLMResumeProvider):
@@ -41,9 +39,9 @@ class OpenAICompatibleResumeProvider(LLMResumeProvider):
 
     def __init__(
         self,
-        api_key: Optional[str] = None,
-        base_url: Optional[str] = None,
-        model: Optional[str] = None,
+        api_key: str | None = None,
+        base_url: str | None = None,
+        model: str | None = None,
         timeout: float = 45.0,
     ):
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")
@@ -59,14 +57,14 @@ class OpenAICompatibleResumeProvider(LLMResumeProvider):
         self,
         system_prompt: str,
         user_prompt: str,
-        retry_error: Optional[str] = None,
-    ) -> Optional[LLMResumeDraft]:
+        retry_error: str | None = None,
+    ) -> LLMResumeDraft | None:
         """Generate structured LLMResumeDraft via OpenAI-compatible endpoint."""
         if not self.is_available():
             logger.debug("OpenAICompatibleResumeProvider is not available (no API key).")
             return None
 
-        messages: List[Dict[str, str]] = [
+        messages: list[dict[str, str]] = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ]
@@ -116,25 +114,25 @@ class OpenAICompatibleResumeProvider(LLMResumeProvider):
             try:
                 draft = LLMResumeDraft.model_validate_json(content)
                 return draft
-            except Exception as parse_err:
+            except (ValueError, ValidationError) as parse_err:
                 # Handle possible markdown fenced JSON: ```json ... ```
                 cleaned = re.sub(r"^```json\s*", "", content.strip(), flags=re.MULTILINE)
                 cleaned = re.sub(r"```$", "", cleaned.strip(), flags=re.MULTILINE).strip()
                 try:
                     return LLMResumeDraft.model_validate_json(cleaned)
-                except Exception:
+                except (ValueError, ValidationError):
                     logger.warning(f"Failed to parse LLM resume draft JSON: {parse_err}")
                     return None
 
         except httpx.HTTPStatusError as http_err:
             logger.warning(f"LLM API request failed with status {http_err.response.status_code}: {http_err}")
             return None
-        except Exception as e:
+        except (httpx.RequestError, OSError, RuntimeError, ValueError) as e:
             logger.warning(f"Unexpected error communicating with LLM provider: {e}")
             return None
 
 
-def get_resume_llm_provider(config: Optional[Any] = None) -> LLMResumeProvider:
+def get_resume_llm_provider(config: Any | None = None) -> LLMResumeProvider:
     """Factory creating configured LLMResumeProvider."""
     api_key = getattr(config, "openai_api_key", None) or os.getenv("OPENAI_API_KEY")
     base_url = getattr(config, "openai_base_url", None) or os.getenv("OPENAI_BASE_URL") or "https://api.openai.com/v1"

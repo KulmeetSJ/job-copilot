@@ -1,59 +1,127 @@
-"""Grounded prompt engineering for LLM resume tailoring with strict truth invariants."""
+from pathlib import Path
+from typing import Any
 
-import json
-from typing import Any, Dict, List, Optional
+import yaml
 
 from job_copilot.resume.models import JobAnalysis
 from job_copilot.schemas.candidate import CandidateProfile
 
 
-RESUME_SYSTEM_PROMPT = """You are an elite, executive-level technical resume writer and career strategist specializing in software engineering, distributed systems, cloud infrastructure, and fintech platforms.
+def build_resume_system_prompt(
+    profile: CandidateProfile | None = None,
+    evidence_facts: dict[str, Any] | None = None,
+) -> str:
+    """Dynamically generate system prompt containing verified candidate invariants, metrics, technologies, and projects."""
+    if profile is None:
+        try:
+            prof_path = Path("data/candidate/master_profile.yaml")
+            if prof_path.exists():
+                with open(prof_path, "r", encoding="utf-8") as f:
+                    data = yaml.safe_load(f)
+                if data:
+                    profile = CandidateProfile.model_validate(data)
+        except (OSError, yaml.YAMLError, ValueError):
+            profile = None
+
+    # Canonical defaults if profile unavailable
+    company = "HSBC"
+    role = "Software Engineer"
+    location = "Pune, India"
+    dates = "Jul 2024 – Present"
+    confirmed_techs_str = "Java, Spring Boot, Google Cloud Platform (GCP), Terraform, Kubernetes (GKE), Apache Beam, GCP Dataflow, BigQuery, Docker, Jenkins, Python, PostgreSQL, Redis, Helm"
+    verified_metrics_str = "'2,000+ GCP resources', '60% provisioning acceleration', '10M+ daily payment transactions', '99.9% uptime', '100+ Cloud Composer DAG workflows', '30% compute cost reduction', '$150K+ annual savings', '40% MTTR reduction', '12+ misconfigurations caught', '1TB+ BigQuery data converted', '100K+ RPS benchmark'"
+    benchmarks_str = "'Distributed Rate Limiter Service'"
+    portfolios_str = "MCP Diagnostic Tools for Data Pipelines, Terraform Log Summarizer & Shift-Left Compliance Checker, Smart Data Storage Pipeline, GuruGranthi – Services Marketplace, AI-Powered RFP Management System, Distributed Rate Limiter Service"
+
+    if profile:
+        if profile.employment:
+            emp = profile.employment[0]
+            company = emp.company
+            role = emp.role or emp.canonical_role or "Software Engineer"
+            location = emp.location or "Pune, India"
+            dates = f"{emp.start_date or 'Jul 2024'} – {emp.end_date or 'Present'}"
+
+        techs = []
+        for cat in profile.skills:
+            techs.extend([s.name for s in cat.skills if s.status == "CONFIRMED"])
+        if techs:
+            confirmed_techs_str = ", ".join(techs)
+
+        metrics = set()
+        for emp in profile.employment:
+            for ach in emp.achievements:
+                metrics.update(ach.metrics)
+        for prj in profile.projects:
+            metrics.update(prj.metrics)
+            for ach in prj.achievements:
+                metrics.update(ach.metrics)
+        if evidence_facts:
+            for fid, f in evidence_facts.items():
+                if fid.startswith("MET-") and f.get("claim"):
+                    metrics.add(f.get("claim"))
+        if metrics:
+            verified_metrics_str = ", ".join(f"'{m}'" for m in sorted(metrics))
+
+        bench_list = [f"'{p.name}'" for p in profile.projects if p.claim_type == "BENCHMARK"]
+        if bench_list:
+            benchmarks_str = ", ".join(bench_list)
+        port_list = [f"'{p.name}'" for p in profile.projects]
+        if port_list:
+            portfolios_str = ", ".join(port_list)
+
+    return f"""You are an elite, executive-level technical resume writer and career strategist specializing in software engineering, distributed systems, cloud infrastructure, and fintech platforms.
 
 YOUR MISSION:
 Given a target Job Description and the candidate's verified background, write a tailored, human-quality, ATS-optimized, 1-page technical resume draft that convincingly positions the candidate for the role. The resume must feel thoughtfully written specifically for that job, using natural industry phrasing and highlighting the candidate's most relevant verified experience.
 
 STRICT TRUTH SAFETY & EVIDENCE INVARIANTS (NON-NEGOTIABLE):
 1. ZERO FABRICATION OF EMPLOYMENT FACTS:
-   - Candidate is currently employed at HSBC in Pune, India as 'Software Engineer' from Jul 2024 to Present.
-   - You MUST NOT alter the employer name ('HSBC'), corporate job title ('Software Engineer'), location ('Pune, India'), or dates ('Jul 2024 – Present').
+   - Candidate is currently employed at {company} in {location} as '{role}' from {dates}.
+   - You MUST NOT alter the employer name ('{company}'), corporate job title ('{role}'), location ('{location}'), or dates ('{dates}').
    - You MUST NOT invent past employers, contracts, or fake positions.
+   - Experience bullets must cite ONLY employment evidence IDs from {company}.
 
 2. ZERO FABRICATION OF METRICS OR NUMBERS:
    - You may ONLY use numbers, percentages, dollar amounts, and metrics that appear in the supplied verified candidate evidence.
-   - Examples of verified metrics: '2,000+ GCP resources', '60% turnaround time', '10M+ daily payment transactions', '99.9% uptime', '100+ Cloud Composer DAG deployments', '45% failure reduction', '30% ($150K+ annually) compute cost reduction', '40% MTTR reduction', '12+ misconfigurations caught', '1 TB+ ETL', '100K+ RPS benchmark'.
+   - Allowed verified metrics include: {verified_metrics_str}.
    - NEVER invent or inflate numbers (e.g. do NOT write '50M+ transactions', '$1M savings', '99.999% uptime', or '5,000+ servers').
+   - Every metric in generated text must be traceable to the cited evidence IDs.
 
 3. ZERO FABRICATION OF UNCONFIRMED TECHNOLOGIES:
    - Only include technologies that appear in the candidate's confirmed skills or verified project evidence.
    - DO NOT claim unconfirmed technologies (such as AWS, Apache Kafka / Kafka).
-   - Candidate's core verified technologies include: Java, Spring Boot, Google Cloud Platform (GCP), Terraform, Kubernetes (GKE), Apache Beam, GCP Dataflow, BigQuery, Docker, Jenkins CI/CD, Python, PostgreSQL, Redis, Helm.
+   - Candidate's confirmed technologies include: {confirmed_techs_str}.
 
 4. PRODUCTION VS. BENCHMARK / PORTFOLIO DISTINCTION:
-   - Project 'Distributed Rate Limiter Service' benchmark of '100K+ RPS' is a simulated benchmark, NOT an enterprise production deployment. Always qualify it as benchmark or architectural prototype.
-   - Personal/portfolio projects (MCP Diagnostic Tools, RFP Management System, GuruGranthi Marketplace, Smart Data Storage Pipeline, Rate Limiter) must remain recognized as portfolio projects, not HSBC production systems.
+   - Benchmark projects ({benchmarks_str}) are simulated benchmarks, NOT enterprise production deployments. Always qualify them as benchmarks or architectural prototypes.
+   - Personal/portfolio projects ({portfolios_str}) must remain recognized as portfolio/demo projects, not {company} production systems.
+   - Project bullets must cite ONLY evidence belonging to that specific canonical project.
 
 5. EVIDENCE PROVENANCE MAPPING:
    - Every single achievement bullet and project bullet MUST include the exact `evidence_ids` from the candidate evidence catalog that substantiate the claim.
 
 6. 1-PAGE LENGTH CONSTRAINT:
    - The final resume must compile to exactly ONE page.
-   - Select exactly 4 to 5 high-impact experience bullets for HSBC.
+   - Select exactly 4 to 5 high-impact experience bullets for {company}.
    - Select exactly 2 (at most 3) relevant projects.
    - Keep bullet sentences crisp, punchy, and action-oriented (15 to 25 words per bullet).
 
 OUTPUT FORMAT:
 You must output strictly valid JSON matching the LLMResumeDraft schema with keys:
 - 'summary': string (3-4 sentences)
-- 'experience_bullets': list of { 'text': string, 'evidence_ids': list of string, 'technologies': list of string }
-- 'projects': list of { 'name': string, 'evidence_ids': list of string, 'bullets': list of { 'text': string, 'evidence_ids': list of string, 'technologies': list of string }, 'technologies': list of string }
-- 'skill_groups': list of { 'category': string, 'skills': list of string }
+- 'experience_bullets': list of {{ 'text': string, 'evidence_ids': list of string, 'technologies': list of string }}
+- 'projects': list of {{ 'name': string, 'evidence_ids': list of string, 'bullets': list of {{ 'text': string, 'evidence_ids': list of string, 'technologies': list of string }}, 'technologies': list of string }}
+- 'skill_groups': list of {{ 'category': string, 'skills': list of string }}
 - 'tailoring_rationale': string
 """
 
 
+RESUME_SYSTEM_PROMPT = build_resume_system_prompt()
+
+
 def build_grounded_resume_prompt(
     profile: CandidateProfile,
-    analysis: Optional[JobAnalysis] = None,
+    analysis: JobAnalysis | None = None,
     strategy_name: str = "backend_java",
 ) -> str:
     """Build grounded context prompt containing verified candidate evidence and target JD."""

@@ -1,6 +1,6 @@
 """Strongly typed Pydantic models for LLM-driven structured resume generation."""
 
-from typing import List, Optional
+
 from pydantic import BaseModel, Field
 
 
@@ -10,11 +10,11 @@ class LLMBulletItem(BaseModel):
         description="Action-oriented, impact-driven bullet text formatted for a technical resume. "
                     "May use **bold** markdown to emphasize key technologies and quantified metrics."
     )
-    evidence_ids: List[str] = Field(
+    evidence_ids: list[str] = Field(
         default_factory=list,
         description="Exact canonical evidence IDs from the candidate evidence catalog that substantiate this bullet (e.g. ['EXP-HSBC-TF-001'])."
     )
-    technologies: List[str] = Field(
+    technologies: list[str] = Field(
         default_factory=list,
         description="Technical skills and tools explicitly mentioned in this bullet."
     )
@@ -25,15 +25,15 @@ class LLMProjectItem(BaseModel):
     name: str = Field(
         description="Exact canonical name of the project from the candidate profile."
     )
-    evidence_ids: List[str] = Field(
+    evidence_ids: list[str] = Field(
         default_factory=list,
         description="Exact canonical evidence IDs for this project (e.g. ['PRJ-MCP-001'])."
     )
-    bullets: List[LLMBulletItem] = Field(
+    bullets: list[LLMBulletItem] = Field(
         default_factory=list,
         description="1 to 2 tailored bullet points highlighting relevant architecture, tools, and outcomes."
     )
-    technologies: List[str] = Field(
+    technologies: list[str] = Field(
         default_factory=list,
         description="Core technologies used in this project."
     )
@@ -44,7 +44,7 @@ class LLMSkillGroupItem(BaseModel):
     category: str = Field(
         description="Category name (e.g., 'Languages & Frameworks', 'Cloud & DevOps', 'Databases & Distributed Systems', 'Tools & CI/CD')."
     )
-    skills: List[str] = Field(
+    skills: list[str] = Field(
         default_factory=list,
         description="List of verified candidate skills in this category, ordered by relevance to the target job description."
     )
@@ -55,19 +55,19 @@ class LLMResumeDraft(BaseModel):
     summary: str = Field(
         description="A concise, high-impact 3 to 4 sentence executive professional summary tailored to the target role and company using only verified facts."
     )
-    experience_bullets: List[LLMBulletItem] = Field(
+    experience_bullets: list[LLMBulletItem] = Field(
         default_factory=list,
         description="Exactly 4 to 5 tailored achievement bullets for HSBC Software Engineer experience, ranked by relevance to the JD."
     )
-    projects: List[LLMProjectItem] = Field(
+    projects: list[LLMProjectItem] = Field(
         default_factory=list,
         description="Exactly 2 (or at most 3) most relevant projects selected from the candidate's verified projects."
     )
-    skill_groups: List[LLMSkillGroupItem] = Field(
+    skill_groups: list[LLMSkillGroupItem] = Field(
         default_factory=list,
         description="Categorized confirmed skills prioritized and reordered for the target job description."
     )
-    tailoring_rationale: Optional[str] = Field(
+    tailoring_rationale: str | None = Field(
         default=None,
         description="Brief explanation of how this resume was tailored to the target JD's key requirements."
     )

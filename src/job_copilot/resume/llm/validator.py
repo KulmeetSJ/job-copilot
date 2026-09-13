@@ -7,7 +7,54 @@ from typing import Any
 import yaml
 
 from job_copilot.resume.llm.models import LLMResumeDraft
-from job_copilot.schemas.candidate import CandidateProfile
+from job_copilot.schemas.candidate import CandidateProfile, Project
+
+
+def resolve_canonical_project(project_name: str, profile: CandidateProfile) -> Project | None:
+    """
+    Resolve a project name from LLM output to a canonical Project from CandidateProfile.
+    Matches case-insensitively and handles standard punctuation/spacing/affix differences
+    without hard-coding specific project names.
+    """
+    if not project_name:
+        return None
+    name_clean = project_name.strip().lower()
+
+    # 1. Exact match
+    for p in profile.projects:
+        if p.name.strip().lower() == name_clean:
+            return p
+
+    # 2. Normalized token matching (strip punctuation and common affix noise words)
+    noise_words = {"and", "a", "the", "for", "of", "in", "to", "project", "service", "services", "app", "system", "tool", "tools"}
+
+    def normalize_tokens(s: str) -> set[str]:
+        s_clean = re.sub(r"[^a-z0-9]", " ", s.lower())
+        tokens = {t for t in s_clean.split() if t not in noise_words}
+        if not tokens:
+            tokens = {t for t in s_clean.split() if t}
+        return tokens
+
+    query_tokens = normalize_tokens(project_name)
+    best_match = None
+    best_overlap = 0
+
+    for p in profile.projects:
+        p_tokens = normalize_tokens(p.name)
+        overlap = len(query_tokens & p_tokens)
+        if (
+            overlap > 0
+            and (
+                query_tokens.issubset(p_tokens)
+                or p_tokens.issubset(query_tokens)
+                or (overlap >= 2 and overlap / max(len(query_tokens), len(p_tokens)) >= 0.5)
+            )
+            and overlap > best_overlap
+        ):
+            best_overlap = overlap
+            best_match = p
+
+    return best_match
 from job_copilot.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -330,11 +377,6 @@ class GroundingValidator:
                                     if any(c.isdigit() for c in match):
                                         allowed_variants.update(get_metric_variants(match))
 
-            # 4. Handle EXP-HSBC-CICD-001 canonical deployment reduction metric (45%)
-            if eid in {"EXP-HSBC-CICD-001", "MET-007"}:
-                allowed_variants.update(get_metric_variants("45%"))
-                allowed_variants.update(get_metric_variants("100+"))
-
         return allowed_variants
 
     def _get_evidence_text(self, evidence_ids: list[str], profile: CandidateProfile) -> str:
@@ -400,44 +442,23 @@ class GroundingValidator:
         # 2. Derive Allowed Skills and Evidence Universe
         allowed_skills = self.extract_allowed_skills_and_aliases(profile)
 
+        # Strictly derive employment evidence IDs (experience bullets may cite ONLY these)
         allowed_exp_evidence: set[str] = set()
-        allowed_proj_evidence: set[str] = set()
-        allowed_proj_names: set[str] = {p.name.lower() for p in profile.projects}
-
-        # Project name harmless aliases
-        allowed_proj_names.update({
-            "distributed rate limiter",
-            "distributed rate limiter service",
-            "smart data storage pipeline",
-            "mcp diagnostic tools",
-            "mcp diagnostic tools for data pipelines",
-            "ai-powered rfp management system",
-            "rfp management system",
-            "gurugranthi services marketplace",
-            "gurugranthi",
-            "terraform log summarizer",
-            "terraform log summarizer and compliance checker",
-            "terraform log summarizer & shift-left compliance checker",
-        })
-
-        for cat in profile.skills:
-            for s in cat.skills:
-                if s.status == "CONFIRMED" and s.evidence:
-                    for ev in s.evidence:
-                        if ev.evidence_id:
-                            allowed_exp_evidence.add(ev.evidence_id)
-
         for emp in profile.employment:
             allowed_exp_evidence.update(emp.evidence_ids)
             for ach in emp.achievements:
                 allowed_exp_evidence.update(ach.evidence_ids)
 
-        for prj in profile.projects:
-            allowed_proj_evidence.update(prj.evidence_ids)
-            for ach in prj.achievements:
-                allowed_proj_evidence.update(ach.evidence_ids)
+        for cat in profile.skills:
+            for s in cat.skills:
+                if s.status == "CONFIRMED" and s.evidence:
+                    for ev in s.evidence:
+                        if ev.type == "professional" and ev.evidence_id:
+                            allowed_exp_evidence.add(ev.evidence_id)
 
-        all_valid_evidence_ids = allowed_exp_evidence | allowed_proj_evidence | set(self._evidence_facts.keys())
+        for fid, fact in self._evidence_facts.items():
+            if fact.get("category") == "employment" or fid.startswith("EXP-"):
+                allowed_exp_evidence.add(fid)
 
         # 3. Validate Experience Bullets
         for idx, bullet in enumerate(draft.experience_bullets, start=1):
@@ -446,17 +467,25 @@ class GroundingValidator:
                 errors.append(f"{loc} text is empty.")
                 continue
 
-            # 3a. Evidence IDs presence and validity
+            # 3a. Evidence IDs presence and strict employment boundary
             if not bullet.evidence_ids:
                 errors.append(f"{loc} lacks evidence IDs.")
             else:
                 for eid in bullet.evidence_ids:
-                    if eid not in all_valid_evidence_ids:
-                        errors.append(f"{loc} cites unknown or unauthorized evidence ID '{eid}'.")
+                    if eid not in allowed_exp_evidence:
+                        errors.append(
+                            f"{loc} cites evidence ID '{eid}', which is not an authorized employment evidence ID. "
+                            f"Experience bullets may cite ONLY employment evidence IDs."
+                        )
 
-            # 3b. Production vs Benchmark Boundary: Rate Limiter is a project, not HSBC work
+            # 3b. Production vs Benchmark Boundary
             b_lower = bullet.text.lower()
-            if ("100k+" in b_lower or "rate limiter" in b_lower) and "rate limiter" in b_lower:
+            for p in profile.projects:
+                if (p.claim_type == "BENCHMARK" or p.deployment_status != "PRODUCTION") and p.name.lower() in b_lower:
+                    errors.append(
+                        f"{loc} erroneously attributes project benchmark/demo ('{p.name}') to HSBC production employment."
+                    )
+            if "100k+" in b_lower and "rate limiter" in b_lower:
                 errors.append(
                     f"{loc} erroneously attributes project benchmark ('100K+ RPS Rate Limiter') to HSBC production employment."
                 )
@@ -498,20 +527,50 @@ class GroundingValidator:
                 errors.append(f"Project #{p_idx} is missing a name.")
                 continue
 
-            if prj.name.lower() not in allowed_proj_names:
+            canon_p = resolve_canonical_project(prj.name, profile)
+            if not canon_p:
                 errors.append(f"Project #{p_idx} '{prj.name}' is not in candidate's verified projects.")
+                continue
+
+            # Derive allowed evidence IDs strictly for THIS specific project
+            allowed_for_this_project: set[str] = set(canon_p.evidence_ids)
+            for ach in canon_p.achievements:
+                allowed_for_this_project.update(ach.evidence_ids)
+            for cat in profile.skills:
+                for s in cat.skills:
+                    if s.status == "CONFIRMED" and s.evidence:
+                        for ev in s.evidence:
+                            if ev.type == "project" and canon_p.name.lower() in ev.context.lower() and ev.evidence_id:
+                                allowed_for_this_project.add(ev.evidence_id)
 
             if not prj.evidence_ids:
                 errors.append(f"Project #{p_idx} '{prj.name}' is missing evidence IDs.")
+            else:
+                for eid in prj.evidence_ids:
+                    if eid not in allowed_for_this_project:
+                        errors.append(
+                            f"Project #{p_idx} '{prj.name}' cites evidence ID '{eid}', which does not belong to project '{canon_p.name}'. "
+                            f"Project bullets may cite ONLY evidence belonging to that specific canonical project."
+                        )
 
             for b_idx, p_bullet in enumerate(prj.bullets, start=1):
                 p_loc = f"Project '{prj.name}' bullet #{b_idx}"
                 pb_lower = p_bullet.text.lower()
 
-                # Benchmark distinction for Rate Limiter
-                if "100k+" in pb_lower and "production" in pb_lower:
+                # Project bullet evidence IDs must belong to this specific canonical project
+                if p_bullet.evidence_ids:
+                    for eid in p_bullet.evidence_ids:
+                        if eid not in allowed_for_this_project:
+                            errors.append(
+                                f"{p_loc} cites evidence ID '{eid}', which does not belong to project '{canon_p.name}'. "
+                                f"Project bullets may cite ONLY evidence belonging to that specific canonical project."
+                            )
+
+                # Benchmark / Deployment status distinction based on CandidateProfile
+                if (canon_p.claim_type == "BENCHMARK" or canon_p.deployment_status != "PRODUCTION") and "production" in pb_lower:
                     errors.append(
-                        f"{p_loc} claims simulated benchmark ('100K+ RPS') as 'production'."
+                        f"{p_loc} claims simulated benchmark/demo project ('{canon_p.name}') as 'production'. "
+                        f"Canonical deployment status is '{canon_p.deployment_status}' with claim type '{canon_p.claim_type}'."
                     )
 
                 for unconf in UNCONFIRMED_TECHNOLOGIES:

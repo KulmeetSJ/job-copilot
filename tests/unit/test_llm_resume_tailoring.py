@@ -13,7 +13,10 @@ from job_copilot.resume.llm.provider import (
     LLMResumeProvider,
     OpenAICompatibleResumeProvider,
 )
-from job_copilot.resume.llm.validator import GroundingValidator
+from job_copilot.resume.llm.validator import (
+    GroundingValidator,
+    resolve_canonical_project,
+)
 from job_copilot.resume.llm.writer import LLMResumeWriter
 from job_copilot.services.resume_service import ResumeService
 
@@ -75,7 +78,7 @@ def valid_llm_draft():
                 technologies=["Terraform", "Google Cloud Platform (GCP)", "Pub/Sub", "BigQuery"],
             ),
             LLMBulletItem(
-                text="Engineered CI/CD pipelines in Jenkins integrating SonarQube, Checkmarx, and Nexus for **100+ Cloud Composer (Airflow) DAG deployments**, reducing deployment incidents by **45%**.",
+                text="Engineered CI/CD pipelines in Jenkins integrating SonarQube, Checkmarx, and Nexus for **100+ Cloud Composer (Airflow) DAG deployments**, automating releases.",
                 evidence_ids=["EXP-HSBC-CICD-001"],
                 technologies=["Jenkins", "CI/CD", "Apache Airflow", "SonarQube", "Nexus"],
             ),
@@ -331,6 +334,144 @@ def test_adversarial_valid_bullet_that_should_pass(valid_llm_draft, candidate_pr
     is_valid, errors = validator.validate(valid_llm_draft, candidate_profile)
     assert is_valid is True
     assert len(errors) == 0
+
+
+def test_adversarial_valid_project_evidence_in_experience_fails(valid_llm_draft, candidate_profile):
+    """
+    Adversarial Requirement 7.1:
+    Valid project evidence ID (e.g. PRJ-RL-001 or PRJ-MCP-001) used in HSBC experience -> FAIL.
+    Experience bullets may cite ONLY employment evidence IDs. Project evidence IDs must be rejected.
+    """
+    validator = GroundingValidator()
+    draft = valid_llm_draft.model_copy(deep=True)
+    draft.experience_bullets[0].evidence_ids = ["PRJ-RL-001"]
+    is_valid, errors = validator.validate(draft, candidate_profile)
+    assert is_valid is False
+    assert any("experience bullets may cite only employment evidence ids" in err.lower() for err in errors)
+
+
+def test_adversarial_hsbc_evidence_in_unrelated_project_fails(valid_llm_draft, candidate_profile):
+    """
+    Adversarial Requirement 7.2:
+    HSBC employment evidence (e.g. EXP-HSBC-TF-001) used in unrelated project (e.g. Rate Limiter) -> FAIL.
+    Project bullets may cite ONLY evidence belonging to that specific canonical project.
+    """
+    validator = GroundingValidator()
+    # 1. Project bullet cites employment evidence
+    draft = valid_llm_draft.model_copy(deep=True)
+    draft.projects[0].bullets[0].evidence_ids = ["EXP-HSBC-TF-001"]
+    is_valid, errors = validator.validate(draft, candidate_profile)
+    assert is_valid is False
+    assert any("project bullets may cite only evidence belonging to that specific canonical project" in err.lower() for err in errors)
+
+    # 2. Project cites another project's evidence (e.g. PRJ-MCP-001 in Rate Limiter)
+    draft2 = valid_llm_draft.model_copy(deep=True)
+    draft2.projects[0].bullets[0].evidence_ids = ["PRJ-MCP-001"]
+    is_valid2, errors2 = validator.validate(draft2, candidate_profile)
+    assert is_valid2 is False
+    assert any("project bullets may cite only evidence belonging to that specific canonical project" in err.lower() for err in errors2)
+
+
+def test_adversarial_valid_project_benchmark_rewritten_as_production_fails(valid_llm_draft, candidate_profile):
+    """
+    Adversarial Requirement 7.3:
+    Valid project benchmark rewritten as production -> FAIL.
+    Rate Limiter deployment status is PORTFOLIO_DEMO and claim type is BENCHMARK in CandidateProfile.
+    """
+    validator = GroundingValidator()
+    draft = valid_llm_draft.model_copy(deep=True)
+    draft.projects[0].bullets[0].text = (
+        "Engineered token bucket rate limiter deployed into live production Kubernetes clusters serving 100K+ RPS."
+    )
+    is_valid, errors = validator.validate(draft, candidate_profile)
+    assert is_valid is False
+    assert any("claims simulated benchmark/demo project" in err.lower() and "production" in err.lower() for err in errors)
+
+
+def test_adversarial_valid_evidence_with_invented_business_impact_fails(valid_llm_draft, candidate_profile):
+    """
+    Adversarial Requirement 7.4:
+    Valid evidence ID with invented business impact / revenue / cost savings -> FAIL.
+    Citing EXP-HSBC-BEAM-001 with '$5M annual cost savings' or '10x revenue growth'.
+    """
+    validator = GroundingValidator()
+    draft = valid_llm_draft.model_copy(deep=True)
+    draft.experience_bullets[0].text = (
+        "Architected real-time Apache Beam pipelines ingesting **10M+ daily payment transactions** into BigQuery, generating **$5M annual cost savings**."
+    )
+    is_valid, errors = validator.validate(draft, candidate_profile)
+    assert is_valid is False
+    assert any("unverified metric" in err.lower() and "$5m" in err.lower() for err in errors)
+
+
+def test_adversarial_valid_evidence_with_unsupported_ownership_leadership_fails(valid_llm_draft, candidate_profile):
+    """
+    Adversarial Requirement 7.5:
+    Valid evidence with unsupported ownership/leadership -> FAIL.
+    - Leadership: 'Led a team of 6 engineers' or 'Managed a team of developers'
+    - Ownership: 'Architected...' when citing EXP-HSBC-TF-001 (which only substantiates 'Provisioned')
+    """
+    validator = GroundingValidator()
+
+    # 1. Unsupported leadership claim
+    draft_leadership = valid_llm_draft.model_copy(deep=True)
+    draft_leadership.experience_bullets[0].text = (
+        "Led a team of 6 engineers architecting real-time Apache Beam pipelines ingesting **10M+ daily payment transactions**."
+    )
+    is_valid_lead, errors_lead = validator.validate(draft_leadership, candidate_profile)
+    assert is_valid_lead is False
+    assert any("unsupported leadership/management" in err.lower() for err in errors_lead)
+
+    # 2. Unsupported ownership verb
+    draft_ownership = valid_llm_draft.model_copy(deep=True)
+    draft_ownership.experience_bullets[1].text = (
+        "Architected Terraform IaC modules for **2,000+ GCP resources**, accelerating provisioning by **60%**."
+    )
+    is_valid_own, errors_own = validator.validate(draft_ownership, candidate_profile)
+    assert is_valid_own is False
+    assert any("claims 'architected' or architectural ownership" in err.lower() for err in errors_own)
+
+
+def test_canonical_project_metadata_comes_from_profile(candidate_profile, valid_llm_draft, service):
+    """
+    Adversarial Requirement 7.6:
+    Canonical project metadata (canonical name, claim_type, deployment_status, metric_type)
+    must come dynamically from CandidateProfile rather than hard-coded name matching.
+    """
+    # 1. Verify resolve_canonical_project resolves various LLM phrasing cleanly
+    resolved_rl = resolve_canonical_project("Distributed Rate Limiter", candidate_profile)
+    assert resolved_rl is not None
+    assert resolved_rl.name == "Distributed Rate Limiter Service"
+    assert resolved_rl.claim_type == "BENCHMARK"
+    assert resolved_rl.deployment_status == "PORTFOLIO_DEMO"
+
+    resolved_mcp = resolve_canonical_project("MCP Diagnostic Tools", candidate_profile)
+    assert resolved_mcp is not None
+    assert resolved_mcp.name == "MCP Diagnostic Tools for Data Pipelines"
+    assert resolved_mcp.claim_type == "PERSONAL_PROJECT"
+    assert resolved_mcp.deployment_status == "PORTFOLIO_DEMO"
+
+    # Unknown project returns None
+    assert resolve_canonical_project("Unknown Crypto Trader", candidate_profile) is None
+
+    # 2. Verify LLMResumeWriter._build_tailored_resume derives metadata strictly from profile
+    writer = LLMResumeWriter(provider=MockLLMProvider())
+    strat = service.get_strategy("backend_java")
+    tailored = writer._build_tailored_resume(valid_llm_draft, candidate_profile, strat)
+
+    # Distributed Rate Limiter Service must inherit BENCHMARK from CandidateProfile
+    p_rl = next(p for p in tailored.projects if "Rate Limiter" in p.name)
+    assert p_rl.name == "Distributed Rate Limiter Service"
+    assert p_rl.deployment_status == "PORTFOLIO_DEMO"
+    assert p_rl.bullets[0].claim_type == "BENCHMARK"
+    assert p_rl.bullets[0].metric_type == "BENCHMARK"
+
+    # MCP Diagnostic Tools must inherit PERSONAL_PROJECT from CandidateProfile
+    p_mcp = next(p for p in tailored.projects if "MCP" in p.name)
+    assert p_mcp.name == "MCP Diagnostic Tools for Data Pipelines"
+    assert p_mcp.deployment_status == "PORTFOLIO_DEMO"
+    assert p_mcp.bullets[0].claim_type == "PERSONAL_PROJECT"
+    assert p_mcp.bullets[0].metric_type == "PROJECT"
 
 
 # ==============================================================================

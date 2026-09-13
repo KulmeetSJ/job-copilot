@@ -1,11 +1,16 @@
 """LLM Resume Writer Orchestrator with Deterministic Validation and Fallback."""
 
-from typing import List, Optional
 
 from job_copilot.resume.llm.models import LLMResumeDraft
-from job_copilot.resume.llm.prompts import RESUME_SYSTEM_PROMPT, build_grounded_resume_prompt
+from job_copilot.resume.llm.prompts import (
+    build_grounded_resume_prompt,
+    build_resume_system_prompt,
+)
 from job_copilot.resume.llm.provider import LLMResumeProvider, get_resume_llm_provider
-from job_copilot.resume.llm.validator import GroundingValidator
+from job_copilot.resume.llm.validator import (
+    GroundingValidator,
+    resolve_canonical_project,
+)
 from job_copilot.resume.models import (
     JobAnalysis,
     JobMatchResult,
@@ -30,8 +35,8 @@ class LLMResumeWriter:
 
     def __init__(
         self,
-        provider: Optional[LLMResumeProvider] = None,
-        validator: Optional[GroundingValidator] = None,
+        provider: LLMResumeProvider | None = None,
+        validator: GroundingValidator | None = None,
     ):
         self.provider = provider or get_resume_llm_provider()
         self.validator = validator or GroundingValidator()
@@ -44,9 +49,9 @@ class LLMResumeWriter:
         self,
         profile: CandidateProfile,
         strategy: ResumeStrategyConfig,
-        analysis: Optional[JobAnalysis] = None,
-        match_result: Optional[JobMatchResult] = None,
-    ) -> Optional[TailoredResume]:
+        analysis: JobAnalysis | None = None,
+        match_result: JobMatchResult | None = None,
+    ) -> TailoredResume | None:
         """
         Generate a fully tailored resume draft using the LLM.
         Validates the output against candidate truth.
@@ -56,7 +61,12 @@ class LLMResumeWriter:
             logger.debug("LLMResumeWriter: Provider is unavailable. Deferring to deterministic generator.")
             return None
 
-        # 1. Build Grounded Prompt
+        # 1. Build Grounded Prompts
+        system_prompt = build_resume_system_prompt(
+            profile=profile,
+            evidence_facts=self.validator._evidence_facts if self.validator else None,
+        )
+
         user_prompt = build_grounded_resume_prompt(
             profile=profile,
             analysis=analysis,
@@ -64,8 +74,8 @@ class LLMResumeWriter:
         )
 
         # 2. Initial Generation
-        draft: Optional[LLMResumeDraft] = self.provider.generate_resume_draft(
-            system_prompt=RESUME_SYSTEM_PROMPT,
+        draft: LLMResumeDraft | None = self.provider.generate_resume_draft(
+            system_prompt=system_prompt,
             user_prompt=user_prompt,
         )
 
@@ -82,7 +92,7 @@ class LLMResumeWriter:
             retry_error_msg = "\n".join(f"- {e}" for e in errors)
 
             draft = self.provider.generate_resume_draft(
-                system_prompt=RESUME_SYSTEM_PROMPT,
+                system_prompt=system_prompt,
                 user_prompt=user_prompt,
                 retry_error=retry_error_msg,
             )
@@ -99,7 +109,7 @@ class LLMResumeWriter:
         # 5. Convert Valid Draft to TailoredResume
         try:
             return self._build_tailored_resume(draft, profile, strategy, analysis, match_result)
-        except Exception as conv_err:
+        except (ValueError, TypeError, KeyError, AttributeError) as conv_err:
             logger.error(f"LLMResumeWriter: Error converting draft to TailoredResume: {conv_err}")
             return None
 
@@ -108,13 +118,13 @@ class LLMResumeWriter:
         draft: LLMResumeDraft,
         profile: CandidateProfile,
         strategy: ResumeStrategyConfig,
-        analysis: Optional[JobAnalysis],
-        match_result: Optional[JobMatchResult],
+        analysis: JobAnalysis | None = None,
+        match_result: JobMatchResult | None = None,
     ) -> TailoredResume:
         """Construct the canonical TailoredResume model from the validated LLM draft."""
 
         # 1. Convert Experience Bullets
-        exp_bullets: List[ResumeBullet] = []
+        exp_bullets: list[ResumeBullet] = []
         for b in draft.experience_bullets:
             exp_bullets.append(
                 ResumeBullet(
@@ -144,20 +154,22 @@ class LLMResumeWriter:
         ]
 
         # 2. Convert Projects
-        projects: List[ResumeProject] = []
-        canonical_projects_by_name = {p.name.lower(): p for p in profile.projects}
+        projects: list[ResumeProject] = []
 
         for prj_item in draft.projects:
-            canon_p = canonical_projects_by_name.get(prj_item.name.lower())
-            
-            p_bullets: List[ResumeBullet] = []
+            canon_p = resolve_canonical_project(prj_item.name, profile)
+            p_claim_type = canon_p.claim_type if canon_p else "PERSONAL_PROJECT"
+            p_deployment_status = canon_p.deployment_status if canon_p else "PORTFOLIO_DEMO"
+            p_metric_type = "BENCHMARK" if p_claim_type == "BENCHMARK" else "PROJECT"
+
+            p_bullets: list[ResumeBullet] = []
             for pb in prj_item.bullets:
                 p_bullets.append(
                     ResumeBullet(
                         text=pb.text.strip(),
-                        evidence_ids=pb.evidence_ids or prj_item.evidence_ids,
-                        claim_type="BENCHMARK" if ("rate limiter" in prj_item.name.lower()) else "PERSONAL_PROJECT",
-                        metric_type="BENCHMARK" if ("rate limiter" in prj_item.name.lower()) else "PROJECT",
+                        evidence_ids=pb.evidence_ids or (canon_p.evidence_ids if canon_p else prj_item.evidence_ids),
+                        claim_type=p_claim_type,
+                        metric_type=p_metric_type,
                         relevance_score=1.0,
                     )
                 )
@@ -169,8 +181,8 @@ class LLMResumeWriter:
                     ResumeBullet(
                         text=desc,
                         evidence_ids=canon_p.evidence_ids,
-                        claim_type=canon_p.claim_type,
-                        metric_type="BENCHMARK" if ("rate limiter" in prj_item.name.lower()) else "PROJECT",
+                        claim_type=p_claim_type,
+                        metric_type=p_metric_type,
                     )
                 )
 
@@ -179,7 +191,7 @@ class LLMResumeWriter:
                     name=canon_p.name if canon_p else prj_item.name,
                     description=canon_p.description if canon_p else "",
                     architecture=canon_p.architecture if canon_p else None,
-                    deployment_status=canon_p.deployment_status if canon_p else "PORTFOLIO_DEMO",
+                    deployment_status=p_deployment_status,
                     bullets=p_bullets,
                     technologies=prj_item.technologies or (canon_p.technologies if canon_p else []),
                     links=canon_p.links if canon_p else [],
@@ -188,7 +200,7 @@ class LLMResumeWriter:
             )
 
         # 3. Convert Skill Groups
-        skill_groups: List[ResumeSkillGroup] = []
+        skill_groups: list[ResumeSkillGroup] = []
         for grp in draft.skill_groups:
             if grp.skills:
                 skill_groups.append(
