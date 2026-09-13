@@ -7,6 +7,7 @@ import yaml
 
 from job_copilot.resume.analyzer import JobDescriptionAnalyzer
 from job_copilot.resume.matcher import CandidateJobMatcher
+from job_copilot.resume.llm import LLMResumeWriter
 from job_copilot.resume.models import (
     JobAnalysis,
     JobMatchResult,
@@ -36,6 +37,7 @@ class ResumeService:
         master_profile_path: Optional[Path] = None,
         strategies_dir: Optional[Path] = None,
         generated_output_dir: Optional[Path] = None,
+        llm_writer: Optional[LLMResumeWriter] = None,
     ):
         self.master_profile_path = master_profile_path or Path("data/candidate/master_profile.yaml")
         self.strategies_dir = strategies_dir or Path("data/resume_strategies")
@@ -46,6 +48,7 @@ class ResumeService:
         self.matcher = CandidateJobMatcher()
         self.summary_generator = SummaryGenerator()
         self.selector = ResumeContentSelector(self.summary_generator)
+        self.llm_writer = llm_writer or LLMResumeWriter()
         self.renderer = LaTeXResumeRenderer()
         self.validator = ResumeValidator()
 
@@ -115,13 +118,27 @@ class ResumeService:
             analysis = self.analyze_job(job_description_text)
             match_result = self.matcher.match(analysis, profile)
 
-        # 1. Select Content
-        tailored_resume = self.selector.select_content(
-            profile=profile,
-            strategy=strategy,
-            analysis=analysis,
-            match_result=match_result,
-        )
+        # 1. Select Content (Attempt LLM tailored draft if JD provided and LLM available)
+        tailored_resume = None
+        if job_description_text and self.llm_writer and self.llm_writer.is_available():
+            try:
+                tailored_resume = self.llm_writer.generate_tailored_resume(
+                    profile=profile,
+                    strategy=strategy,
+                    analysis=analysis,
+                    match_result=match_result,
+                )
+            except Exception as e:
+                logger.warning(f"LLM resume tailoring encountered error: {e}. Falling back to deterministic generator.")
+                tailored_resume = None
+
+        if not tailored_resume:
+            tailored_resume = self.selector.select_content(
+                profile=profile,
+                strategy=strategy,
+                analysis=analysis,
+                match_result=match_result,
+            )
 
         # 2. Render LaTeX
         tex_content = self.renderer.render_tex(tailored_resume)
@@ -134,6 +151,23 @@ class ResumeService:
 
         # 4. Compile PDF
         pdf_path, latex_error, page_count = self.renderer.compile_pdf(tex_path, target_dir)
+
+        # 4b. Enforce 1-Page Constraint with Fallback
+        # If an LLM-generated resume exceeded 1 page, fall back to deterministic selector
+        if tailored_resume.metadata.get("llm_tailored") and (page_count and page_count > 1 or latex_error):
+            logger.warning(
+                f"LLM-generated resume exceeded 1 page (page_count={page_count}) or had latex error ({latex_error}). "
+                f"Falling back to deterministic generator for guaranteed 1-page compliance."
+            )
+            tailored_resume = self.selector.select_content(
+                profile=profile,
+                strategy=strategy,
+                analysis=analysis,
+                match_result=match_result,
+            )
+            tex_content = self.renderer.render_tex(tailored_resume)
+            self.renderer.write_tex(tex_content, tex_path)
+            pdf_path, latex_error, page_count = self.renderer.compile_pdf(tex_path, target_dir)
 
         # 5. Validate Resume
         validation = self.validator.validate(
