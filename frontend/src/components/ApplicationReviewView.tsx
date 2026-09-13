@@ -286,7 +286,8 @@ export const ApplicationReviewView: React.FC<ApplicationReviewViewProps> = ({
     detail?.blocker_type || 
     ['CAPTCHA_REQUIRED', 'LOGIN_REQUIRED', 'MFA_REQUIRED', 'HUMAN_ACTION_REQUIRED', 'USER_INPUT_REQUIRED'].includes(taskStatus)
   );
-  const isReadyToConfirm = taskStatus === 'READY_FOR_REVIEW' || detail?.status === 'READY_TO_APPLY';
+  const isReadyToConfirm = (taskStatus === 'READY_FOR_REVIEW' && Boolean(detail?.browser_review?.has_confirmation_token && detail?.browser_review?.confirmation_token)) || 
+    (detail?.status === 'READY_TO_APPLY' && Boolean(detail?.browser_review?.has_confirmation_token && detail?.browser_review?.confirmation_token));
   const isSubmissionAuthorized = taskStatus === 'SUBMISSION_AUTHORIZED';
   const isSubmissionRunning = taskStatus === 'SUBMISSION_RUNNING' || taskStatus === 'RUNNING';
   const isSubmitted = detail?.status === 'APPLIED' || taskStatus === 'COMPLETED';
@@ -874,16 +875,68 @@ export const ApplicationReviewView: React.FC<ApplicationReviewViewProps> = ({
           {activeSubTab === 'browser' && (
             <div className="glass-panel p-4 sm:p-5 rounded-xl space-y-4">
               
-              {/* Unmistakable READY_FOR_REVIEW Alert Banner */}
-              <div className="p-4 rounded-xl bg-amber-950/25 border-2 border-amber-500/50 text-amber-200 space-y-1.5">
-                <div className="flex items-center space-x-2 text-amber-400 font-bold text-sm tracking-wide uppercase">
-                  <ShieldAlert className="w-5 h-5 flex-shrink-0" />
-                  <span>Ready For Your Review — The application has NOT been sent</span>
+              {/* Dynamic State-Aware Banner */}
+              {detail.browser_review?.status === 'READY_FOR_REVIEW' || detail.browser_review?.is_ready_for_review ? (
+                <div className="p-4 rounded-xl bg-amber-950/25 border-2 border-amber-500/50 text-amber-200 space-y-1.5">
+                  <div className="flex items-center space-x-2 text-amber-400 font-bold text-sm tracking-wide uppercase">
+                    <ShieldAlert className="w-5 h-5 flex-shrink-0" />
+                    <span>Ready For Your Review — The application has NOT been sent</span>
+                  </div>
+                  <p className="text-xs text-slate-300 leading-relaxed">
+                    The browser worker has inspected the form and mapped verified candidate evidence. Review all fields below. External submission requires your explicit confirmation keyword.
+                  </p>
                 </div>
-                <p className="text-xs text-slate-300 leading-relaxed">
-                  The browser worker has inspected the form and mapped verified candidate evidence. Review all fields below. External submission requires your explicit confirmation keyword.
-                </p>
-              </div>
+              ) : detail.browser_review?.status === 'QUEUED' ? (
+                <div className="p-4 rounded-xl bg-slate-900/90 border-2 border-blue-500/40 text-blue-200 space-y-1.5">
+                  <div className="flex items-center space-x-2 text-blue-400 font-bold text-sm tracking-wide uppercase">
+                    <Clock className="w-5 h-5 flex-shrink-0" />
+                    <span>Browser Preparation Queued — Waiting for Worker</span>
+                  </div>
+                  <p className="text-xs text-slate-300 leading-relaxed">
+                    The browser worker task is queued. The form has not yet been inspected. Candidate evidence and saved answers are mapped to expected employer fields below.
+                  </p>
+                </div>
+              ) : detail.browser_review?.status === 'RUNNING' || detail.browser_review?.status === 'SUBMISSION_RUNNING' ? (
+                <div className="p-4 rounded-xl bg-blue-950/40 border-2 border-blue-500/50 text-blue-200 space-y-1.5">
+                  <div className="flex items-center space-x-2 text-blue-400 font-bold text-sm tracking-wide uppercase">
+                    <Loader2 className="w-5 h-5 flex-shrink-0 animate-spin" />
+                    <span>Browser Worker Active</span>
+                  </div>
+                  <p className="text-xs text-slate-300 leading-relaxed">
+                    The browser worker is currently active on the employer portal inspecting and filling fields.
+                  </p>
+                </div>
+              ) : detail.browser_review?.status === 'USER_INPUT_REQUIRED' ? (
+                <div className="p-4 rounded-xl bg-amber-950/40 border-2 border-amber-500/50 text-amber-200 space-y-1.5">
+                  <div className="flex items-center space-x-2 text-amber-400 font-bold text-sm tracking-wide uppercase">
+                    <AlertTriangle className="w-5 h-5 flex-shrink-0" />
+                    <span>User Input Required Before Submission</span>
+                  </div>
+                  <p className="text-xs text-slate-300 leading-relaxed">
+                    The application form contains fields requiring your explicit input. Please provide answers in the Questions & Answers tab.
+                  </p>
+                </div>
+              ) : detail.browser_review?.status === 'SUBMISSION_AUTHORIZED' ? (
+                <div className="p-4 rounded-xl bg-blue-950/40 border-2 border-blue-500/50 text-blue-200 space-y-1.5">
+                  <div className="flex items-center space-x-2 text-blue-400 font-bold text-sm tracking-wide uppercase">
+                    <CheckCircle2 className="w-5 h-5 flex-shrink-0 text-blue-400" />
+                    <span>Submission Authorized — Worker Executing</span>
+                  </div>
+                  <p className="text-xs text-slate-300 leading-relaxed">
+                    Your explicit confirmation was verified. The browser worker is executing final submission in the employer portal.
+                  </p>
+                </div>
+              ) : (
+                <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 text-slate-300 space-y-1.5">
+                  <div className="flex items-center space-x-2 text-slate-400 font-bold text-sm tracking-wide uppercase">
+                    <Layers className="w-5 h-5 flex-shrink-0" />
+                    <span>Browser Review Package</span>
+                  </div>
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    Review detected employer form fields, verified mappings, and safety checkpoints.
+                  </p>
+                </div>
+              )}
 
               {detail.browser_review ? (
                 <div className="space-y-4">
@@ -906,8 +959,86 @@ export const ApplicationReviewView: React.FC<ApplicationReviewViewProps> = ({
                     </div>
                   </div>
 
+                  {/* Mapped Employer Form Fields List */}
+                  {detail.browser_review.mapped_fields && detail.browser_review.mapped_fields.length > 0 && (
+                    <div className="space-y-3 pt-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-slate-200 uppercase tracking-wider flex items-center space-x-1.5">
+                          <Layers className="w-4 h-4 text-purple-400" />
+                          <span>Detected & Mapped Form Fields ({detail.browser_review.mapped_fields.length})</span>
+                        </span>
+                        <span className="text-[11px] text-slate-400">
+                          {detail.browser_review.fields_filled_count} of {detail.browser_review.fields_detected_count} filled
+                        </span>
+                      </div>
+
+                      <div className="space-y-2.5">
+                        {detail.browser_review.mapped_fields.map((field) => (
+                          <div
+                            key={field.field_id}
+                            className="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800 space-y-2 text-xs"
+                          >
+                            <div className="flex flex-wrap items-start justify-between gap-2">
+                              <div className="space-y-0.5">
+                                <div className="flex items-center space-x-2">
+                                  <span className="font-semibold text-slate-200">{field.label}</span>
+                                  {field.element_type && (
+                                    <span className="px-1.5 py-0.2 rounded bg-slate-800 text-slate-400 font-mono text-[10px]">
+                                      {field.element_type}
+                                    </span>
+                                  )}
+                                </div>
+                                {field.name && field.name !== field.label && (
+                                  <div className="text-[10px] font-mono text-slate-500">ID: {field.name}</div>
+                                )}
+                              </div>
+
+                              <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                field.source === 'Human Input' || field.action === 'USER_PROVIDED'
+                                  ? 'bg-purple-500/20 text-purple-300 border border-purple-500/40'
+                                  : field.status === 'FILLED' || field.action === 'AUTO_FILL'
+                                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                                  : field.action === 'REQUIRES_USER_INPUT' || field.status === 'PENDING_INPUT'
+                                  ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                                  : 'bg-slate-800 text-slate-400 border border-slate-700'
+                              }`}>
+                                {field.source === 'Human Input' || field.action === 'USER_PROVIDED'
+                                  ? '✓ Human Input'
+                                  : field.status === 'FILLED' || field.action === 'AUTO_FILL'
+                                  ? '✓ Auto-Filled'
+                                  : field.action === 'REQUIRES_USER_INPUT' || field.status === 'PENDING_INPUT'
+                                  ? '⚠ Requires Input'
+                                  : '— Skipped'}
+                              </span>
+                            </div>
+
+                            <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800/80 font-mono text-slate-100 text-xs">
+                              {field.value ? (
+                                <span>{field.value}</span>
+                              ) : (
+                                <span className="text-amber-400/80 italic text-[11px]">Awaiting answer in Needs Input tab</span>
+                              )}
+                            </div>
+
+                            {(field.source || field.reason) && (
+                              <div className="text-[11px] text-slate-400 flex flex-wrap items-center gap-2">
+                                {field.source && (
+                                  <span>Source: <span className="text-purple-300 font-mono">{field.source}</span></span>
+                                )}
+                                {field.reason && (
+                                  <span className="text-slate-500">• {field.reason}</span>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Pre-Submission Screenshot */}
                   {detail.browser_review.has_screenshot && detail.browser_review.screenshot_artifact_id && (
-                    <div className="space-y-2">
+                    <div className="space-y-2 pt-2">
                       <span className="text-xs font-semibold text-slate-300">Browser Pre-Submission Screenshot:</span>
                       <div className="rounded-xl overflow-hidden border border-slate-800 max-h-96 bg-slate-950 flex items-center justify-center min-h-[160px]">
                         {screenshotBlobUrl ? (
@@ -918,11 +1049,28 @@ export const ApplicationReviewView: React.FC<ApplicationReviewViewProps> = ({
                           />
                         ) : (
                           <div className="text-slate-500 text-xs flex items-center space-x-2">
-                            <Loader2 className="w-4 h-4 animate-spin text-blue-400" />
+                            <Loader2 className="w-4 h-4 animate-spin text-purple-400" />
                             <span>Loading screenshot...</span>
                           </div>
                         )}
                       </div>
+                    </div>
+                  )}
+
+                  {/* Submission Action Control inside Browser Review tab */}
+                  {detail.browser_review.is_ready_for_review && detail.browser_review.has_confirmation_token && (
+                    <div className="p-4 rounded-xl bg-purple-950/30 border border-purple-500/40 flex flex-col sm:flex-row items-center justify-between gap-3">
+                      <div className="space-y-0.5 text-center sm:text-left">
+                        <div className="text-xs font-bold text-white">Application Ready for Submission Authorization</div>
+                        <div className="text-[11px] text-purple-300">Explicit human confirmation is required to authorize the browser worker.</div>
+                      </div>
+                      <button
+                        onClick={() => setShowSubmissionModal(true)}
+                        className="px-5 py-2.5 text-xs sm:text-sm font-bold bg-rose-600 hover:bg-rose-500 active:bg-rose-700 text-white rounded-lg shadow-lg shadow-rose-600/20 transition-all flex items-center space-x-2 shrink-0"
+                      >
+                        <Send className="w-4 h-4" />
+                        <span>Authorize Submission</span>
+                      </button>
                     </div>
                   )}
                 </div>

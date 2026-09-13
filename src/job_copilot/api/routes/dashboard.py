@@ -2,7 +2,7 @@
 
 from datetime import datetime
 from typing import Any, Dict, List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -362,11 +362,21 @@ def get_application_resume_pdf(
 
 @router.post("/devices/pair-code")
 def create_device_pairing_code(
+    request: Request,
     device_name: str = Query("Local Browser Agent", description="Device name/hostname"),
+    server_url: Optional[str] = Query(None, description="Explicit server URL to embed in CLI instruction"),
     service: DashboardService = Depends(get_dashboard_service),
 ):
     """Generate a short-lived 6-digit pairing code for connecting a local interactive browser agent."""
-    return service.generate_device_pairing_code(device_name=device_name)
+    resolved_server = server_url
+    if not resolved_server:
+        forwarded_proto = request.headers.get("x-forwarded-proto") or request.url.scheme
+        forwarded_host = request.headers.get("x-forwarded-host") or request.headers.get("host") or request.url.netloc
+        if forwarded_host:
+            resolved_server = f"{forwarded_proto}://{forwarded_host}"
+        else:
+            resolved_server = str(request.base_url).rstrip("/")
+    return service.generate_device_pairing_code(device_name=device_name, server_url=resolved_server)
 
 
 @router.get("/devices")

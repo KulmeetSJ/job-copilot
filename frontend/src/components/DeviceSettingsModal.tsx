@@ -109,9 +109,17 @@ export const DeviceSettingsModal: React.FC<DeviceSettingsModalProps> = ({ isOpen
               <div className="text-3xl font-mono font-black tracking-widest text-emerald-400">
                 {pairingData.pairing_code}
               </div>
-              <div className="flex items-center justify-center space-x-1 text-[10px] text-slate-500">
-                <Clock className="w-3 h-3 text-amber-400" />
-                <span>Expires in 10 minutes (single use)</span>
+              <div className="flex items-center justify-center space-x-2 text-[10px] text-slate-400">
+                <span className="flex items-center space-x-1">
+                  <Clock className="w-3 h-3 text-amber-400" />
+                  <span>Expires in 10 minutes</span>
+                </span>
+                {pairingData.server_url && (
+                  <>
+                    <span>•</span>
+                    <span className="text-blue-400 font-mono">{pairingData.server_url}</span>
+                  </>
+                )}
               </div>
             </div>
 

@@ -217,6 +217,19 @@ class ArtifactSummaryItem(BaseModel):
     download_url: Optional[str] = None
 
 
+class BrowserMappedFieldItem(BaseModel):
+    """Detailed mapped form field item for browser review."""
+    field_id: str
+    label: str
+    name: Optional[str] = None
+    element_type: str = "text"
+    action: str = "AUTO_FILL"  # AUTO_FILL, USER_PROVIDED, REQUIRES_USER_INPUT, DO_NOT_FILL, UNKNOWN
+    value: Optional[str] = None
+    status: str = "FILLED"  # FILLED, PENDING_INPUT, SKIPPED
+    source: Optional[str] = None  # Candidate Evidence, Human Input, master_profile.yaml, etc.
+    reason: Optional[str] = None
+
+
 class BrowserReviewSummary(BaseModel):
     """Browser worker execution and review package summary."""
     task_id: Optional[str] = None
@@ -238,6 +251,8 @@ class BrowserReviewSummary(BaseModel):
     blocker_instruction: Optional[str] = None
     can_resume: bool = False
     is_external_unverified: bool = False
+    mapped_fields: List[BrowserMappedFieldItem] = Field(default_factory=list)
+
 
 
 class ApplicationTimelineEvent(BaseModel):

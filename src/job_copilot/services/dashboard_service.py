@@ -40,6 +40,7 @@ from job_copilot.schemas.dashboard import (
     ApplicationDetailResponse,
     ApplicationTimelineEvent,
     ArtifactSummaryItem,
+    BrowserMappedFieldItem,
     BrowserReviewSummary,
     DashboardOverviewResponse,
     DashboardQueueItem,
@@ -804,10 +805,217 @@ class DashboardService:
 
             if browser_task:
                 rp = browser_task.review_package_json or {}
-                detected_cnt = len(rp.get("detected_fields", []))
-                filled_cnt = len(rp.get("filled_fields", []))
-                unresolved_cnt = len(rp.get("unresolved_fields", []))
                 has_ss = bool(rp.get("screenshot_artifact_id") or rp.get("screenshot_path"))
+
+                # Load persisted human inputs for hydration
+                saved_inputs = self.prep_service.load_saved_user_inputs(job_id)
+                if application_id != job_id:
+                    app_inputs = self.prep_service.load_saved_user_inputs(application_id)
+                    for k, v in app_inputs.items():
+                        if k not in saved_inputs:
+                            saved_inputs[k] = v
+
+                mapped_fields_list: List[BrowserMappedFieldItem] = []
+                seen_field_ids = set()
+
+                # 1. Source: Structured fields in review_package_json (from worker or agent protocol)
+                raw_fields = rp.get("fields_summary") or rp.get("fields") or rp.get("mapped_fields") or []
+                if isinstance(raw_fields, list):
+                    for rf in raw_fields:
+                        if isinstance(rf, dict):
+                            fid = rf.get("field_id") or rf.get("name") or rf.get("label") or f"field_{len(mapped_fields_list)+1}"
+                            if fid in seen_field_ids:
+                                continue
+                            seen_field_ids.add(fid)
+                            lbl = rf.get("label") or rf.get("name") or fid
+                            name = rf.get("name") or rf.get("target_field") or fid
+                            el_type = rf.get("element_type") or rf.get("field_type") or "text"
+                            action = str(rf.get("action") or "AUTO_FILL")
+                            val = rf.get("filled_value_masked") or rf.get("proposed_value") or rf.get("value")
+                            status_val = "FILLED" if val else "PENDING_INPUT"
+                            src = rf.get("evidence_source") or rf.get("source") or ("Candidate Evidence" if val else None)
+                            reason = rf.get("reason") or rf.get("rationale")
+
+                            # Check if human answer was saved for this field
+                            for match_key in (fid, name, lbl, rf.get("target_field")):
+                                if match_key and match_key in saved_inputs:
+                                    val = str(saved_inputs[match_key])
+                                    action = "USER_PROVIDED"
+                                    status_val = "FILLED"
+                                    src = "Human Input"
+                                    reason = "User provided sensitive answer"
+                                    break
+
+                            mapped_fields_list.append(
+                                BrowserMappedFieldItem(
+                                    field_id=fid,
+                                    label=lbl,
+                                    name=name,
+                                    element_type=el_type,
+                                    action=action,
+                                    value=val,
+                                    status=status_val,
+                                    source=src,
+                                    reason=reason,
+                                )
+                            )
+
+                # 2. Source: Check mapping.json on disk if not populated from review_package_json
+                if not mapped_fields_list:
+                    disk_mapping_path = Path("data/applications") / job_id / "browser" / "mapping.json"
+                    if disk_mapping_path.exists():
+                        try:
+                            import json
+                            disk_map = json.loads(disk_mapping_path.read_text(encoding="utf-8"))
+                            if isinstance(disk_map, list):
+                                for dm in disk_map:
+                                    if isinstance(dm, dict):
+                                        fid = dm.get("field_id") or dm.get("target_field") or f"field_{len(mapped_fields_list)+1}"
+                                        if fid in seen_field_ids:
+                                            continue
+                                        seen_field_ids.add(fid)
+                                        lbl = dm.get("field_label") or dm.get("target_field") or fid
+                                        name = dm.get("target_field") or fid
+                                        el_type = dm.get("field_type") or "text"
+                                        val = dm.get("proposed_value") or dm.get("mapped_value")
+                                        req_input = bool(dm.get("requires_user_input"))
+                                        action = "REQUIRES_USER_INPUT" if req_input else "AUTO_FILL"
+                                        status_val = "PENDING_INPUT" if req_input else ("FILLED" if val else "SKIPPED")
+                                        src = dm.get("source_type") or ("Candidate Evidence" if val else None)
+                                        reason = dm.get("rationale")
+
+                                        for match_key in (fid, name, lbl, dm.get("target_field")):
+                                            if match_key and match_key in saved_inputs:
+                                                val = str(saved_inputs[match_key])
+                                                action = "USER_PROVIDED"
+                                                status_val = "FILLED"
+                                                src = "Human Input"
+                                                reason = "User provided sensitive answer"
+                                                break
+
+                                        mapped_fields_list.append(
+                                            BrowserMappedFieldItem(
+                                                field_id=fid,
+                                                label=lbl,
+                                                name=name,
+                                                element_type=el_type,
+                                                action=action,
+                                                value=val,
+                                                status=status_val,
+                                                source=src,
+                                                reason=reason,
+                                            )
+                                        )
+                        except Exception as e:
+                            logger.warning(f"Error reading disk mapping.json: {e}")
+
+                # 3. Source: Derive from application package answers & user inputs required
+                if not mapped_fields_list and pkg:
+                    for ans in (pkg.answers or []):
+                        fid = ans.question_id or f"q_{len(mapped_fields_list)+1}"
+                        if fid in seen_field_ids:
+                            continue
+                        seen_field_ids.add(fid)
+                        lbl = ans.question_text
+                        name = getattr(ans, "field_name", None) or ans.question_id
+                        el_type = "text"
+                        val = ans.answer
+                        req_input = bool(ans.requires_user_input)
+
+                        # Check saved human answers first
+                        saved_val = None
+                        for match_key in (fid, name, lbl, ans.question_id):
+                            if match_key and match_key in saved_inputs:
+                                saved_val = str(saved_inputs[match_key])
+                                break
+
+                        if saved_val is not None:
+                            val = saved_val
+                            action = "USER_PROVIDED"
+                            status_val = "FILLED"
+                            src = "Human Input"
+                            reason = "User provided sensitive answer"
+                        elif val and not req_input:
+                            action = "AUTO_FILL"
+                            status_val = "FILLED"
+                            src = "Candidate Evidence"
+                            reason = "Evidence-backed candidate answer"
+                        else:
+                            val = None
+                            action = "REQUIRES_USER_INPUT"
+                            status_val = "PENDING_INPUT"
+                            src = "Needs User Input"
+                            reason = "Requires manual user answer"
+
+                        mapped_fields_list.append(
+                            BrowserMappedFieldItem(
+                                field_id=fid,
+                                label=lbl,
+                                name=name,
+                                element_type=el_type,
+                                action=action,
+                                value=val,
+                                status=status_val,
+                                source=src,
+                                reason=reason,
+                            )
+                        )
+
+                # Ensure all pkg.user_inputs_required are represented if not already
+                if pkg and pkg.user_inputs_required:
+                    for req_item in pkg.user_inputs_required:
+                        fid = req_item.question_id or getattr(req_item, "field_name", None) or getattr(req_item, "question_text", None) or f"req_{len(mapped_fields_list)+1}"
+                        if fid not in seen_field_ids:
+                            seen_field_ids.add(fid)
+                            lbl = getattr(req_item, "question_text", None) or getattr(req_item, "question", fid)
+                            name = getattr(req_item, "field_name", None) or req_item.question_id
+                            el_type = getattr(req_item, "expected_type", None) or "text"
+                            if hasattr(el_type, "value"):
+                                el_type = el_type.value
+
+                            saved_val = None
+                            for match_key in (fid, name, lbl, req_item.question_id):
+                                if match_key and match_key in saved_inputs:
+                                    saved_val = str(saved_inputs[match_key])
+                                    break
+
+                            if saved_val is not None:
+                                val = saved_val
+                                action = "USER_PROVIDED"
+                                status_val = "FILLED"
+                                src = "Human Input"
+                                reason = "User provided sensitive answer"
+                            else:
+                                val = req_item.current_value
+                                action = "USER_PROVIDED" if val else "REQUIRES_USER_INPUT"
+                                status_val = "FILLED" if val else "PENDING_INPUT"
+                                src = "Human Input" if val else "Needs User Input"
+                                reason = getattr(req_item, "reason", None) or "Requires manual user answer"
+
+                            mapped_fields_list.append(
+                                BrowserMappedFieldItem(
+                                    field_id=fid,
+                                    label=lbl,
+                                    name=name,
+                                    element_type=str(el_type),
+                                    action=action,
+                                    value=val,
+                                    status=status_val,
+                                    source=src,
+                                    reason=reason,
+                                )
+                            )
+
+                # Calculate exact counts matching mapped_fields_list
+                detected_cnt = len(mapped_fields_list)
+                filled_cnt = sum(1 for f in mapped_fields_list if f.status == "FILLED" and f.value)
+                unresolved_cnt = sum(1 for f in mapped_fields_list if f.status == "PENDING_INPUT" or f.action == "REQUIRES_USER_INPUT")
+
+                # Fallback to rp counts only if no fields were resolved
+                if detected_cnt == 0:
+                    detected_cnt = len(rp.get("detected_fields", []))
+                    filled_cnt = len(rp.get("filled_fields", []))
+                    unresolved_cnt = len(rp.get("unresolved_fields", []))
 
                 browser_review = BrowserReviewSummary(
                     task_id=browser_task.task_id,
@@ -829,6 +1037,7 @@ class DashboardService:
                     blocker_instruction=blocker_instruction,
                     can_resume=can_resume,
                     is_external_unverified=is_external_unverified,
+                    mapped_fields=mapped_fields_list,
                 )
 
             # Timeline Events
@@ -1020,6 +1229,44 @@ class DashboardService:
                     notes="User supplied required application answers.",
                     metadata_json={"provided_answers": [a.model_dump() for a in req.answers]},
                 )
+            # Update associated BrowserTask if present
+            task_repo = BrowserTaskRepository(db)
+            b_task = task_repo.get_by_application_or_job_id(
+                application_id=app.application_id if app else application_id,
+                job_id=job_id,
+            )
+            if b_task:
+                rp = dict(b_task.review_package_json or {})
+                # Update review_package_json counts and fields
+                existing_pkg = self.prep_service.get_application_package(job_id)
+                if existing_pkg:
+                    rp["detected_fields"] = [a.question_text for a in existing_pkg.answers]
+                    rp["filled_fields"] = [a.question_text for a in existing_pkg.answers if (not a.requires_user_input or a.question_id in answers_dict)]
+                    rp["unresolved_fields"] = [u.question_text for u in existing_pkg.user_inputs_required if u.question_id not in answers_dict]
+                    b_task.review_package_json = rp
+
+                # If task was paused waiting for user input and all inputs are now resolved, transition to READY_FOR_REVIEW
+                unresolved_remaining = rp.get("unresolved_fields", [])
+                if b_task.status == BrowserTaskStatus.USER_INPUT_REQUIRED and len(unresolved_remaining) == 0:
+                    token = HumanConfirmationService.generate_confirmation_token()
+                    expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
+                    task_repo.set_review_package(
+                        task_id=b_task.task_id,
+                        review_package=rp,
+                        confirmation_token=token,
+                        confirmation_expires_at=expires_at,
+                    )
+                    task_repo.update_status(b_task.task_id, BrowserTaskStatus.READY_FOR_REVIEW, pause_reason=None)
+                    task_repo.append_audit_event(
+                        b_task.task_id,
+                        {
+                            "event": "user_inputs_resolved",
+                            "status": BrowserTaskStatus.READY_FOR_REVIEW.value,
+                            "confirmation_token_issued": True,
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                        },
+                    )
+
                 db.commit()
 
             logger.info(f"Recorded human input for application '{application_id}' (candidate truth untouched).")
@@ -1854,18 +2101,23 @@ class DashboardService:
     # 7. Local Interactive Browser Agent Devices
     # ==========================================================================
 
-    def generate_device_pairing_code(self, device_name: str = "Local Browser Agent") -> Dict[str, Any]:
+    def generate_device_pairing_code(
+        self, device_name: str = "Local Browser Agent", server_url: Optional[str] = None
+    ) -> Dict[str, Any]:
         """Generate a short-lived 6-digit pairing code for connecting a local browser agent."""
         db, should_close = self._get_db_session()
         try:
             device_repo = DeviceRepository(db)
             device, code = device_repo.generate_pairing_code(device_name=device_name, validity_minutes=10)
+            server_str = (server_url or "https://job-copilot-x3kc.onrender.com").rstrip("/")
+            cli_cmd = f"python -m job_copilot.browser_agent pair {code} --server {server_str}"
             return {
                 "device_id": device.device_id,
                 "pairing_code": code,
                 "expires_at": device.pairing_expires_at.isoformat() if device.pairing_expires_at else "",
-                "instructions": f"Run `python -m job_copilot.browser_agent pair {code}` on your machine.",
-                "cli_command": f"python -m job_copilot.browser_agent pair {code}",
+                "server_url": server_str,
+                "instructions": f"Run `{cli_cmd}` on your machine.",
+                "cli_command": cli_cmd,
             }
         finally:
             if should_close:

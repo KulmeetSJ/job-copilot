@@ -247,7 +247,12 @@ export const api = {
 
   // Paired Devices (Local Browser Agent)
   async generatePairingCode(deviceName: string = 'Local Browser Agent'): Promise<PairingCodeResponse> {
-    const res = await fetch(`${API_BASE}/devices/pair-code?device_name=${encodeURIComponent(deviceName)}`, {
+    const origin = typeof window !== 'undefined' ? window.location.origin : '';
+    const query = new URLSearchParams({
+      device_name: deviceName,
+      ...(origin ? { server_url: origin } : {}),
+    });
+    const res = await fetch(`${API_BASE}/devices/pair-code?${query.toString()}`, {
       method: 'POST',
       headers: getHeaders(),
     });

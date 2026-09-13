@@ -37,8 +37,8 @@ def parse_args(args: Optional[List[str]] = None) -> argparse.Namespace:
 
     # pair
     pair_parser = subparsers.add_parser("pair", help="Pair this machine with your Job Copilot dashboard")
-    pair_parser.add_argument("code", help="6-digit pairing code shown in the dashboard")
-    pair_parser.add_argument("--server", "-s", default="http://localhost:8000", help="Job Copilot server URL")
+    pair_parser.add_argument("code", nargs="?", default=None, help="6-digit pairing code shown in the dashboard")
+    pair_parser.add_argument("--server", "-s", default=None, help="Job Copilot server URL (defaults to production or $JOB_COPILOT_SERVER_URL)")
     pair_parser.add_argument("--name", "-n", default=get_default_device_name(), help="Friendly name for this machine")
 
     # start
@@ -59,19 +59,48 @@ async def main_async(args: argparse.Namespace) -> int:
     config = load_agent_config()
 
     if args.command == "pair":
-        print(f"[*] Pairing with Job Copilot at {args.server} using code '{args.code}'...")
-        config.server_url = args.server
+        # 1. Resolve pairing code
+        pairing_code = (args.code or "").strip()
+        if not pairing_code:
+            if sys.stdin.isatty():
+                pairing_code = input("Enter 6-digit pairing code from dashboard: ").strip()
+            if not pairing_code:
+                print("[ERROR] Pairing code is required. Usage: python -m job_copilot.browser_agent pair <CODE> [--server <URL>]")
+                return 1
+
+        # 2. Resolve target server URL
+        server_url = args.server
+        if not server_url:
+            env_server = os.environ.get("JOB_COPILOT_SERVER_URL")
+            if env_server:
+                server_url = env_server.strip()
+            elif config.server_url and "localhost" not in config.server_url:
+                server_url = config.server_url.strip()
+            elif sys.stdin.isatty():
+                default_prompt_url = "https://job-copilot-x3kc.onrender.com"
+                user_val = input(f"Enter Job Copilot Server URL [{default_prompt_url}]: ").strip()
+                server_url = user_val if user_val else default_prompt_url
+            else:
+                server_url = "https://job-copilot-x3kc.onrender.com"
+
+        server_url = server_url.rstrip("/")
+        is_local = "localhost" in server_url or "127.0.0.1" in server_url
+        env_label = "LOCAL / DEVELOPMENT (Localhost)" if is_local else "PRODUCTION (Remote)"
+
+        print(f"[*] Pairing with Job Copilot at {server_url} ({env_label}) using code '{pairing_code}'...")
+        config.server_url = server_url
         config.device_name = args.name
         client = AgentProtocolClient(config)
         try:
-            res = await client.pair(pairing_code=args.code, server_url=args.server, device_name=args.name)
+            res = await client.pair(pairing_code=pairing_code, server_url=server_url, device_name=args.name)
             save_agent_config(config)
-            print("\n" + "=" * 50)
-            print(f"  [SUCCESS] Device Paired Successfully!")
-            print(f"  Device ID:   {res['device_id']}")
-            print(f"  Device Name: {res['device_name']}")
-            print(f"  Server URL:  {res['server_url']}")
-            print("=" * 50)
+            print("\n" + "=" * 60)
+            print("  [SUCCESS] Device Paired Successfully!")
+            print(f"  Target Server: {res['server_url']}")
+            print(f"  Environment:   {env_label}")
+            print(f"  Device ID:     {res['device_id']}")
+            print(f"  Device Name:   {res['device_name']}")
+            print("=" * 60)
             print("\nYou can now start the agent using:\n  python -m job_copilot.browser_agent start\n")
             return 0
         except Exception as e:
@@ -82,17 +111,21 @@ async def main_async(args: argparse.Namespace) -> int:
         if not config.device_token:
             print("[INFO] No paired device token found. Run `pair` to connect.")
             return 1
-        print(f"[*] Checking device status at {config.server_url}...")
+        is_local = "localhost" in config.server_url or "127.0.0.1" in config.server_url
+        env_label = "LOCAL / DEVELOPMENT (Localhost)" if is_local else "PRODUCTION (Remote)"
+        print(f"[*] Checking device status at {config.server_url} ({env_label})...")
         client = AgentProtocolClient(config)
         try:
             info = await client.get_device_info()
-            print("\n" + "=" * 50)
-            print(f"  Device ID:    {info.get('device_id')}")
-            print(f"  Device Name:  {info.get('device_name')}")
-            print(f"  Status:       {info.get('status')}")
-            print(f"  Capabilities: {', '.join(info.get('capabilities', []))}")
-            print(f"  Last Seen:    {info.get('last_seen_at')}")
-            print("=" * 50 + "\n")
+            print("\n" + "=" * 60)
+            print(f"  Target Server: {config.server_url}")
+            print(f"  Environment:   {env_label}")
+            print(f"  Device ID:     {info.get('device_id')}")
+            print(f"  Device Name:   {info.get('device_name')}")
+            print(f"  Status:        {info.get('status')}")
+            print(f"  Capabilities:  {', '.join(info.get('capabilities', []))}")
+            print(f"  Last Seen:     {info.get('last_seen_at')}")
+            print("=" * 60 + "\n")
             return 0
         except Exception as e:
             print(f"[ERROR] Status check failed: {e}")
@@ -107,7 +140,7 @@ async def main_async(args: argparse.Namespace) -> int:
         if not config.device_token:
             print("[ERROR] Machine is not paired yet.")
             print("Please open the dashboard, generate a pairing code, and run:")
-            print("  python -m job_copilot.browser_agent pair <CODE>\n")
+            print("  python -m job_copilot.browser_agent pair <CODE> --server https://job-copilot-x3kc.onrender.com\n")
             return 1
 
         if hasattr(args, "headless") and args.headless:

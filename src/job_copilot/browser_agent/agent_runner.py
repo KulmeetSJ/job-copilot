@@ -97,21 +97,25 @@ class LocalBrowserAgentRunner:
     async def start(self) -> None:
         """Start the local agent task polling and execution loop."""
         self._running = True
-        logger.info(f"Local Interactive Browser Agent started. Connecting to {self.config.server_url}...")
-        print(f"\n==================================================")
-        print(f"  JOB COPILOT LOCAL BROWSER AGENT")
-        print(f"  Server: {self.config.server_url}")
-        print(f"  Device: {self.config.device_name} ({self.config.device_id or 'unpaired'})")
-        print(f"  Mode:   Visible Browser (Interactive Human Support)")
-        print(f"==================================================\n")
+        is_local = "localhost" in self.config.server_url or "127.0.0.1" in self.config.server_url
+        env_label = "LOCAL / DEVELOPMENT (Localhost)" if is_local else "PRODUCTION (Remote)"
+        logger.info(f"Local Interactive Browser Agent started. Connecting to {self.config.server_url} ({env_label})...")
+        print("\n" + "=" * 60)
+        print("  JOB COPILOT LOCAL INTERACTIVE BROWSER AGENT")
+        print(f"  Target Server: {self.config.server_url}")
+        print(f"  Environment:   {env_label}")
+        print(f"  Device ID:     {self.config.device_id or 'unpaired'}")
+        print(f"  Device Name:   {self.config.device_name}")
+        print("  Mode:          Visible Browser (Interactive Human Support)")
+        print("=" * 60 + "\n")
 
-        # Verify device connection
+        # Verify device connection against target server
         try:
             info = await self.client.get_device_info()
-            print(f"[OK] Device verified. Status: {info.get('status')} | Cap: {len(info.get('capabilities', []))} features")
+            print(f"[OK] Device verified on {self.config.server_url}. Status: {info.get('status')} | Cap: {len(info.get('capabilities', []))} features")
         except Exception as e:
-            print(f"[ERROR] Connection check failed: {e}")
-            print(f"Run `python -m job_copilot.browser_agent pair <code>` to pair this machine.\n")
+            print(f"[ERROR] Connection check failed against {self.config.server_url}: {e}")
+            print(f"Run `python -m job_copilot.browser_agent pair <CODE> --server {self.config.server_url}` to pair this machine.\n")
             return
 
         print(f"[*] Polling for authorized tasks every {self.config.poll_interval_seconds}s. Press Ctrl+C to stop.\n")

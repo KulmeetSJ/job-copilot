@@ -178,6 +178,18 @@ export interface ArtifactSummaryItem {
   download_url?: string;
 }
 
+export interface BrowserMappedFieldItem {
+  field_id: string;
+  label: string;
+  name?: string;
+  element_type?: string;
+  action: string;
+  value?: string;
+  status: string;
+  source?: string;
+  reason?: string;
+}
+
 export interface BrowserReviewSummary {
   task_id?: string;
   source: string;
@@ -198,6 +210,7 @@ export interface BrowserReviewSummary {
   blocker_instruction?: string;
   can_resume?: boolean;
   is_external_unverified?: boolean;
+  mapped_fields?: BrowserMappedFieldItem[];
 }
 
 export interface ApplicationTimelineEvent {
@@ -314,6 +327,7 @@ export interface PairingCodeResponse {
   device_id: string;
   pairing_code: string;
   expires_at: string;
+  server_url?: string;
   instructions: string;
   cli_command: string;
 }

@@ -17,7 +17,7 @@ LOCAL_SESSIONS_DIR = DEFAULT_CONFIG_DIR / "sessions"
 
 class AgentConfig(BaseModel):
     """Local Agent configuration stored securely on the user's machine."""
-    server_url: str = Field(default="http://localhost:8000", description="Job Copilot backend base URL")
+    server_url: str = Field(default="https://job-copilot-x3kc.onrender.com", description="Job Copilot backend base URL")
     device_id: Optional[str] = Field(default=None, description="Paired unique device identifier")
     device_token: Optional[str] = Field(default=None, description="Secret cryptographic device token")
     device_name: str = Field(default="Local Browser Agent", description="Display name for this machine")

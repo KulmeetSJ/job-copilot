@@ -10,6 +10,7 @@ class PairingCodeResponse(BaseModel):
     device_id: str
     pairing_code: str
     expires_at: datetime
+    server_url: Optional[str] = None
     instructions: str
     cli_command: str
 
