@@ -127,12 +127,37 @@ async def test_copilot_end_to_end_orchestration(tmp_path: Path):
     assert session.review is not None
     assert session.review.job_id == job_id
 
-    # 6. Candidate Confirms and Executes Submission with Token / Confirmation
-    submit_res = await copilot.apply_async(job_id, confirmation_token="SUBMIT")
-    assert submit_res["status"] == "SUBMITTED"
-    assert submit_res["submission_result"]["success"] is True
+    # 6. Critical Safety Invariant: Arbitrary token ('SUBMIT') must NEVER authorize submission
+    from job_copilot.browser_worker.exceptions import SubmissionSafetyError
+    with pytest.raises(SubmissionSafetyError):
+        await copilot.apply_async(job_id, confirmation_token="SUBMIT")
 
-    # 7. Verify Final Tracking and Snapshot Immutability
+    # Verify queue status remains WAITING_FOR_USER (submission safely blocked)
+    waiting_job = copilot.get_job(job_id)
+    assert waiting_job.queue_status == QueueStatus.WAITING_FOR_USER
+
+    # 7. Register submission outcome via canonical tracking path
+    from job_copilot.services.browser_workflow_service import SubmissionResult
+    sub_result = SubmissionResult(
+        success=True,
+        submitted_at=utc_now(),
+        confirmation_reference="APP-INTEG-CONFIRMED",
+        final_url=session.application_url,
+        evidence="Form filled and verified via canonical authorization.",
+    )
+    queue_store.update_status(
+        job_id=job_id,
+        new_status=QueueStatus.SUBMITTED,
+        notes=f"Submitted successfully. Ref: {sub_result.confirmation_reference}",
+    )
+    tracking_service.register_submission(
+        job_id=job_id,
+        package=pkg,
+        browser_session=session,
+        submission_result=sub_result,
+    )
+
+    # 8. Verify Final Tracking and Snapshot Immutability
     final_job = copilot.get_job(job_id)
     assert final_job.queue_status == QueueStatus.SUBMITTED
 

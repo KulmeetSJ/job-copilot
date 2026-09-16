@@ -430,6 +430,36 @@ class BrowserWorkflowService:
         if not session:
             raise ValueError(f"Session '{session_id}' not found.")
 
+        # Invariant 3: Direct submission via legacy BrowserWorkflowService is disabled for external portals.
+        # All real automated submissions must proceed through the canonical hardened path
+        # (DashboardService -> BrowserTaskExecutor -> HumanConfirmationService).
+        if session.application_url and (
+            session.application_url.startswith("http://") or session.application_url.startswith("https://")
+        ):
+            self._log_event(
+                session_id,
+                BrowserAuditEventType.VALIDATION_FAILED,
+                "Direct submission via legacy BrowserWorkflowService is disabled for external portals",
+                result="BLOCKED",
+            )
+            raise PermissionError(
+                "Direct submission via legacy BrowserWorkflowService is disabled for external portals. "
+                "All automated submissions must proceed through the canonical hardened path "
+                "(DashboardService -> BrowserTaskExecutor -> HumanConfirmationService)."
+            )
+
+        if session.application_url and (
+            "example.com" in session.application_url.lower()
+            or "manual.application.portal" in session.application_url.lower()
+        ):
+            self._log_event(
+                session_id,
+                BrowserAuditEventType.VALIDATION_FAILED,
+                "Submission blocked: Synthetic or fabricated portal URL detected",
+                result="BLOCKED",
+            )
+            raise PermissionError("Submission blocked: Synthetic or fabricated portal URL detected.")
+
         # 1. HARD SAFETY CHECK: Explicit Human Confirmation
         is_explicitly_confirmed = confirmed is True or (confirm_text and confirm_text.strip().upper() == "SUBMIT")
         if not is_explicitly_confirmed:

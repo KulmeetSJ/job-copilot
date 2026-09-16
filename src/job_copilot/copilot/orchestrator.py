@@ -276,40 +276,65 @@ class CopilotOrchestrator:
         headless: bool = True,
     ) -> Dict[str, Any]:
         """
-        Browser Handoff: Calls Phase 7 Browser Workflow Service asynchronously.
-        Preserves mandatory explicit human confirmation safeguard.
+        Browser Handoff: Calls Phase 7 Browser Workflow Service for interactive inspection/filling.
+        Mandatory safety invariants:
+        1. Never uses synthetic or fabricated application URLs (example.com, manual.application.portal).
+           If no real canonical/source URL is available, fails safely immediately without launching a browser.
+        2. Arbitrary non-empty tokens ('x', '123', 'SUBMIT') must NEVER count as confirmation.
+           Submission authorization delegates strictly to the canonical HumanConfirmationService.
+        3. Real automated submission proceeds ONLY through the canonical hardened path:
+           HumanConfirmationService -> BrowserTaskExecutor.execute_submission_task().
         """
         package = self.prep_service.get_application_package(job_id)
         if not package:
             package = self.prepare_job(job_id)
 
-        app_url = package.assessment.job.source_url or "https://example.com/careers/apply"
+        # Invariant 1: Validate real canonical/source URL (no fabricated/synthetic URLs)
+        raw_url = ""
+        if package and package.assessment and hasattr(package.assessment, "job") and package.assessment.job:
+            raw_url = getattr(package.assessment.job, "source_url", "") or getattr(package.assessment.job, "canonical_url", "") or ""
+            raw_url = (raw_url or "").strip()
 
-        # Check for existing session
-        session = None
-        for sess in self.browser_service._active_sessions.values():
-            if sess.job_id == job_id:
-                session = sess
-                break
+        if not raw_url and hasattr(self, "discovery_service") and hasattr(self.discovery_service, "store"):
+            canonical = self.discovery_service.store.get_canonical_job(job_id)
+            if canonical:
+                raw_url = (canonical.canonical_url or canonical.source_url or "").strip()
 
-        if not session:
-            session = await self.browser_service.start_session(
-                job_id=job_id,
-                application_url=app_url,
-                headless=headless,
-            )
-        else:
-            session = await self.browser_service.inspect_session(session.session_id)
-
-        # Auto-fill fields if not already filled
-        if session.status in [BrowserSessionStatus.CREATED, BrowserSessionStatus.READY_FOR_REVIEW, BrowserSessionStatus.INSPECTING]:
-            session = await self.browser_service.fill_session(session.session_id)
-
-        # Register READY_FOR_REVIEW in Phase 8 Tracking
-        self.adapter.on_ready_for_review(job_id=job_id, browser_session_id=session.session_id)
+        is_valid_url = (
+            bool(raw_url)
+            and (raw_url.startswith("http://") or raw_url.startswith("https://") or raw_url.startswith("file://") or raw_url.startswith("/"))
+            and "example.com" not in raw_url.lower()
+            and "manual.application.portal" not in raw_url.lower()
+        )
+        if not is_valid_url:
+            raise ValueError(f"Submission blocked: Job '{job_id}' has no valid canonical application URL.")
+        app_url = raw_url
 
         # Check Explicit Human Confirmation Token
         if not confirmation_token:
+            # Check for existing session or start review session
+            session = None
+            for sess in self.browser_service._active_sessions.values():
+                if sess.job_id == job_id:
+                    session = sess
+                    break
+
+            if not session:
+                session = await self.browser_service.start_session(
+                    job_id=job_id,
+                    application_url=app_url,
+                    headless=headless,
+                )
+            else:
+                session = await self.browser_service.inspect_session(session.session_id)
+
+            # Auto-fill fields if not already filled
+            if session.status in [BrowserSessionStatus.CREATED, BrowserSessionStatus.READY_FOR_REVIEW, BrowserSessionStatus.INSPECTING]:
+                session = await self.browser_service.fill_session(session.session_id)
+
+            # Register READY_FOR_REVIEW in Phase 8 Tracking
+            self.adapter.on_ready_for_review(job_id=job_id, browser_session_id=session.session_id)
+
             self.queue_store.update_status(
                 job_id=job_id,
                 new_status=QueueStatus.WAITING_FOR_USER,
@@ -322,31 +347,66 @@ class CopilotOrchestrator:
                 "review_required": True,
             }
 
-        # Submit via Phase 7 with verified confirmation
-        sub_result: SubmissionResult = await self.browser_service.submit_session(
-            session_id=session.session_id,
-            confirmed=True,
-            confirm_text="SUBMIT",
-        )
+        # Invariants 2 & 3: Delegate authorization exclusively to canonical HumanConfirmationService.
+        # Arbitrary strings ("x", "123", "SUBMIT") must NEVER authorize submission.
+        from job_copilot.db.database import SessionLocal
+        from job_copilot.browser_worker.confirmation_service import HumanConfirmationService
+        from job_copilot.browser_worker.models import HumanConfirmationRequest
+        from job_copilot.repositories.browser_task_repository import BrowserTaskRepository
+        from job_copilot.repositories.application_repository import ApplicationRepository
+        from job_copilot.browser_worker.exceptions import SubmissionSafetyError
+        from job_copilot.domain.browser_worker_enums import BrowserTaskStatus
 
-        if sub_result.success:
-            self.queue_store.update_status(
-                job_id=job_id,
-                new_status=QueueStatus.SUBMITTED,
-                notes=f"Submitted successfully. Ref: {sub_result.confirmation_reference}",
+        db = SessionLocal()
+        try:
+            task_repo = BrowserTaskRepository(db)
+            task = task_repo.get_by_application_or_job_id(job_id)
+            if not task:
+                app_repo = ApplicationRepository(db)
+                app = app_repo.get_by_job_id_str(job_id) or app_repo.get_by_application_id(job_id)
+                if app and app.application_id:
+                    task = task_repo.get_by_application_or_job_id(app.application_id)
+
+            if not task:
+                raise SubmissionSafetyError(f"Submission blocked: No authorized browser task found for job '{job_id}'.")
+
+            confirm_svc = HumanConfirmationService(db=db)
+            req = HumanConfirmationRequest(
+                task_id=task.task_id,
+                confirmation_token=confirmation_token,
+                confirm_text="SUBMIT",
             )
-            self.tracking_service.register_submission(
-                job_id=job_id,
-                package=package,
-                browser_session=session,
-                submission_result=sub_result,
+            # Validates single-use token cryptographically via hmac.compare_digest
+            # Arbitrary tokens like "x", "yes", "123", "SUBMIT" will fail with SubmissionSafetyError
+            confirm_res = confirm_svc.validate_and_confirm(
+                task_id=task.task_id,
+                request=req,
+                application_id=task.application_id,
             )
 
-        return {
-            "status": "SUBMITTED" if sub_result.success else "FAILED",
-            "submission_result": sub_result.model_dump(),
-            "session_id": session.session_id,
-        }
+            # Delegate execution to the hardened BrowserTaskExecutor
+            from job_copilot.browser_worker.task_executor import BrowserTaskExecutor
+            executor = BrowserTaskExecutor(db=db)
+            executed_task = await executor.execute_submission_task(task.task_id)
+
+            success = executed_task.status == BrowserTaskStatus.COMPLETED
+            if success:
+                self.queue_store.update_status(
+                    job_id=job_id,
+                    new_status=QueueStatus.SUBMITTED,
+                    notes=f"Submitted successfully via canonical hardened path. Ref: {executed_task.submission_reference}",
+                )
+                self.tracking_service.register_submission(
+                    job_id=job_id,
+                    package=package,
+                )
+            return {
+                "status": "SUBMITTED" if success else "FAILED",
+                "task_id": executed_task.task_id,
+                "submission_reference": executed_task.submission_reference,
+            }
+        finally:
+            db.close()
 
     def apply_job(
         self,

@@ -194,17 +194,35 @@ def skip_opportunity(job_id: str, req: Optional[SkipJobRequest] = None):
     return job
 
 
+from job_copilot.browser_worker.exceptions import SubmissionSafetyError
+
+
 @router.post("/{job_id}/apply")
 def apply_opportunity(job_id: str, req: Optional[ApplyJobRequest] = None):
     """
-    Hand off opportunity to Phase 7 Browser Workflow.
-    Requires explicit confirmation token to execute external portal submission.
+    Legacy continuous copilot application handoff.
+    Enforces submission safety invariants:
+    1. Unconfirmed requests return SUBMISSION_BLOCKED safely without launching browser.
+    2. Missing or fabricated URLs (example.com, manual.application.portal) fail safely.
+    3. Confirmed requests delegate strictly to canonical HumanConfirmationService.
+       Arbitrary strings ('x', '123', 'SUBMIT') cannot authorize submission.
     """
     service = get_copilot_service()
     token = req.confirmation_token if req else None
     headless = req.headless if req else True
+
+    if not token:
+        return {
+            "status": "SUBMISSION_BLOCKED",
+            "reason": "Explicit human confirmation token required before external portal submission.",
+            "job_id": job_id,
+            "review_required": True,
+        }
+
     try:
         result = service.apply(job_id=job_id, confirmation_token=token, headless=headless)
         return result
+    except (ValueError, SubmissionSafetyError, PermissionError) as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
