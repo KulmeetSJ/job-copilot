@@ -422,15 +422,22 @@ class BrowserWorkflowService:
         confirm_text: Optional[str] = None,
     ) -> SubmissionResult:
         """
-        HARD SUBMISSION GUARD:
-        Execute application submission ONLY upon explicit human confirmation
-        and complete validation pass.
+        Legacy prototype submission method (Phase 7).
+        DISABLED FOR EXTERNAL SUBMISSIONS:
+        External portal submissions must NEVER be authorized or executed via this method.
+        The legacy `confirmed=True` and `confirm_text='SUBMIT'` parameters cannot authorize
+        external submission under any circumstance.
+        All real external automated submissions MUST proceed through the canonical hardened path:
+        HumanConfirmationService -> BrowserTaskExecutor.execute_submission_task().
+
+        This method is strictly restricted to local test fixtures (e.g. file://).
         """
         session = self.get_session(session_id)
         if not session:
             raise ValueError(f"Session '{session_id}' not found.")
 
         # Invariant 3: Direct submission via legacy BrowserWorkflowService is disabled for external portals.
+        # Legacy parameters confirmed=True and confirm_text="SUBMIT" CANNOT authorize external submission.
         # All real automated submissions must proceed through the canonical hardened path
         # (DashboardService -> BrowserTaskExecutor -> HumanConfirmationService).
         if session.application_url and (
@@ -444,7 +451,8 @@ class BrowserWorkflowService:
             )
             raise PermissionError(
                 "Direct submission via legacy BrowserWorkflowService is disabled for external portals. "
-                "All automated submissions must proceed through the canonical hardened path "
+                "Legacy parameters 'confirmed=True' and confirm_text='SUBMIT' cannot authorize external submission. "
+                "All automated external submissions must proceed through the canonical hardened path "
                 "(DashboardService -> BrowserTaskExecutor -> HumanConfirmationService)."
             )
 

@@ -136,9 +136,10 @@ async def test_job_with_no_canonical_url_fails_safely(test_client, fake_or_missi
 @pytest.mark.asyncio
 async def test_browser_workflow_service_cannot_submit_external_portals():
     """
-    Test C1: Direct call to BrowserWorkflowService.submit_session on an external
-    portal (http:// or https://) must be rejected with PermissionError,
-    preventing any second Playwright submission implementation.
+    Test C1: Neither confirmed=True nor confirm_text="SUBMIT" can authorize external submission.
+    Direct call to BrowserWorkflowService.submit_session on an external portal (http:// or https://)
+    must be rejected with PermissionError, ensuring exactly ONE mechanism authorizes real external submission:
+    HumanConfirmationService -> BrowserTaskExecutor.execute_submission_task().
     """
     service = BrowserWorkflowService()
     session_id = "sess-test-ext-guard"
@@ -150,7 +151,15 @@ async def test_browser_workflow_service_cannot_submit_external_portals():
     )
     service._active_sessions[session_id] = session
 
-    # Attempting to submit external session via legacy submit_session raises PermissionError
+    # 1. confirmed=True alone cannot authorize external submission
+    with pytest.raises(PermissionError, match="disabled for external portals"):
+        await service.submit_session(session_id=session_id, confirmed=True, confirm_text=None)
+
+    # 2. confirm_text="SUBMIT" alone cannot authorize external submission
+    with pytest.raises(PermissionError, match="disabled for external portals"):
+        await service.submit_session(session_id=session_id, confirmed=False, confirm_text="SUBMIT")
+
+    # 3. Both confirmed=True and confirm_text="SUBMIT" together cannot authorize external submission
     with pytest.raises(PermissionError, match="disabled for external portals"):
         await service.submit_session(session_id=session_id, confirmed=True, confirm_text="SUBMIT")
 
