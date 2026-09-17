@@ -210,7 +210,6 @@ class BrowserTaskRepository:
         Guarantees that multiple concurrent workers / local agents cannot claim the same task.
         """
         from sqlalchemy import update
-        now = datetime.now(timezone.utc)
         where_clauses = [
             BrowserTaskModel.task_id == task_id,
             BrowserTaskModel.status == expected_status,
@@ -225,8 +224,8 @@ class BrowserTaskRepository:
                 status=new_status,
                 worker_id=worker_id,
                 attempt_count=BrowserTaskModel.attempt_count + 1,
-                updated_at=now,
             )
+            .execution_options(synchronize_session=False)
         )
         result = self.db.execute(stmt)
         self.db.commit()
@@ -249,7 +248,6 @@ class BrowserTaskRepository:
         now = datetime.now(timezone.utc)
         values_dict = {
             "status": new_status,
-            "updated_at": now,
         }
         if is_failure:
             values_dict["failure_reason"] = reason

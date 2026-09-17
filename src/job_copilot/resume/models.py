@@ -58,6 +58,10 @@ class JobAnalysis(BaseModel):
     education_requirements: List[str] = Field(default_factory=list)
     certification_requirements: List[str] = Field(default_factory=list)
     ats_keywords: List[str] = Field(default_factory=list)
+    dominant_themes: List[str] = Field(
+        default_factory=list,
+        description="Top 2-3 dominant technical themes of the role (e.g. 'Java/Spring backend development')",
+    )
 
 
 class MatchStatus(str, Enum):

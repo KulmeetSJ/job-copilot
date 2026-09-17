@@ -105,6 +105,7 @@ class ResumeService:
         strategy_name: str,
         job_description_text: Optional[str] = None,
         output_dir: Optional[Path] = None,
+        job_id: Optional[str] = None,
     ) -> ResumeGenerationResult:
         """
         Generate a complete tailored resume, render to LaTeX, compile to PDF, and validate.
@@ -127,6 +128,7 @@ class ResumeService:
                     strategy=strategy,
                     analysis=analysis,
                     match_result=match_result,
+                    job_id=job_id,
                 )
             except Exception as e:
                 logger.warning(f"LLM resume tailoring encountered error: {e}. Falling back to deterministic generator.")

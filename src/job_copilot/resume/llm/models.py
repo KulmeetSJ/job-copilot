@@ -67,6 +67,10 @@ class LLMResumeDraft(BaseModel):
         default_factory=list,
         description="Categorized confirmed skills prioritized and reordered for the target job description."
     )
+    dominant_themes: list[str] = Field(
+        default_factory=list,
+        description="Top 2-3 dominant technical themes identified from the target JD."
+    )
     tailoring_rationale: str | None = Field(
         default=None,
         description="Brief explanation of how this resume was tailored to the target JD's key requirements."

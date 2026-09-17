@@ -55,22 +55,23 @@ class ResumeValidator:
         # 2. Content & Truth Safety Invariants
 
         # 2a. Canonical Employment Title & Company
-        canonical_emp = profile.employment[0] if profile.employment else None
         for exp in resume.experience:
-            if canonical_emp:
-                expected_canonical_role = canonical_emp.canonical_role or canonical_emp.role
+            matching_emp = next((e for e in profile.employment if e.company.lower() == exp.company.lower()), None)
+            if matching_emp:
+                expected_canonical_role = matching_emp.canonical_role or matching_emp.role
                 if exp.canonical_role != expected_canonical_role:
                     truth_violations.append(
                         f"Invalid canonical role '{exp.canonical_role}'. Must be strictly '{expected_canonical_role}'."
                     )
-                if exp.company != canonical_emp.company:
+                if matching_emp.start_date and exp.start_date != matching_emp.start_date:
                     truth_violations.append(
-                        f"Invalid company '{exp.company}'. Must match canonical profile '{canonical_emp.company}'."
+                        f"Employment start date '{exp.start_date}' contradicts canonical profile '{matching_emp.start_date}'."
                     )
-                if canonical_emp.start_date and exp.start_date != canonical_emp.start_date:
-                    truth_violations.append(
-                        f"Employment start date '{exp.start_date}' contradicts canonical profile '{canonical_emp.start_date}'."
-                    )
+            elif profile.employment:
+                allowed_companies = ", ".join(f"'{e.company}'" for e in profile.employment)
+                truth_violations.append(
+                    f"Invalid company '{exp.company}'. Must match canonical profile (allowed: {allowed_companies})."
+                )
 
         # 2b. Check that all experience bullets have evidence IDs
         for exp in resume.experience:

@@ -113,6 +113,119 @@ TECH_DICTIONARY: Dict[str, Tuple[str, JobRequirementType]] = {
     "etl": ("ETL Pipelines", JobRequirementType.CONCEPT),
 }
 
+THEME_DEFINITIONS: Dict[str, Set[str]] = {
+    "Java/Spring backend development": {
+        "java", "spring", "spring boot", "springboot", "backend", "jvm", "hibernate", "maven", "gradle",
+    },
+    "GCP/data platform engineering": {
+        "gcp", "google cloud", "bigquery", "dataflow", "cloud composer", "pub/sub", "pubsub",
+        "data platform", "beam", "apache beam", "dataproc", "gcs", "google cloud storage",
+    },
+    "distributed systems/payment processing": {
+        "distributed systems", "payment", "payments", "fintech", "transaction", "transactions",
+        "concurrency", "high-throughput", "low-latency", "messaging", "event-driven",
+    },
+    "infrastructure/DevOps": {
+        "terraform", "kubernetes", "k8s", "docker", "helm", "ci/cd", "jenkins",
+        "devops", "iac", "infrastructure as code", "ansible", "argocd",
+    },
+    "reliability/observability": {
+        "observability", "monitoring", "cloud monitoring", "prometheus", "grafana",
+        "logging", "alerting", "sre", "reliability", "mttr",
+    },
+    "data streaming/ETL pipelines": {
+        "streaming", "stream processing", "etl", "data pipeline", "airflow", "apache airflow",
+        "kafka", "apache kafka", "parquet", "batch processing",
+    },
+    "microservices/API engineering": {
+        "microservices", "rest api", "rest apis", "restful", "grpc", "api design", "fastapi",
+    },
+    "cloud architecture/security": {
+        "cloud architecture", "devsecops", "sonarqube", "checkmarx", "nexus", "iam", "cloud security",
+    },
+    "full-stack/web development": {
+        "react", "next.js", "typescript", "javascript", "tailwind", "frontend", "full stack", "ui",
+    },
+}
+
+
+def derive_dominant_themes(analysis: JobAnalysis) -> List[str]:
+    """
+    Deterministically derive the top 2-3 dominant technical themes from structured JobAnalysis.
+    Weights job title, required skills, preferred skills, technology categories, domain keywords,
+    and responsibilities to score canonical technical themes.
+    """
+    title_lower = (analysis.job_title or "").lower()
+    scores: Dict[str, float] = {theme: 0.0 for theme in THEME_DEFINITIONS}
+
+    for theme, keywords in THEME_DEFINITIONS.items():
+        # 1. Job Title signal (primary indicator)
+        for kw in keywords:
+            if kw in title_lower:
+                scores[theme] += 6.0
+
+        # 2. Required skills (mandatory technical stack)
+        for req in analysis.required_skills:
+            req_name = req.normalized_name.lower()
+            for kw in keywords:
+                if kw == req_name or kw in req_name:
+                    scores[theme] += 3.5
+                    if req.years_required:
+                        scores[theme] += 1.0
+
+        # 3. Preferred skills
+        for pref in analysis.preferred_skills:
+            pref_name = pref.normalized_name.lower()
+            for kw in keywords:
+                if kw == pref_name or kw in pref_name:
+                    scores[theme] += 1.5
+
+        # 4. Categorized technologies
+        all_techs = (
+            analysis.programming_languages
+            + analysis.frameworks
+            + analysis.cloud_technologies
+            + analysis.databases
+            + analysis.infrastructure_technologies
+        )
+        for tech in all_techs:
+            tech_lower = tech.lower()
+            for kw in keywords:
+                if kw == tech_lower or kw in tech_lower:
+                    scores[theme] += 1.0
+
+        # 5. Domain keywords
+        for dom in analysis.domain_keywords:
+            dom_lower = dom.lower()
+            for kw in keywords:
+                if kw in dom_lower:
+                    scores[theme] += 1.5
+
+        # 6. Key responsibilities
+        for resp in analysis.responsibilities:
+            resp_lower = resp.lower()
+            for kw in keywords:
+                if kw in resp_lower:
+                    scores[theme] += 0.5
+
+    # Filter positive scores and rank deterministically (-score, theme_name)
+    positive_themes = [
+        (theme, score) for theme, score in scores.items() if score > 0.0
+    ]
+    positive_themes.sort(key=lambda item: (-item[1], item[0]))
+
+    if positive_themes:
+        # Return top 2 or 3 themes
+        selected = [t for t, _ in positive_themes[:3]]
+        return selected
+
+    # Deterministic heuristic fallback based on title keywords if no exact dictionary match
+    if any(k in title_lower for k in ["data", "etl", "analytics", "beam"]):
+        return ["GCP/data platform engineering", "data streaming/ETL pipelines"]
+    if any(k in title_lower for k in ["devops", "cloud", "infra", "sre", "platform"]):
+        return ["infrastructure/DevOps", "reliability/observability"]
+    return ["Java/Spring backend development", "distributed systems/payment processing"]
+
 
 class JobDescriptionAnalyzer:
     """Extracts structured requirements, technology keywords, and seniority metadata from JDs."""
@@ -154,7 +267,7 @@ class JobDescriptionAnalyzer:
         infra = [s.normalized_name for s in all_skills if s.type == JobRequirementType.TOOL]
         ats = sorted(list({s.normalized_name for s in all_skills}))
 
-        return JobAnalysis(
+        analysis = JobAnalysis(
             job_title=job_title,
             company=company,
             location=location,
@@ -173,6 +286,8 @@ class JobDescriptionAnalyzer:
             certification_requirements=[],
             ats_keywords=ats,
         )
+        analysis.dominant_themes = derive_dominant_themes(analysis)
+        return analysis
 
     def _extract_title(self, lines: List[str], text: str) -> str:
         """Heuristic title extraction."""

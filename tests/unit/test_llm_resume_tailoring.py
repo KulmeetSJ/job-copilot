@@ -3,11 +3,17 @@ Evidence Grounding, and Deterministic Fallback."""
 
 import pytest
 
+from job_copilot.resume.analyzer import JobDescriptionAnalyzer, derive_dominant_themes
 from job_copilot.resume.llm.models import (
     LLMBulletItem,
     LLMProjectItem,
     LLMResumeDraft,
     LLMSkillGroupItem,
+)
+from job_copilot.resume.llm.prompts import (
+    build_grounded_resume_prompt,
+    rank_ats_keywords,
+    rank_responsibilities,
 )
 from job_copilot.resume.llm.provider import (
     LLMResumeProvider,
@@ -18,6 +24,9 @@ from job_copilot.resume.llm.validator import (
     resolve_canonical_project,
 )
 from job_copilot.resume.llm.writer import LLMResumeWriter
+from job_copilot.resume.models import JobAnalysis, JobRequirement, JobRequirementType
+from job_copilot.resume.validator import ResumeValidator
+from job_copilot.schemas.candidate import Achievement, Experience
 from job_copilot.services.resume_service import ResumeService
 
 
@@ -644,4 +653,303 @@ def test_resumeservice_falls_back_when_llm_writer_output_invalid(service, valid_
     assert res.validation.pdf_generated is True
     assert res.validation.page_count == 1
     assert len(res.validation.truth_violations) == 0
+
+
+# ==============================================================================
+# 6. Batch 2 Quality & Dominant Themes Regression Tests
+# ==============================================================================
+
+def test_materially_different_jds_cause_different_dominant_themes():
+    """
+    Verify that materially different JDs derive distinct dominant technical themes:
+    - JD A: Java/Spring backend + distributed systems
+    - JD B: GCP/Dataflow/BigQuery + data streaming
+    """
+    analyzer = JobDescriptionAnalyzer()
+
+    jd_java = """
+    Senior Java Backend Software Engineer
+    Company: FinTech Core
+    We are seeking a Senior Backend Engineer to build high-throughput payment microservices.
+    Requirements:
+    - 4+ years of Java and Spring Boot backend architecture.
+    - Deep knowledge of distributed systems, concurrency, and transaction processing.
+    - REST APIs and microservices design.
+    - Relational databases (PostgreSQL) and caching.
+    """
+    analysis_java = analyzer.analyze(jd_java)
+    assert "Java/Spring backend development" in analysis_java.dominant_themes
+    assert any(t in analysis_java.dominant_themes for t in ["distributed systems/payment processing", "microservices/API engineering"])
+    assert "GCP/data platform engineering" not in analysis_java.dominant_themes
+
+    jd_gcp = """
+    GCP Data Platform Engineer
+    Company: CloudData Corp
+    Looking for a Data Platform Engineer to design scalable cloud streaming pipelines.
+    Requirements:
+    - Expertise with Google Cloud Platform (GCP), BigQuery, and GCP Dataflow.
+    - Real-time pipeline engineering using Apache Beam.
+    - Data orchestration using Apache Airflow or Cloud Composer.
+    - Cloud Pub/Sub and ETL data platform architecture.
+    """
+    analysis_gcp = analyzer.analyze(jd_gcp)
+    assert "GCP/data platform engineering" in analysis_gcp.dominant_themes
+    assert any(t in analysis_gcp.dominant_themes for t in ["data streaming/ETL pipelines", "infrastructure/DevOps"])
+    assert "Java/Spring backend development" not in analysis_gcp.dominant_themes
+
+
+def test_different_jds_generate_different_prompt_emphasis(candidate_profile):
+    """
+    Verify that materially different JDs result in prompts with different dominant theme instructions
+    guiding experience bullet selection, ordering, and skills emphasis.
+    """
+    analyzer = JobDescriptionAnalyzer()
+
+    jd_java = """
+    Backend Java Engineer
+    Requirements:
+    - Java, Spring Boot, Microservices, Distributed Systems.
+    """
+    analysis_java = analyzer.analyze(jd_java)
+    prompt_java = build_grounded_resume_prompt(candidate_profile, analysis_java, "backend_java")
+
+    jd_gcp = """
+    GCP Cloud Data Engineer
+    Requirements:
+    - GCP, BigQuery, Dataflow, Apache Beam, Cloud Composer.
+    """
+    analysis_gcp = analyzer.analyze(jd_gcp)
+    prompt_gcp = build_grounded_resume_prompt(candidate_profile, analysis_gcp, "gcp_cloud")
+
+    assert "Java/Spring backend development" in prompt_java
+    assert "GCP/data platform engineering" not in prompt_java
+
+    assert "GCP/data platform engineering" in prompt_gcp
+    assert "Java/Spring backend development" not in prompt_gcp
+
+    assert prompt_java != prompt_gcp
+
+
+def test_different_jds_guide_different_claude_output_selection(service, candidate_profile, valid_llm_draft):
+    """
+    Verify that different target JDs yield tailored resumes reflecting their respective dominant themes
+    in metadata, summary, bullet ordering, and skill groups.
+    """
+    # Draft tailored for Java Backend
+    draft_java = valid_llm_draft.model_copy(deep=True)
+    draft_java.dominant_themes = ["Java/Spring backend development", "distributed systems/payment processing"]
+    draft_java.summary = "Software Engineer specializing in Java, Spring Boot, and distributed payment systems."
+    draft_java.tailoring_rationale = "Emphasized Java/Spring backend and distributed systems."
+
+    # Draft tailored for GCP Cloud Platform
+    draft_gcp = valid_llm_draft.model_copy(deep=True)
+    draft_gcp.dominant_themes = ["GCP/data platform engineering", "infrastructure/DevOps"]
+    draft_gcp.summary = "Software Engineer specializing in Google Cloud Platform (GCP) infrastructure and Terraform."
+    draft_gcp.tailoring_rationale = "Emphasized GCP platform engineering and IaC automation."
+    # Reorder bullets so GCP Terraform is #1
+    draft_gcp.experience_bullets = [
+        valid_llm_draft.experience_bullets[1],  # Terraform
+        valid_llm_draft.experience_bullets[0],  # Beam/Dataflow
+        valid_llm_draft.experience_bullets[2],  # Jenkins/Airflow
+        valid_llm_draft.experience_bullets[3],  # Cost savings
+    ]
+
+    writer_java = LLMResumeWriter(provider=MockLLMProvider(draft_to_return=draft_java))
+    writer_gcp = LLMResumeWriter(provider=MockLLMProvider(draft_to_return=draft_gcp))
+
+    strat = service.get_strategy("backend_java")
+    tailored_java = writer_java.generate_tailored_resume(candidate_profile, strat)
+    tailored_gcp = writer_gcp.generate_tailored_resume(candidate_profile, strat)
+
+    assert tailored_java is not None
+    assert tailored_gcp is not None
+
+    # Dominant themes in metadata differ
+    assert "Java/Spring backend development" in tailored_java.metadata["dominant_themes"]
+    assert "GCP/data platform engineering" in tailored_gcp.metadata["dominant_themes"]
+
+    # First bullet emphasis differs
+    assert "Java" in tailored_java.experience[0].bullets[0].text or "Beam" in tailored_java.experience[0].bullets[0].text
+    assert "Terraform" in tailored_gcp.experience[0].bullets[0].text or "GCP" in tailored_gcp.experience[0].bullets[0].text
+
+
+def test_importance_ranking_preserves_late_occurring_requirements():
+    """
+    Verify that important technical requirements are not lost merely because they occur
+    later in the input list (e.g. index 8 after generic responsibilities, or late in keywords).
+    """
+    analysis = JobAnalysis(
+        job_title="Senior Backend Engineer",
+        required_skills=[
+            JobRequirement(name="Java", normalized_name="Java", is_required=True),
+            JobRequirement(name="Spring Boot", normalized_name="Spring Boot", is_required=True),
+            JobRequirement(name="Terraform", normalized_name="Terraform", is_required=True),
+        ],
+        ats_keywords=[
+            "Agile", "Scrum", "Jira", "Slack", "Git", "Clean Code", "Collaboration",
+            "Communication", "Documentation", "Problem Solving", "Unit Testing",
+            "Code Reviews", "Pair Programming", "Standups", "Design Patterns",
+            "CI/CD", "Docker", "Spring Boot", "Terraform", "Java",
+        ],
+        responsibilities=[
+            "Attend daily standup meetings and participate in sprint ceremonies.",
+            "Coordinate with product managers and stakeholders on requirement specifications.",
+            "Document system design decisions and maintain internal engineering wikis.",
+            "Review pull requests and provide constructive feedback to teammates.",
+            "Support team onboarding and mentor junior engineers.",
+            "Participate in weekly team syncs and retrospectives.",
+            "Assist in triage of customer-reported tickets.",
+            # Critical technical responsibility placed at position 8
+            "Architect high-throughput distributed Java and Spring Boot microservices processing real-time payment transactions with 99.9% uptime SLA.",
+        ],
+    )
+
+    # 1. Verify importance-ranked responsibilities
+    ranked_resps = rank_responsibilities(analysis, limit=5)
+    assert len(ranked_resps) == 5
+    # The technical responsibility from position 8 must be prioritized in the top 5
+    assert any("Architect high-throughput" in r for r in ranked_resps)
+    # The top-ranked responsibility must be the high-impact technical one, not the standup meeting
+    assert "Architect high-throughput" in ranked_resps[0]
+
+    # 2. Verify importance-ranked keywords
+    ranked_keywords = rank_ats_keywords(analysis, limit=15)
+    assert len(ranked_keywords) <= 15
+    # Required skills located at indices 17, 18, 19 must NOT be dropped
+    assert "Java" in ranked_keywords
+    assert "Spring Boot" in ranked_keywords
+    assert "Terraform" in ranked_keywords
+
+
+def test_multi_employment_support_with_multiple_employers(valid_llm_draft, candidate_profile):
+    """
+    Verify that when candidate profile contains multiple employment entries,
+    the resume builder partitions experience bullets to their matching employers
+    based on evidence IDs rather than blindly assuming index 0.
+    """
+    # Create multi-employer profile
+    multi_profile = candidate_profile.model_copy(deep=True)
+    second_emp = Experience(
+        company="Fintech Innovations Labs",
+        role="Junior Software Engineer",
+        canonical_role="Software Engineer",
+        location="Bengaluru, India",
+        start_date="2023-01",
+        end_date="2024-06",
+        current=False,
+        evidence_ids=["EXP-FIN-001"],
+        achievements=[
+            Achievement(
+                description="Built automated data verification scripts in Python.",
+                claim_type="PROFESSIONAL",
+                metrics=["100+ automated tests"],
+                technologies=["Python", "SQL"],
+                evidence_ids=["EXP-FIN-DATA-001"],
+            )
+        ],
+    )
+    multi_profile.employment.append(second_emp)
+
+    # Create draft containing bullets for both employers
+    draft = valid_llm_draft.model_copy(deep=True)
+    draft.experience_bullets.append(
+        LLMBulletItem(
+            text="Built automated data verification scripts in Python maintaining **100+ automated tests**.",
+            evidence_ids=["EXP-FIN-DATA-001"],
+            technologies=["Python", "SQL"],
+        )
+    )
+
+    writer = LLMResumeWriter(provider=MockLLMProvider())
+    from job_copilot.resume.strategy import ResumeStrategyConfig
+    strat = ResumeStrategyConfig(
+        name="backend_java",
+        display_title="Software Engineer",
+        summary_template="Test summary",
+        max_bullets_per_experience=5,
+        max_projects=2,
+    )
+    tailored = writer._build_tailored_resume(draft, multi_profile, strat)
+
+    # Must contain 2 distinct experience entries corresponding to the 2 employers
+    assert len(tailored.experience) == 2
+    hsbc_exp = next((e for e in tailored.experience if e.company == "HSBC"), None)
+    fin_exp = next((e for e in tailored.experience if e.company == "Fintech Innovations Labs"), None)
+
+    assert hsbc_exp is not None
+    assert fin_exp is not None
+    # Bullets were partitioned to the correct employer
+    assert all("EXP-HSBC" in b.evidence_ids[0] for b in hsbc_exp.bullets)
+    assert any("EXP-FIN-DATA-001" in b.evidence_ids for b in fin_exp.bullets)
+
+    # Multi-employment validation passes cleanly
+    validator = ResumeValidator()
+    val_res = validator.validate(tailored, multi_profile)
+    assert len(val_res.truth_violations) == 0
+
+
+def test_validation_failure_observability_telemetry(candidate_profile, valid_llm_draft):
+    """
+    Verify that when an LLM draft fails validation, structured diagnostic telemetry is logged
+    with stage (retry/fallback), job_id, failure category, and provider/model metadata,
+    without logging candidate secrets, API keys, or full personal data.
+    """
+    bad_draft = valid_llm_draft.model_copy(deep=True)
+    # Inject fabricated metric and unconfirmed skill
+    bad_draft.experience_bullets[0].text = "Ingesting **999M+ daily transactions**."
+    bad_draft.skill_groups[0].skills.append("Kubeflow")
+
+    failing_provider = MockLLMProvider(draft_to_return=bad_draft)
+    writer = LLMResumeWriter(provider=failing_provider)
+    from job_copilot.resume.strategy import ResumeStrategyConfig
+    strat = ResumeStrategyConfig(
+        name="backend_java",
+        display_title="Software Engineer",
+        summary_template="Test summary",
+    )
+
+    import logging
+    from job_copilot.resume.llm.writer import logger as writer_logger
+
+    writer_logger.disabled = False
+    captured_records: list[logging.LogRecord] = []
+
+    class RecordCaptureHandler(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            captured_records.append(record)
+
+    test_handler = RecordCaptureHandler()
+    writer_logger.addHandler(test_handler)
+    try:
+        res = writer.generate_tailored_resume(
+            candidate_profile,
+            strat,
+            job_id="job-observability-test-999",
+        )
+    finally:
+        writer_logger.removeHandler(test_handler)
+
+    # Must fall back cleanly
+    assert res is None
+
+    # Diagnostic logs were emitted for retry and fallback stages
+    diag_logs = [record.getMessage() for record in captured_records if "[RESUME_VALIDATION_DIAGNOSTIC]" in record.getMessage()]
+    assert len(diag_logs) >= 2
+
+    retry_log = next(log for log in diag_logs if "stage=retry" in log)
+    fallback_log = next(log for log in diag_logs if "stage=fallback" in log)
+
+    assert "job_id=job-observability-test-999" in retry_log
+    assert "provider=MockLLMProvider" in retry_log
+    assert "METRIC_GROUNDING_VIOLATION" in retry_log or "UNCONFIRMED_TECHNOLOGY" in retry_log
+
+    assert "job_id=job-observability-test-999" in fallback_log
+    assert "stage=fallback" in fallback_log
+
+    # Verify no sensitive personal secrets/profile leaks in log records
+    for record in captured_records:
+        msg = record.getMessage()
+        assert "7906490585" not in msg
+        assert "singhkulmeet3@gmail.com" not in msg
+
 

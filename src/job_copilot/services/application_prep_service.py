@@ -241,6 +241,7 @@ class ApplicationPrepService:
         resume_res = self.resume_service.generate_tailored_resume(
             strategy_name=strategy,
             job_description_text=assessment.job.description,
+            job_id=job_id,
         )
 
         # 3. Generate Tailored & Validated Cover Letter

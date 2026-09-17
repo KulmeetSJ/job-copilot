@@ -1,10 +1,126 @@
 from pathlib import Path
-from typing import Any
+from typing import Any, List
 
 import yaml
 
+from job_copilot.resume.analyzer import derive_dominant_themes
 from job_copilot.resume.models import JobAnalysis
 from job_copilot.schemas.candidate import CandidateProfile
+
+
+def rank_ats_keywords(analysis: JobAnalysis, limit: int = 15) -> list[str]:
+    """
+    Deterministically rank ATS keywords based on requirement criticality,
+    job title relevance, and technology categories rather than naive position/alphabetical slicing.
+    """
+    if not analysis.ats_keywords:
+        return []
+
+    title_lower = (analysis.job_title or "").lower()
+    req_names = {s.normalized_name.lower() for s in analysis.required_skills}
+    pref_names = {s.normalized_name.lower() for s in analysis.preferred_skills}
+    core_techs = {
+        t.lower()
+        for t in (
+            analysis.programming_languages
+            + analysis.frameworks
+            + analysis.cloud_technologies
+            + analysis.databases
+            + analysis.infrastructure_technologies
+        )
+    }
+
+    resp_text = " ".join(analysis.responsibilities).lower()
+
+    def keyword_score(kw: str) -> tuple[float, str]:
+        kw_lower = kw.lower()
+        score = 0.0
+
+        # Title match is highest priority
+        if kw_lower in title_lower:
+            score += 10.0
+
+        # Required skill
+        if kw_lower in req_names:
+            score += 6.0
+
+        # Preferred skill
+        elif kw_lower in pref_names:
+            score += 3.0
+
+        # Core technology category
+        if kw_lower in core_techs:
+            score += 2.0
+
+        # Mentions in responsibilities
+        if kw_lower in resp_text:
+            score += 1.5
+
+        # Lexicographical tie-breaker for strict determinism
+        return (-score, kw_lower)
+
+    ranked = sorted(set(analysis.ats_keywords), key=keyword_score)
+    return ranked[:limit]
+
+
+def rank_responsibilities(analysis: JobAnalysis, limit: int = 5) -> list[str]:
+    """
+    Deterministically rank JD responsibilities prioritizing technical depth,
+    alignment with required skills, action impact, and scale signals.
+    Prevents critical technical requirements from being dropped merely because they appear late.
+    """
+    if not analysis.responsibilities:
+        return []
+
+    required_lower = [s.normalized_name.lower() for s in analysis.required_skills]
+    core_tech_lower = [
+        t.lower()
+        for t in (
+            analysis.programming_languages
+            + analysis.frameworks
+            + analysis.cloud_technologies
+            + analysis.databases
+            + analysis.infrastructure_technologies
+        )
+    ]
+    technical_action_verbs = {
+        "architect", "design", "build", "develop", "implement", "engineer",
+        "scale", "optimize", "automate", "deploy", "pipeline", "infrastructure",
+        "provision", "maintain", "manage", "lead", "spearhead",
+    }
+    scale_signals = {"%", "throughput", "latency", "scale", "uptime", "sla", "real-time", "distributed", "high-throughput"}
+
+    def resp_score(indexed_resp: tuple[int, str]) -> tuple[float, int]:
+        idx, text = indexed_resp
+        text_lower = text.lower()
+        score = 0.0
+
+        # 1. Matches required skills
+        for req in required_lower:
+            if req in text_lower:
+                score += 3.0
+
+        # 2. Matches core tech
+        for tech in core_tech_lower:
+            if tech in text_lower:
+                score += 1.5
+
+        # 3. Technical action verbs
+        for verb in technical_action_verbs:
+            if verb in text_lower:
+                score += 1.0
+
+        # 4. Scale / performance / SLA signals
+        for sig in scale_signals:
+            if sig in text_lower:
+                score += 1.5
+
+        # Stable tie-breaker: original list position
+        return (-score, idx)
+
+    indexed = list(enumerate(analysis.responsibilities))
+    ranked_indexed = sorted(indexed, key=resp_score)
+    return [text for _, text in ranked_indexed[:limit]]
 
 
 def build_resume_system_prompt(
@@ -45,11 +161,11 @@ def build_resume_system_prompt(
 
     if profile:
         if profile.employment:
-            emp = profile.employment[0]
-            company = emp.company or "Candidate Employer"
-            role = emp.role or emp.canonical_role or "Software Engineer"
-            location = emp.location or ""
-            dates = f"{emp.start_date or ''} – {emp.end_date or 'Present'}"
+            current_emp = next((e for e in profile.employment if e.current), profile.employment[0])
+            company = current_emp.company or "Candidate Employer"
+            role = current_emp.role or current_emp.canonical_role or "Software Engineer"
+            location = current_emp.location or ""
+            dates = f"{current_emp.start_date or ''} – {current_emp.end_date or 'Present'}"
 
         techs = []
         for cat in profile.skills:
@@ -121,6 +237,7 @@ STRICT TRUTH SAFETY & EVIDENCE INVARIANTS (NON-NEGOTIABLE):
 OUTPUT FORMAT:
 You must output strictly valid JSON matching the LLMResumeDraft schema with keys:
 - 'summary': string (3-4 sentences)
+- 'dominant_themes': list of string (top 2-3 dominant JD themes identified)
 - 'experience_bullets': list of {{ 'text': string, 'evidence_ids': list of string, 'technologies': list of string }}
 - 'projects': list of {{ 'name': string, 'evidence_ids': list of string, 'bullets': list of {{ 'text': string, 'evidence_ids': list of string, 'technologies': list of string }}, 'technologies': list of string }}
 - 'skill_groups': list of {{ 'category': string, 'skills': list of string }}
@@ -136,11 +253,17 @@ def build_grounded_resume_prompt(
     analysis: JobAnalysis | None = None,
     strategy_name: str = "backend_java",
 ) -> str:
-    """Build grounded context prompt containing verified candidate evidence and target JD."""
+    """Build grounded context prompt containing verified candidate evidence, target JD dominant themes, and ranked requirements."""
     
-    # 1. Target Job Context
+    # 1. Target Job Context & Dominant Themes
     jd_section = "### TARGET JOB DESCRIPTION:\n"
+    dominant_themes: list[str] = []
     if analysis:
+        dominant_themes = (
+            analysis.dominant_themes
+            if getattr(analysis, "dominant_themes", None)
+            else derive_dominant_themes(analysis)
+        )
         jd_section += f"- Job Title: {analysis.job_title or 'Software Engineer'}\n"
         jd_section += f"- Company: {analysis.company or 'Target Company'}\n"
         if analysis.seniority_level:
@@ -154,40 +277,61 @@ def build_grounded_resume_prompt(
             jd_section += f"- Required Skills: {', '.join(req_skills)}\n"
         if pref_skills:
             jd_section += f"- Preferred Skills: {', '.join(pref_skills)}\n"
-        if analysis.ats_keywords:
-            jd_section += f"- Priority Keywords: {', '.join(analysis.ats_keywords[:15])}\n"
-        if analysis.responsibilities:
-            jd_section += "- Key Responsibilities Highlight:\n"
-            for resp in analysis.responsibilities[:5]:
+
+        # Importance-ranked keywords and responsibilities
+        ranked_keywords = rank_ats_keywords(analysis, limit=15)
+        if ranked_keywords:
+            jd_section += f"- Priority Keywords (Importance Ranked): {', '.join(ranked_keywords)}\n"
+
+        ranked_resps = rank_responsibilities(analysis, limit=5)
+        if ranked_resps:
+            jd_section += "- Key Responsibilities Highlight (Importance Ranked):\n"
+            for resp in ranked_resps:
                 jd_section += f"  * {resp}\n"
     else:
         jd_section += f"- General Strategy: {strategy_name}\n"
 
-    # 2. Candidate Verified Experience Catalog
-    canonical_emp = profile.employment[0] if profile.employment else None
-    emp_company = canonical_emp.company if canonical_emp else "Candidate Employer"
-    emp_role = (canonical_emp.role or canonical_emp.canonical_role) if canonical_emp else "Software Engineer"
-    emp_loc = canonical_emp.location if canonical_emp else ""
-    emp_dates = f"{canonical_emp.start_date or ''} – {canonical_emp.end_date or 'Present'}" if canonical_emp else ""
-    emp_team = canonical_emp.team or ""
+    # Dominant themes section
+    themes_section = ""
+    if dominant_themes:
+        themes_list_str = "\n".join(f"{i+1}. {t}" for i, t in enumerate(dominant_themes))
+        themes_section = f"""
+### TARGET JOB DOMINANT THEMES:
+The target role centers around the following dominant technical themes (derived directly from the Job Description):
+{themes_list_str}
 
-    exp_section = f"\n### CANDIDATE VERIFIED EMPLOYMENT ({emp_company}):\n"
-    exp_section += f"Company: {emp_company} | Official Role: {emp_role} | Location: {emp_loc} | Dates: {emp_dates}\n"
-    if emp_team:
-        exp_section += f"Team: {emp_team}\n"
-    exp_section += "Available Verified Achievements (Select 4 to 5 that best align with target JD):\n"
+DOMINANT THEME TAILORING MANDATE:
+You must explicitly use these dominant themes to steer:
+1. Experience bullet selection & ordering: Choose achievements that directly substantiate these top themes and order them with the primary theme first.
+2. Skills emphasis: Feature technologies relevant to these dominant themes prominently in the top skill groups.
+3. Summary positioning: Anchor candidate summary around these core technical themes without adding unconfirmed candidate claims.
+"""
 
-    for emp in profile.employment:
-        for ach in emp.achievements:
-            ev_id = ach.evidence_ids[0] if ach.evidence_ids else "EXP-HSBC-GENERAL"
-            metrics_str = f" [Verified Metrics: {', '.join(ach.metrics)}]" if ach.metrics else ""
-            techs_str = f" [Tech: {', '.join(ach.technologies)}]" if ach.technologies else ""
-            impact_str = f" [Impact: {ach.impact}]" if ach.impact else ""
-            exp_section += f"- Evidence ID: {ev_id}\n"
-            exp_section += f"  Fact: {ach.description}{metrics_str}{techs_str}{impact_str}\n"
+    # 2. Candidate Verified Experience Catalog (Multi-employment safe)
+    exp_section = "\n### CANDIDATE VERIFIED EMPLOYMENT:\n"
+    if profile and profile.employment:
+        for emp_idx, emp in enumerate(profile.employment, start=1):
+            emp_comp = emp.company or "Candidate Employer"
+            emp_role = emp.role or emp.canonical_role or "Software Engineer"
+            emp_loc = emp.location or ""
+            emp_dates = f"{emp.start_date or ''} – {emp.end_date or 'Present'}"
+            emp_team = emp.team or ""
+            exp_section += f"\nEmployer #{emp_idx}: {emp_comp} | Official Role: {emp_role} | Location: {emp_loc} | Dates: {emp_dates}\n"
+            if emp_team:
+                exp_section += f"Team: {emp_team}\n"
+            exp_section += f"Available Verified Achievements for {emp_comp} (Select 4 to 5 that best align with dominant JD themes):\n"
+            for ach in emp.achievements:
+                ev_id = ach.evidence_ids[0] if ach.evidence_ids else "EXP-GENERAL"
+                metrics_str = f" [Verified Metrics: {', '.join(ach.metrics)}]" if ach.metrics else ""
+                techs_str = f" [Tech: {', '.join(ach.technologies)}]" if ach.technologies else ""
+                impact_str = f" [Impact: {ach.impact}]" if ach.impact else ""
+                exp_section += f"- Evidence ID: {ev_id}\n"
+                exp_section += f"  Fact: {ach.description}{metrics_str}{techs_str}{impact_str}\n"
+    else:
+        exp_section += "No verified employment records found.\n"
 
     # 3. Candidate Verified Projects Catalog
-    proj_section = "\n### CANDIDATE VERIFIED PROJECTS (Select 2 to 3 most relevant):\n"
+    proj_section = "\n### CANDIDATE VERIFIED PROJECTS (Select 2 to 3 most relevant to dominant themes):\n"
     for prj in profile.projects:
         p_ev_id = prj.evidence_ids[0] if prj.evidence_ids else "PRJ-GENERAL"
         proj_section += f"- Project Name: {prj.name}\n"
@@ -210,23 +354,25 @@ def build_grounded_resume_prompt(
             skills_section += f"- {cat.category}: {', '.join(confirmed)}\n"
 
     # 5. Instructions
+    theme_directive = f": {', '.join(dominant_themes)}" if dominant_themes else ""
     instructions = f"""
 ### SPECIFIC INSTRUCTIONS FOR THIS APPLICATION:
 1. Target Strategy: '{strategy_name}'.
-2. Review the target JD requirements and identify the key technical priorities (e.g. backend Java/Spring Boot vs GCP cloud automation vs data streaming).
-3. Tailor the Professional Summary: Write a compelling 3-sentence summary highlighting candidate's enterprise experience at HSBC in payment platforms and distributed systems matching the target role.
-4. Select 4 to 5 HSBC Experience Bullets:
-   - Pick the achievements most relevant to the target JD.
+2. Dominant JD Themes: Tailor the resume to prominently address the identified dominant themes{theme_directive}.
+3. Tailor the Professional Summary: Write a compelling 3-sentence summary positioning the candidate around the dominant themes and verified enterprise experience.
+4. Select 4 to 5 Experience Bullets:
+   - Prioritize achievements matching the primary dominant JD themes.
+   - Order the most theme-relevant achievements first.
    - Rewrite each bullet into an active, punchy statement demonstrating technical excellence and measurable impact.
    - Use markdown **bold** around critical technologies and verified metrics.
    - Retain the exact `evidence_ids` for each bullet.
 5. Select 2 Projects:
-   - Choose the projects that best complement the target role requirements.
+   - Choose the projects that best complement the target role's dominant themes.
    - Provide 1 to 2 tailored bullets for each project with exact `evidence_ids`.
 6. Prioritize Skill Groups:
    - Group candidate confirmed skills into 3 to 4 logical categories (e.g. 'Languages & Frameworks', 'Cloud & Infrastructure', 'Databases & Distributed Systems', 'DevOps & Tooling').
-   - Place the skills that match the JD first in each list.
+   - Place the skills that match the target JD themes first in each list.
 7. Return strictly valid JSON conforming to the requested schema.
 """
 
-    return f"{jd_section}\n{exp_section}\n{proj_section}\n{skills_section}\n{instructions}"
+    return f"{jd_section}{themes_section}{exp_section}\n{proj_section}\n{skills_section}\n{instructions}"
