@@ -154,11 +154,37 @@ def derive_dominant_themes(analysis: JobAnalysis) -> List[str]:
     Deterministically derive the top 2-3 dominant technical themes from structured JobAnalysis.
     Weights job title, required skills, preferred skills, technology categories, domain keywords,
     and responsibilities to score canonical technical themes.
+
+    If no meaningful matching theme is found, returns an empty list rather than assigning an
+    unrelated technical theme.
     """
     title_lower = (analysis.job_title or "").lower()
     scores: Dict[str, float] = {theme: 0.0 for theme in THEME_DEFINITIONS}
 
+    # Collect combined JD evidence text to verify genuine text support
+    all_techs = (
+        analysis.programming_languages
+        + analysis.frameworks
+        + analysis.cloud_technologies
+        + analysis.databases
+        + analysis.infrastructure_technologies
+    )
+    jd_evidence_text = " ".join(
+        [analysis.job_title or ""]
+        + [req.name + " " + req.normalized_name for req in analysis.required_skills + analysis.preferred_skills]
+        + all_techs
+        + analysis.domain_keywords
+        + analysis.responsibilities
+        + analysis.ats_keywords
+    ).lower()
+
     for theme, keywords in THEME_DEFINITIONS.items():
+        # "Java/Spring backend development" requires genuine Java/Spring presence
+        if theme == "Java/Spring backend development":
+            java_spring_signals = {"java", "spring", "spring boot", "springboot", "jvm", "hibernate", "maven", "gradle"}
+            if not any(sig in jd_evidence_text for sig in java_spring_signals):
+                continue
+
         # 1. Job Title signal (primary indicator)
         for kw in keywords:
             if kw in title_lower:
@@ -181,13 +207,6 @@ def derive_dominant_themes(analysis: JobAnalysis) -> List[str]:
                     scores[theme] += 1.5
 
         # 4. Categorized technologies
-        all_techs = (
-            analysis.programming_languages
-            + analysis.frameworks
-            + analysis.cloud_technologies
-            + analysis.databases
-            + analysis.infrastructure_technologies
-        )
         for tech in all_techs:
             tech_lower = tech.lower()
             for kw in keywords:
@@ -208,23 +227,28 @@ def derive_dominant_themes(analysis: JobAnalysis) -> List[str]:
                 if kw in resp_lower:
                     scores[theme] += 0.5
 
-    # Filter positive scores and rank deterministically (-score, theme_name)
-    positive_themes = [
-        (theme, score) for theme, score in scores.items() if score > 0.0
+    # Filter meaningful positive scores (score >= 2.5 ensures at least one required skill,
+    # title keyword, or multiple confirmed technical signals)
+    meaningful_themes = [
+        (theme, score) for theme, score in scores.items() if score >= 2.5
     ]
-    positive_themes.sort(key=lambda item: (-item[1], item[0]))
+    meaningful_themes.sort(key=lambda item: (-item[1], item[0]))
 
-    if positive_themes:
+    if meaningful_themes:
         # Return top 2 or 3 themes
-        selected = [t for t, _ in positive_themes[:3]]
+        selected = [t for t, _ in meaningful_themes[:3]]
         return selected
 
-    # Deterministic heuristic fallback based on title keywords if no exact dictionary match
+    # Useful title heuristics ONLY if genuinely supported by the JD text
     if any(k in title_lower for k in ["data", "etl", "analytics", "beam"]):
-        return ["GCP/data platform engineering", "data streaming/ETL pipelines"]
+        if any(k in jd_evidence_text for k in ["data platform", "gcp", "bigquery", "dataflow", "beam", "streaming", "etl", "pipeline", "warehouse", "airflow", "pub/sub", "spark"]):
+            return ["GCP/data platform engineering", "data streaming/ETL pipelines"]
     if any(k in title_lower for k in ["devops", "cloud", "infra", "sre", "platform"]):
-        return ["infrastructure/DevOps", "reliability/observability"]
-    return ["Java/Spring backend development", "distributed systems/payment processing"]
+        if any(k in jd_evidence_text for k in ["terraform", "kubernetes", "k8s", "docker", "ci/cd", "jenkins", "ansible", "cloud", "aws", "gcp", "sre", "observability", "infrastructure"]):
+            return ["infrastructure/DevOps", "reliability/observability"]
+
+    # When no meaningful matching theme is found, return empty list rather than assigning an unrelated theme
+    return []
 
 
 class JobDescriptionAnalyzer:

@@ -953,3 +953,74 @@ def test_validation_failure_observability_telemetry(candidate_profile, valid_llm
         assert "singhkulmeet3@gmail.com" not in msg
 
 
+def test_unrelated_jd_dominant_themes_fallback_safe(service, candidate_profile, valid_llm_draft):
+    """
+    Verify that an unrelated JD (e.g. Python / Computer Vision / ML) where the deterministic
+    scorer finds no matching theme in the catalog:
+    1. Returns an empty dominant_themes list [] (no unrelated Java/backend or distributed-systems theme is injected).
+    2. Builds a grounded prompt focusing on ranked requirements and instructing Claude not to invent a dominant theme.
+    3. Successfully generates a tailored resume using normal ranked requirements and verified candidate truth.
+    4. Intact deterministic fallback behavior.
+    """
+    analyzer = JobDescriptionAnalyzer()
+
+    jd_ml = """
+    Computer Vision / Machine Learning Engineer
+    Company: VisionTech AI
+    Location: Remote
+    We are seeking a Machine Learning Engineer to design state-of-the-art vision models.
+    Requirements:
+    - 4+ years of Python development with PyTorch, OpenCV, and NumPy.
+    - Experience training convolutional neural networks (CNNs) and vision transformers (ViT).
+    - Model optimization using TensorRT and ONNX.
+    - Deep knowledge of GPU cluster training and CUDA kernels.
+    Nice to have:
+    - Experience with HuggingFace, PyTorch Lightning, and MLflow.
+    - Background in linear algebra, optimization, and statistical modeling.
+    Responsibilities:
+    - Design, train, and benchmark deep neural network architectures for visual perception.
+    - Optimize inference latency and memory footprint using quantization and pruning.
+    - Build automated data curation and active learning annotation pipelines.
+    - Collaborate with product engineers to deploy optimized models to edge devices.
+    """
+
+    # 1. Verify JobAnalysis derives an empty dominant_themes list
+    analysis = analyzer.analyze(jd_ml)
+    assert analysis.dominant_themes == []
+    assert "Java/Spring backend development" not in analysis.dominant_themes
+    assert "distributed systems/payment processing" not in analysis.dominant_themes
+    assert "GCP/data platform engineering" not in analysis.dominant_themes
+
+    # 2. Verify Grounded Prompt focuses on ranked requirements without inventing themes
+    prompt = build_grounded_resume_prompt(candidate_profile, analysis, "backend_java")
+    assert "Java/Spring backend development" not in prompt
+    assert "distributed systems/payment processing" not in prompt
+    assert "### TARGET JOB DOMINANT THEMES:" not in prompt
+    assert "### TARGET JOB REQUIREMENTS FOCUS:" in prompt
+    assert "Do NOT invent, fabricate, or assume an ungrounded dominant technical theme" in prompt
+    assert "Python" in prompt
+
+    # 3. Verify Resume Generation with MockLLMProvider works using normal ranked requirements
+    draft_ml = valid_llm_draft.model_copy(deep=True)
+    draft_ml.dominant_themes = []
+    draft_ml.tailoring_rationale = "Tailored strictly against ranked JD requirements with zero fabricated dominant themes."
+
+    provider = MockLLMProvider(draft_to_return=draft_ml)
+    writer = LLMResumeWriter(provider=provider)
+    strat = service.get_strategy("backend_java")
+
+    tailored = writer.generate_tailored_resume(candidate_profile, strat, analysis=analysis)
+    assert tailored is not None
+    assert tailored.metadata.get("dominant_themes") == []
+    assert "Java/Spring backend development" not in tailored.metadata.get("dominant_themes", [])
+    assert "distributed systems/payment processing" not in tailored.metadata.get("dominant_themes", [])
+
+    # 4. Verify ResumeService end-to-end integration and deterministic fallback generate valid 1-page resume
+    res = service.generate_tailored_resume("backend_java", job_description_text=jd_ml)
+    assert res.validation.is_valid is True
+    assert res.validation.pdf_generated is True
+    assert res.validation.page_count == 1
+    assert len(res.validation.truth_violations) == 0
+
+
+

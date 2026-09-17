@@ -237,7 +237,7 @@ STRICT TRUTH SAFETY & EVIDENCE INVARIANTS (NON-NEGOTIABLE):
 OUTPUT FORMAT:
 You must output strictly valid JSON matching the LLMResumeDraft schema with keys:
 - 'summary': string (3-4 sentences)
-- 'dominant_themes': list of string (top 2-3 dominant JD themes identified)
+- 'dominant_themes': list of string (top 2-3 dominant JD themes identified in prompt, or empty list [] if none identified; do NOT invent ungrounded themes)
 - 'experience_bullets': list of {{ 'text': string, 'evidence_ids': list of string, 'technologies': list of string }}
 - 'projects': list of {{ 'name': string, 'evidence_ids': list of string, 'bullets': list of {{ 'text': string, 'evidence_ids': list of string, 'technologies': list of string }}, 'technologies': list of string }}
 - 'skill_groups': list of {{ 'category': string, 'skills': list of string }}
@@ -292,7 +292,6 @@ def build_grounded_resume_prompt(
         jd_section += f"- General Strategy: {strategy_name}\n"
 
     # Dominant themes section
-    themes_section = ""
     if dominant_themes:
         themes_list_str = "\n".join(f"{i+1}. {t}" for i, t in enumerate(dominant_themes))
         themes_section = f"""
@@ -305,6 +304,14 @@ You must explicitly use these dominant themes to steer:
 1. Experience bullet selection & ordering: Choose achievements that directly substantiate these top themes and order them with the primary theme first.
 2. Skills emphasis: Feature technologies relevant to these dominant themes prominently in the top skill groups.
 3. Summary positioning: Anchor candidate summary around these core technical themes without adding unconfirmed candidate claims.
+"""
+    else:
+        themes_section = """
+### TARGET JOB REQUIREMENTS FOCUS:
+No single dominant theme from the theme catalog was identified for this role.
+You must tailor the resume strictly using the ranked requirements, priority keywords, and key responsibilities provided in the Target Job Description above.
+Do NOT invent, fabricate, or assume an ungrounded dominant technical theme.
+Tailor the experience bullet selection, skills emphasis, and summary strictly based on the candidate's verified evidence matching the ranked requirements above.
 """
 
     # 2. Candidate Verified Experience Catalog (Multi-employment safe)
@@ -319,7 +326,7 @@ You must explicitly use these dominant themes to steer:
             exp_section += f"\nEmployer #{emp_idx}: {emp_comp} | Official Role: {emp_role} | Location: {emp_loc} | Dates: {emp_dates}\n"
             if emp_team:
                 exp_section += f"Team: {emp_team}\n"
-            exp_section += f"Available Verified Achievements for {emp_comp} (Select 4 to 5 that best align with dominant JD themes):\n"
+            exp_section += f"Available Verified Achievements for {emp_comp} (Select 4 to 5 that best align with JD requirements):\n"
             for ach in emp.achievements:
                 ev_id = ach.evidence_ids[0] if ach.evidence_ids else "EXP-GENERAL"
                 metrics_str = f" [Verified Metrics: {', '.join(ach.metrics)}]" if ach.metrics else ""
@@ -331,7 +338,7 @@ You must explicitly use these dominant themes to steer:
         exp_section += "No verified employment records found.\n"
 
     # 3. Candidate Verified Projects Catalog
-    proj_section = "\n### CANDIDATE VERIFIED PROJECTS (Select 2 to 3 most relevant to dominant themes):\n"
+    proj_section = "\n### CANDIDATE VERIFIED PROJECTS (Select 2 to 3 most relevant to JD requirements):\n"
     for prj in profile.projects:
         p_ev_id = prj.evidence_ids[0] if prj.evidence_ids else "PRJ-GENERAL"
         proj_section += f"- Project Name: {prj.name}\n"
@@ -354,24 +361,46 @@ You must explicitly use these dominant themes to steer:
             skills_section += f"- {cat.category}: {', '.join(confirmed)}\n"
 
     # 5. Instructions
-    theme_directive = f": {', '.join(dominant_themes)}" if dominant_themes else ""
-    instructions = f"""
-### SPECIFIC INSTRUCTIONS FOR THIS APPLICATION:
-1. Target Strategy: '{strategy_name}'.
-2. Dominant JD Themes: Tailor the resume to prominently address the identified dominant themes{theme_directive}.
-3. Tailor the Professional Summary: Write a compelling 3-sentence summary positioning the candidate around the dominant themes and verified enterprise experience.
-4. Select 4 to 5 Experience Bullets:
+    if dominant_themes:
+        theme_directive = f": {', '.join(dominant_themes)}"
+        themes_instruction = f"2. Dominant JD Themes: Tailor the resume to prominently address the identified dominant themes{theme_directive}."
+        summary_instruction = "3. Tailor the Professional Summary: Write a compelling 3-sentence summary positioning the candidate around the dominant themes and verified enterprise experience."
+        bullets_instruction = """4. Select 4 to 5 Experience Bullets:
    - Prioritize achievements matching the primary dominant JD themes.
    - Order the most theme-relevant achievements first.
    - Rewrite each bullet into an active, punchy statement demonstrating technical excellence and measurable impact.
    - Use markdown **bold** around critical technologies and verified metrics.
-   - Retain the exact `evidence_ids` for each bullet.
-5. Select 2 Projects:
+   - Retain the exact `evidence_ids` for each bullet."""
+        proj_instruction = """5. Select 2 Projects:
    - Choose the projects that best complement the target role's dominant themes.
-   - Provide 1 to 2 tailored bullets for each project with exact `evidence_ids`.
-6. Prioritize Skill Groups:
+   - Provide 1 to 2 tailored bullets for each project with exact `evidence_ids`."""
+        skills_instruction = """6. Prioritize Skill Groups:
    - Group candidate confirmed skills into 3 to 4 logical categories (e.g. 'Languages & Frameworks', 'Cloud & Infrastructure', 'Databases & Distributed Systems', 'DevOps & Tooling').
-   - Place the skills that match the target JD themes first in each list.
+   - Place the skills that match the target JD themes first in each list."""
+    else:
+        themes_instruction = "2. Focus on Ranked JD Requirements: No dominant theme was identified. Tailor the resume strictly using the ranked requirements, priority keywords, and key responsibilities provided above. Do NOT invent a dominant theme."
+        summary_instruction = "3. Tailor the Professional Summary: Write a compelling 3-sentence summary positioning the candidate's verified enterprise experience against the target role's ranked requirements and responsibilities. Do NOT invent an ungrounded dominant theme."
+        bullets_instruction = """4. Select 4 to 5 Experience Bullets:
+   - Prioritize achievements directly matching the target role's required skills and key responsibilities.
+   - Order the most requirement-relevant achievements first.
+   - Rewrite each bullet into an active, punchy statement demonstrating technical excellence and measurable impact.
+   - Use markdown **bold** around critical technologies and verified metrics.
+   - Retain the exact `evidence_ids` for each bullet."""
+        proj_instruction = """5. Select 2 Projects:
+   - Choose the projects that best demonstrate competencies relevant to the target role's ranked requirements.
+   - Provide 1 to 2 tailored bullets for each project with exact `evidence_ids`."""
+        skills_instruction = """6. Prioritize Skill Groups:
+   - Group candidate confirmed skills into 3 to 4 logical categories (e.g. 'Languages & Frameworks', 'Cloud & Infrastructure', 'Databases & Distributed Systems', 'DevOps & Tooling').
+   - Place the skills that match the target role's required skills and priority keywords first in each list."""
+
+    instructions = f"""
+### SPECIFIC INSTRUCTIONS FOR THIS APPLICATION:
+1. Target Strategy: '{strategy_name}'.
+{themes_instruction}
+{summary_instruction}
+{bullets_instruction}
+{proj_instruction}
+{skills_instruction}
 7. Return strictly valid JSON conforming to the requested schema.
 """
 
