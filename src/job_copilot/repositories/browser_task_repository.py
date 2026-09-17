@@ -1,7 +1,8 @@
 """SQLAlchemy repository for Phase 10B Browser Execution Tasks."""
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
+import uuid
 from sqlalchemy import and_, or_, select, update
 from sqlalchemy.orm import Session
 
@@ -21,6 +22,60 @@ class BrowserTaskRepository:
         self.db.commit()
         self.db.refresh(task)
         return task
+
+    def create_task(
+        self,
+        *,
+        application_id: Optional[str] = None,
+        job_id: Optional[str] = None,
+        target_url: str,
+        source: str = "manual",
+        task_id: Optional[str] = None,
+        status: BrowserTaskStatus = BrowserTaskStatus.QUEUED,
+        execution_mode: str = "LOCAL_INTERACTIVE",
+        worker_id: Optional[str] = None,
+        assigned_device_id: Optional[str] = None,
+        attempt_count: int = 0,
+        max_attempts: int = 3,
+        pause_reason: Optional[str] = None,
+        failure_reason: Optional[str] = None,
+        confirmation_token: Optional[str] = None,
+        confirmation_expires_at: Optional[datetime] = None,
+        review_package_json: Optional[dict] = None,
+        audit_events: Optional[List[dict]] = None,
+        started_at: Optional[datetime] = None,
+        completed_at: Optional[datetime] = None,
+        id_prefix: str = "task-bw",
+    ) -> BrowserTaskModel:
+        """
+        Canonical factory for creating and persisting a BrowserTask record.
+        Enforces deterministic ID generation, field validation, and state machine defaults.
+        """
+        if not task_id:
+            task_id = f"{id_prefix}-{uuid.uuid4().hex[:8]}"
+
+        task = BrowserTaskModel(
+            task_id=task_id,
+            application_id=application_id,
+            job_id=job_id,
+            source=source or "manual",
+            target_url=target_url,
+            status=status,
+            pause_reason=pause_reason,
+            failure_reason=failure_reason,
+            worker_id=worker_id,
+            execution_mode=execution_mode,
+            assigned_device_id=assigned_device_id,
+            attempt_count=attempt_count,
+            max_attempts=max_attempts,
+            confirmation_token=confirmation_token,
+            confirmation_expires_at=confirmation_expires_at,
+            review_package_json=review_package_json if review_package_json is not None else {},
+            audit_events=audit_events if audit_events is not None else [],
+            started_at=started_at,
+            completed_at=completed_at,
+        )
+        return self.create(task)
 
     def get_by_id(self, id: int) -> Optional[BrowserTaskModel]:
         """Fetch task by internal integer ID."""
@@ -177,16 +232,69 @@ class BrowserTaskRepository:
         self.db.commit()
         return result.rowcount > 0
 
+    def recover_stale_task(
+        self,
+        task_id: str,
+        expected_status: BrowserTaskStatus,
+        new_status: BrowserTaskStatus,
+        cutoff: datetime,
+        reason: str,
+        is_failure: bool = False,
+    ) -> bool:
+        """
+        Atomically recover a single stale task if and only if its status matches expected_status
+        and its updated_at timestamp is older than cutoff.
+        Returns True if claimed and transitioned, False if already updated/claimed by another process.
+        """
+        now = datetime.now(timezone.utc)
+        values_dict = {
+            "status": new_status,
+            "updated_at": now,
+        }
+        if is_failure:
+            values_dict["failure_reason"] = reason
+        else:
+            values_dict["pause_reason"] = reason
+
+        stmt = (
+            update(BrowserTaskModel)
+            .where(
+                BrowserTaskModel.task_id == task_id,
+                BrowserTaskModel.status == expected_status,
+                BrowserTaskModel.updated_at < cutoff,
+            )
+            .values(**values_dict)
+            .execution_options(synchronize_session=False)
+        )
+        result = self.db.execute(stmt)
+        if result.rowcount > 0:
+            self.db.commit()
+            self.append_audit_event(
+                task_id,
+                {
+                    "event": "stale_task_recovered",
+                    "previous_status": expected_status.value,
+                    "new_status": new_status.value,
+                    "reason": reason,
+                    "recovered_at": now.isoformat(),
+                },
+            )
+            return True
+        return False
+
     def recover_stale_running_tasks(self, timeout_minutes: int = 15) -> int:
         """
-        Recover tasks that were running when a previous container/worker crashed or restarted.
-        Resets SUBMISSION_RUNNING -> SUBMISSION_AUTHORIZED and RUNNING -> QUEUED if under max attempts.
+        Recover tasks that were left running when a worker process crashed or restarted.
+        - Genuinely stale RUNNING tasks -> QUEUED (or FAILED if attempt limit reached).
+        - Genuinely stale SUBMISSION_RUNNING tasks -> FAILED (or SUBMISSION_UNVERIFIED if submit click was dispatched).
+          CRITICAL SAFETY INVARIANT: Stale SUBMISSION_RUNNING tasks are NEVER automatically converted
+          to SUBMITTED or SUBMISSION_AUTHORIZED (which would auto-resubmit). They require manual re-authorization.
+        - Atomic and concurrency-safe: concurrent recovery executions cannot claim the same task twice.
         """
-        from datetime import timedelta
         cutoff = datetime.now(timezone.utc) - timedelta(minutes=timeout_minutes)
         recovered_count = 0
 
-        # 1. Recover stale SUBMISSION_RUNNING tasks
+        # 1. Inspect stale SUBMISSION_RUNNING tasks
         stale_sub_stmt = (
             select(BrowserTaskModel)
             .where(
@@ -199,21 +307,27 @@ class BrowserTaskRepository:
             events = task.audit_events or []
             has_dispatched_submit = any(e.get("event") == "submit_click_dispatched" for e in events)
             if has_dispatched_submit:
-                # Submit was already dispatched to employer before crash/timeout.
-                # Outcome is ambiguous; do NOT retry automatically.
-                task.status = BrowserTaskStatus.SUBMISSION_UNVERIFIED
-                task.pause_reason = "Stale submission recovered after submit click was dispatched. Outcome unverified; do not retry automatically."
-                recovered_count += 1
-            elif task.attempt_count < task.max_attempts:
-                task.status = BrowserTaskStatus.SUBMISSION_AUTHORIZED
-                task.pause_reason = "Recovered after worker restart"
-                recovered_count += 1
+                # Dispatched before crash: outcome ambiguous; do NOT resubmit
+                new_st = BrowserTaskStatus.SUBMISSION_UNVERIFIED
+                reason = "Stale submission recovered after submit click was dispatched. Outcome unverified; do not retry automatically."
+                is_fail = False
             else:
-                task.status = BrowserTaskStatus.FAILED
-                task.failure_reason = "Max execution attempts exceeded after multiple crashes"
+                # Crashed during submission execution: never auto-resubmit; transition to FAILED
+                new_st = BrowserTaskStatus.FAILED
+                reason = "Worker process crashed or timed out while SUBMISSION_RUNNING. Submissions are never automatically retried. Manual re-authorization required."
+                is_fail = True
+
+            if self.recover_stale_task(
+                task_id=task.task_id,
+                expected_status=BrowserTaskStatus.SUBMISSION_RUNNING,
+                new_status=new_st,
+                cutoff=cutoff,
+                reason=reason,
+                is_failure=is_fail,
+            ):
                 recovered_count += 1
 
-        # 2. Recover stale RUNNING tasks
+        # 2. Inspect stale RUNNING preparation tasks
         stale_run_stmt = (
             select(BrowserTaskModel)
             .where(
@@ -224,16 +338,74 @@ class BrowserTaskRepository:
         stale_run_tasks = list(self.db.scalars(stale_run_stmt).all())
         for task in stale_run_tasks:
             if task.attempt_count < task.max_attempts:
-                task.status = BrowserTaskStatus.QUEUED
-                task.pause_reason = "Recovered after worker restart"
-                recovered_count += 1
+                new_st = BrowserTaskStatus.QUEUED
+                reason = "Recovered after worker process crash/timeout"
+                is_fail = False
             else:
-                task.status = BrowserTaskStatus.FAILED
-                task.failure_reason = "Max execution attempts exceeded after multiple crashes"
-                recovered_count += 1
+                new_st = BrowserTaskStatus.FAILED
+                reason = "Max execution attempts exceeded after multiple crashes"
+                is_fail = True
 
-        if recovered_count > 0:
-            self.db.commit()
+            if self.recover_stale_task(
+                task_id=task.task_id,
+                expected_status=BrowserTaskStatus.RUNNING,
+                new_status=new_st,
+                cutoff=cutoff,
+                reason=reason,
+                is_failure=is_fail,
+            ):
+                recovered_count += 1
 
         return recovered_count
+
+
+def create_browser_task(
+    db: Session,
+    *,
+    application_id: Optional[str] = None,
+    job_id: Optional[str] = None,
+    target_url: str,
+    source: str = "manual",
+    task_id: Optional[str] = None,
+    status: BrowserTaskStatus = BrowserTaskStatus.QUEUED,
+    execution_mode: str = "LOCAL_INTERACTIVE",
+    worker_id: Optional[str] = None,
+    assigned_device_id: Optional[str] = None,
+    attempt_count: int = 0,
+    max_attempts: int = 3,
+    pause_reason: Optional[str] = None,
+    failure_reason: Optional[str] = None,
+    confirmation_token: Optional[str] = None,
+    confirmation_expires_at: Optional[datetime] = None,
+    review_package_json: Optional[dict] = None,
+    audit_events: Optional[List[dict]] = None,
+    started_at: Optional[datetime] = None,
+    completed_at: Optional[datetime] = None,
+    id_prefix: str = "task-bw",
+) -> BrowserTaskModel:
+    """Canonical factory helper for creating and persisting a BrowserTask record."""
+    repo = BrowserTaskRepository(db)
+    return repo.create_task(
+        application_id=application_id,
+        job_id=job_id,
+        target_url=target_url,
+        source=source,
+        task_id=task_id,
+        status=status,
+        execution_mode=execution_mode,
+        worker_id=worker_id,
+        assigned_device_id=assigned_device_id,
+        attempt_count=attempt_count,
+        max_attempts=max_attempts,
+        pause_reason=pause_reason,
+        failure_reason=failure_reason,
+        confirmation_token=confirmation_token,
+        confirmation_expires_at=confirmation_expires_at,
+        review_package_json=review_package_json,
+        audit_events=audit_events,
+        started_at=started_at,
+        completed_at=completed_at,
+        id_prefix=id_prefix,
+    )
+
 

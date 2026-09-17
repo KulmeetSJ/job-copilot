@@ -58,7 +58,7 @@ def test_copilot_targeting_api_endpoints(api_client):
     health_data = resp_health.json()
     assert len(health_data) >= 6
     wf_health = next(h for h in health_data if h["source_id"] == "wellfound")
-    assert wf_health["state"] == "ACTIVE"
+    assert wf_health["state"] == "UNSUPPORTED"
 
 
 def test_target_company_explanation_and_preference_isolation(tmp_path: Path):

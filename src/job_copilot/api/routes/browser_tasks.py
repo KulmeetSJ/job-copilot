@@ -53,10 +53,7 @@ def create_browser_task(
 ) -> BrowserTaskResponse:
     """Create a new queued browser execution task."""
     repo = BrowserTaskRepository(db)
-    task_id = f"task-bw-{uuid.uuid4().hex[:8]}"
-
-    task_model = BrowserTaskModel(
-        task_id=task_id,
+    saved = repo.create_task(
         application_id=payload.application_id,
         job_id=payload.job_id,
         source=payload.source,
@@ -64,8 +61,7 @@ def create_browser_task(
         status=BrowserTaskStatus.QUEUED,
         max_attempts=payload.max_attempts,
     )
-    saved = repo.create(task_model)
-    logger.info(f"Created browser execution task '{task_id}' for URL: {payload.target_url}")
+    logger.info(f"Created browser execution task '{saved.task_id}' for URL: {payload.target_url}")
     return _format_task_response(saved)
 
 

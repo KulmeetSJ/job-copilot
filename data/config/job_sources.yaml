@@ -70,11 +70,11 @@ sources:
   - id: "wellfound"
     name: "Wellfound"
     type: "job_board"
-    enabled: true
+    enabled: false
     priority: "high"
-    discovery_mode: "public"
+    discovery_mode: "unsupported"
     requires_login: false
-    supports_public_discovery: true
+    supports_public_discovery: false
     check_interval_minutes: 180
     urls:
       - "https://wellfound.com/jobs"
@@ -85,20 +85,20 @@ sources:
       - "Data"
       - "Cloud"
       - "AI/ML infrastructure"
-    notes: "Tech and startup job searches with role and location filters. Pause for login if specific query requires auth."
+    notes: "Unsupported / disabled: No functioning public feed or browser adapter available. Anti-bot protected."
 
   - id: "welcome_to_the_jungle"
     name: "Welcome to the Jungle"
     type: "job_board"
-    enabled: true
+    enabled: false
     priority: "high"
-    discovery_mode: "public"
+    discovery_mode: "unsupported"
     requires_login: false
-    supports_public_discovery: true
+    supports_public_discovery: false
     check_interval_minutes: 180
     urls:
       - "https://us.welcometothejungle.com/"
-    notes: "Company discovery and curated job board. Supports public browsing and authenticated discovery."
+    notes: "Unsupported / disabled: No functioning public feed or browser adapter available."
 
   - id: "we_work_remotely"
     name: "We Work Remotely"

@@ -360,8 +360,10 @@ def test_browser_worker_atomic_claiming_and_crash_recovery(db_session):
     recovered_count = task_repo.recover_stale_running_tasks(timeout_minutes=15)
     assert recovered_count == 1
     reloaded_task = task_repo.get_by_task_id("task-atomic-01")
-    assert reloaded_task.status == BrowserTaskStatus.SUBMISSION_AUTHORIZED
-    assert "Recovered after worker restart" in reloaded_task.pause_reason
+    # Crashed submission transitions to FAILED to prevent automatic resubmission
+    assert reloaded_task.status == BrowserTaskStatus.FAILED
+    assert reloaded_task.status != BrowserTaskStatus.SUBMISSION_AUTHORIZED
+    assert "never automatically retried" in (reloaded_task.failure_reason or "")
 
 
 def test_dashboard_service_blocker_and_mastercard_historical_unverified(db_session):

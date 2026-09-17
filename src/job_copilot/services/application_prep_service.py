@@ -455,12 +455,22 @@ class ApplicationPrepService:
         }
         (job_dir / "validation.json").write_text(json.dumps(validation_payload, indent=2), encoding="utf-8")
 
-        # 5. Phase 10A Object Storage Integration
-        if self.artifact_service:
+        # 5. Phase 10A Object Storage Integration (Cloud R2 / S3 / Local)
+        art_svc = self.artifact_service
+        if art_svc is None:
+            try:
+                from job_copilot.services.artifact_service import ArtifactService
+                art_svc = ArtifactService()
+                self.artifact_service = art_svc
+            except Exception as init_err:
+                logger.debug(f"ArtifactService lazy initialization notice: {init_err}")
+                art_svc = None
+
+        if art_svc:
             try:
                 from job_copilot.domain.artifact_enums import ArtifactType
                 # Store package.json
-                self.artifact_service.store_artifact(
+                art_svc.store_artifact(
                     data=package.model_dump_json(indent=2).encode("utf-8"),
                     artifact_type=ArtifactType.APPLICATION_PACKAGE,
                     job_id=package.job_id,
@@ -468,7 +478,7 @@ class ApplicationPrepService:
                     content_type="application/json",
                 )
                 # Store cover_letter.md
-                self.artifact_service.store_artifact(
+                art_svc.store_artifact(
                     data=package.cover_letter.letter_text.encode("utf-8"),
                     artifact_type=ArtifactType.COVER_LETTER,
                     job_id=package.job_id,
@@ -476,12 +486,30 @@ class ApplicationPrepService:
                     content_type="text/markdown",
                 )
                 # Store validation.json
-                self.artifact_service.store_artifact(
+                art_svc.store_artifact(
                     data=json.dumps(validation_payload, indent=2).encode("utf-8"),
                     artifact_type=ArtifactType.VALIDATION_REPORT,
                     job_id=package.job_id,
                     original_filename="validation.json",
                     content_type="application/json",
                 )
+                # Store tailored resume PDF
+                if package.resume_pdf_path and Path(package.resume_pdf_path).exists():
+                    art_svc.store_artifact(
+                        data=Path(package.resume_pdf_path).read_bytes(),
+                        artifact_type=ArtifactType.TAILORED_RESUME_PDF,
+                        job_id=package.job_id,
+                        original_filename=f"resume_{package.job_id}.pdf",
+                        content_type="application/pdf",
+                    )
+                # Store tailored resume TeX
+                if package.resume_tex_path and Path(package.resume_tex_path).exists():
+                    art_svc.store_artifact(
+                        data=Path(package.resume_tex_path).read_bytes(),
+                        artifact_type=ArtifactType.TAILORED_RESUME_TEX,
+                        job_id=package.job_id,
+                        original_filename=f"resume_{package.job_id}.tex",
+                        content_type="application/x-tex",
+                    )
             except Exception as ae:
                 logger.debug(f"ArtifactService storage notice: {ae}")

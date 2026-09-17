@@ -1425,9 +1425,7 @@ class DashboardService:
             }
             target_url = app.canonical_job_url if app and app.canonical_job_url else resolved_url
             if not existing_task and target_url:
-                task_id = f"task-bw-{uuid.uuid4().hex[:8]}"
-                new_task = BrowserTaskModel(
-                    task_id=task_id,
+                new_task = task_repo.create_task(
                     application_id=target_app_id,
                     job_id=job_id,
                     source=app.source if app else resolved_source,
@@ -1437,7 +1435,6 @@ class DashboardService:
                     confirmation_expires_at=None,
                     review_package_json=review_pkg_json,
                 )
-                task_repo.create(new_task)
 
             return self.get_application_detail(target_app_id)
         finally:
@@ -1769,9 +1766,7 @@ class DashboardService:
                         },
                     )
                 else:
-                    task_id = f"task-bw-{uuid.uuid4().hex[:8]}"
-                    new_task = BrowserTaskModel(
-                        task_id=task_id,
+                    new_task = task_repo.create_task(
                         application_id=app.application_id,
                         job_id=job_id,
                         source=app.source,
@@ -1779,7 +1774,6 @@ class DashboardService:
                         status=BrowserTaskStatus.LOGIN_REQUIRED,
                         pause_reason=login_msg,
                     )
-                    task_repo.create(new_task)
                 db.commit()
                 return self.get_application_detail(app.application_id)
 
@@ -1795,9 +1789,7 @@ class DashboardService:
                     },
                 )
             else:
-                task_id = f"task-bw-{uuid.uuid4().hex[:8]}"
-                new_task = BrowserTaskModel(
-                    task_id=task_id,
+                new_task = task_repo.create_task(
                     application_id=app.application_id,
                     job_id=job_id,
                     source=app.source,
@@ -1811,7 +1803,6 @@ class DashboardService:
                         }
                     ],
                 )
-                task_repo.create(new_task)
 
             db.commit()
             return self.get_application_detail(app.application_id)
@@ -1877,9 +1868,7 @@ class DashboardService:
                     },
                 )
             elif app.canonical_job_url:
-                task_id = f"task-bw-{uuid.uuid4().hex[:8]}"
-                task = BrowserTaskModel(
-                    task_id=task_id,
+                task = task_repo.create_task(
                     application_id=app.application_id,
                     job_id=app.job_id_str or str(app.job_id),
                     source=app.source or "manual",
@@ -1894,7 +1883,6 @@ class DashboardService:
                         }
                     ],
                 )
-                task_repo.create(task)
 
             db.commit()
 
@@ -2189,6 +2177,17 @@ class DashboardService:
 
             if pkg and pkg.resume_pdf_path and Path(pkg.resume_pdf_path).exists():
                 data = Path(pkg.resume_pdf_path).read_bytes()
+                try:
+                    self.artifact_service.store_artifact(
+                        data=data,
+                        artifact_type=ArtifactType.TAILORED_RESUME_PDF,
+                        application_id=application_id,
+                        job_id=job_id,
+                        original_filename=canonical_filename,
+                        content_type="application/pdf",
+                    )
+                except Exception as store_e:
+                    logger.debug(f"ArtifactService storage during get_application_resume_pdf notice: {store_e}")
                 return data, "application/pdf", canonical_filename
 
             # 3. Check strategy default generated path with locked strategy whitelist
@@ -2588,15 +2587,14 @@ class DashboardService:
                 job_id=canonical.job_id,
             )
             if not browser_task:
-                task_id = f"task-usr-{uuid.uuid4().hex[:8]}"
                 review_pkg_json = {
                     "detected_fields": [a.question_text for a in pkg.answers],
                     "filled_fields": [a.question_text for a in pkg.answers if not a.requires_user_input],
                     "unresolved_fields": [u.question_text for u in pkg.user_inputs_required],
                     "warnings": [],
                 }
-                browser_task = BrowserTaskModel(
-                    task_id=task_id,
+                browser_task = task_repo.create_task(
+                    id_prefix="task-usr",
                     application_id=app_model.application_id,
                     job_id=canonical.job_id,
                     source="user_submitted_url",
@@ -2606,7 +2604,6 @@ class DashboardService:
                     confirmation_expires_at=None,
                     review_package_json=review_pkg_json,
                 )
-                task_repo.create(browser_task)
 
             # 9. Check browser adapter and active authenticated session
             session_mgr = AuthenticatedSessionManager(db)

@@ -100,8 +100,16 @@ class JobSourcesConfig(BaseModel):
 
         for s in self.sources:
             if not s.enabled:
-                st = SourceState.DISABLED
-                msg = "Source is currently disabled in configuration"
+                if s.discovery_mode == DiscoveryMode.UNSUPPORTED:
+                    st = SourceState.UNSUPPORTED
+                    msg = "Source is currently unsupported (no active feed/adapter implementation)"
+                else:
+                    st = SourceState.DISABLED
+                    msg = "Source is currently disabled in configuration"
+                last_chk = None
+            elif s.discovery_mode == DiscoveryMode.UNSUPPORTED:
+                st = SourceState.UNSUPPORTED
+                msg = "Source is currently unsupported (no active feed/adapter implementation)"
                 last_chk = None
             elif s.id in states:
                 runtime_info = states[s.id]

@@ -107,15 +107,21 @@ export const SourcesView: React.FC = () => {
                     <td className="p-3 font-mono text-slate-300 uppercase">{src.discovery_mode}</td>
                     <td className="p-3">
                       <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
-                        src.health_status === 'HEALTHY' 
+                        src.health_status === 'HEALTHY' || src.health_status === 'ACTIVE'
                           ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
+                          : src.health_status === 'UNSUPPORTED' || src.health_status === 'DISABLED'
+                          ? 'bg-slate-700/40 text-slate-400 border border-slate-600/30'
                           : 'bg-amber-500/15 text-amber-300 border border-amber-500/30'
                       }`}>
                         {src.health_status}
                       </span>
                     </td>
                     <td className="p-3 text-slate-400">
-                      {src.requires_login ? 'Auth Required' : 'Public Feed'}
+                      {src.health_status === 'UNSUPPORTED' || src.discovery_mode === 'UNSUPPORTED'
+                        ? 'Unsupported'
+                        : src.requires_login
+                        ? 'Auth Required'
+                        : 'Public Feed'}
                     </td>
                     <td className="p-3 font-mono">
                       {src.has_active_session ? (

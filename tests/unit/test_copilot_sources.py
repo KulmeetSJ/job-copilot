@@ -43,11 +43,12 @@ def test_job_sources_configuration_loading():
     assert ih.requires_login is True
     assert ih.discovery_mode == DiscoveryMode.AUTHENTICATED_BROWSER
 
-    # Verify Wellfound & We Work Remotely public discovery
+    # Verify Wellfound & We Work Remotely configurations
     wf = cfg.get_source("wellfound")
     assert wf is not None
-    assert wf.discovery_mode == DiscoveryMode.PUBLIC
-    assert wf.supports_public_discovery is True
+    assert wf.discovery_mode == DiscoveryMode.UNSUPPORTED
+    assert wf.enabled is False
+    assert wf.supports_public_discovery is False
 
     wwr = cfg.get_source("we_work_remotely")
     assert wwr is not None
@@ -79,6 +80,7 @@ def test_source_health_reporting_and_safety_boundaries():
     - Public sources -> ACTIVE
     - Authenticated sources without session -> LOGIN_REQUIRED (non-fatal)
     - Disabled sources -> DISABLED
+    - Unsupported sources -> UNSUPPORTED
     - Blocked/CAPTCHA sources -> BLOCKED/PAUSED without crashing
     """
     cfg = load_job_sources_config()
@@ -87,8 +89,8 @@ def test_source_health_reporting_and_safety_boundaries():
     reports = cfg.get_health_reports()
     report_dict = {r.source_id: r for r in reports}
 
-    assert report_dict["wellfound"].state == SourceState.ACTIVE
-    assert report_dict["welcome_to_the_jungle"].state == SourceState.ACTIVE
+    assert report_dict["wellfound"].state == SourceState.UNSUPPORTED
+    assert report_dict["welcome_to_the_jungle"].state == SourceState.UNSUPPORTED
     assert report_dict["we_work_remotely"].state == SourceState.ACTIVE
     assert report_dict["linkedin_pune"].state == SourceState.LOGIN_REQUIRED
     assert report_dict["naukri"].state == SourceState.LOGIN_REQUIRED
@@ -112,6 +114,6 @@ def test_source_health_reporting_and_safety_boundaries():
 
     assert runtime_dict["naukri"].state == SourceState.BLOCKED
     assert runtime_dict["instahyre"].state == SourceState.PAUSED
-    # Other sources remain healthy and untouched
-    assert runtime_dict["wellfound"].state == SourceState.ACTIVE
+    # Other sources remain as configured and untouched
+    assert runtime_dict["wellfound"].state == SourceState.UNSUPPORTED
     assert runtime_dict["we_work_remotely"].state == SourceState.ACTIVE

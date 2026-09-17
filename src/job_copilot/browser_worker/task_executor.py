@@ -739,6 +739,7 @@ class BrowserTaskExecutor:
 
         artifacts = self.artifact_service.list_artifacts(
             application_id=app_id,
+            job_id=task.job_id,
             artifact_type=ArtifactType.TAILORED_RESUME_PDF,
         )
         if not artifacts:
