@@ -69,6 +69,17 @@ class Settings(BaseSettings):
         alias="CORS_ALLOWED_ORIGINS",
     )
 
+    # AUTO_APPLY Policy Rate Limits
+    auto_apply_daily_limit: int = Field(
+        default=10,
+        validation_alias=AliasChoices(
+            "AUTO_APPLY_DAILY_LIMIT",
+            "MAX_DAILY_AUTO_APPLY_SUBMISSIONS",
+            "auto_apply_daily_limit",
+            "max_daily_auto_apply_submissions",
+        ),
+    )
+
     # Artifact Storage (Phase 10A / Phase 12.2)
     artifact_storage_provider: str = Field(
         default="local",

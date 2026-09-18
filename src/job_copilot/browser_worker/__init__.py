@@ -11,7 +11,9 @@ from job_copilot.browser_worker.adapters import (
 from job_copilot.browser_worker.auto_apply_policy import (
     AutoApplyEligibilityResult,
     AutoApplyPolicyService,
+    count_daily_auto_apply_submissions,
     evaluate_auto_apply_eligibility,
+    get_configured_daily_limit,
 )
 from job_copilot.browser_worker.browser import BrowserManager, BrowserSessionAdapter
 from job_copilot.browser_worker.confirmation_service import HumanConfirmationService
@@ -57,7 +59,9 @@ __all__ = [
     "HumanConfirmationService",
     "AutoApplyEligibilityResult",
     "AutoApplyPolicyService",
+    "count_daily_auto_apply_submissions",
     "evaluate_auto_apply_eligibility",
+    "get_configured_daily_limit",
     "BrowserWorkerError",
     "DomainSecurityError",
     "CaptchaDetectedError",

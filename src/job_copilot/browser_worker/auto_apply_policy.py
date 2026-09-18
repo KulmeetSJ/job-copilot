@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 import uuid
 from pydantic import BaseModel, Field
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from job_copilot.browser_worker.exceptions import DomainSecurityError, SubmissionSafetyError
@@ -39,6 +40,143 @@ class AutoApplyEligibilityResult(BaseModel):
     reason_code: Optional[str] = Field(default=None, description="Machine-readable error/status code")
     blocking_conditions: List[str] = Field(default_factory=list, description="List of failed safety condition codes")
     checked_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+DEFAULT_DAILY_AUTO_APPLY_LIMIT: int = 10
+
+
+def get_configured_daily_limit() -> int:
+    """Retrieve the configured daily auto-apply submission limit from settings or config."""
+    try:
+        from job_copilot.config import settings
+        if hasattr(settings, "auto_apply_daily_limit") and settings.auto_apply_daily_limit is not None:
+            return int(settings.auto_apply_daily_limit)
+        if hasattr(settings, "max_daily_auto_apply_submissions") and settings.max_daily_auto_apply_submissions is not None:
+            return int(settings.max_daily_auto_apply_submissions)
+    except Exception:
+        pass
+    try:
+        from job_copilot.copilot.config import load_copilot_config
+        cfg = load_copilot_config()
+        if hasattr(cfg.queue, "max_daily_auto_apply") and cfg.queue.max_daily_auto_apply is not None:
+            return int(cfg.queue.max_daily_auto_apply)
+    except Exception:
+        pass
+    return DEFAULT_DAILY_AUTO_APPLY_LIMIT
+
+
+def count_daily_auto_apply_submissions(
+    db: Session,
+    since_time: Optional[datetime] = None,
+    exclude_application_id: Optional[str] = None,
+) -> int:
+    """
+    Deterministically count unique applications submitted or authorized for AUTO_APPLY in the daily window.
+
+    Inspects:
+    1. ApplicationEventModel: events with source='AUTO_APPLY_POLICY' and event_type in ('SUBMISSION_AUTHORIZED', 'SUBMITTED').
+    2. BrowserTaskModel: tasks with application_mode='AUTO_APPLY' (or auto_apply audit event) and status in (SUBMISSION_AUTHORIZED, SUBMISSION_RUNNING, COMPLETED).
+    3. Application: applications with mode=AUTO_APPLY and status=APPLIED / submitted_at is not None.
+    """
+    if since_time is None:
+        now = datetime.now(timezone.utc)
+        since_time = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    elif since_time.tzinfo is None:
+        since_time = since_time.replace(tzinfo=timezone.utc)
+
+    submitted_app_ids = set()
+
+    # 1. Check ApplicationEventModel
+    try:
+        from job_copilot.models.application import ApplicationEventModel
+        stmt = select(ApplicationEventModel.application_id, ApplicationEventModel.timestamp).where(
+            ApplicationEventModel.source == "AUTO_APPLY_POLICY",
+            ApplicationEventModel.event_type.in_(["SUBMISSION_AUTHORIZED", "SUBMITTED"]),
+        )
+        for row in db.execute(stmt).all():
+            app_id = row[0]
+            ts = row[1]
+            if not ts:
+                continue
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=timezone.utc)
+            if ts >= since_time and app_id:
+                submitted_app_ids.add(str(app_id))
+    except Exception as e:
+        logger.debug(f"Notice querying ApplicationEventModel for daily cap: {e}")
+
+    # 2. Check BrowserTaskModel
+    try:
+        task_stmt = select(BrowserTaskModel).where(
+            or_(
+                BrowserTaskModel.application_mode == "AUTO_APPLY",
+                BrowserTaskModel.status.in_([
+                    BrowserTaskStatus.SUBMISSION_AUTHORIZED,
+                    BrowserTaskStatus.SUBMISSION_RUNNING,
+                    BrowserTaskStatus.COMPLETED,
+                ]),
+            )
+        )
+        for task in db.scalars(task_stmt).all():
+            is_auto = (getattr(task, "application_mode", None) == "AUTO_APPLY")
+            audit_events = getattr(task, "audit_events", None) or []
+            has_auto_audit = any(
+                e.get("authorization_source") == "AUTO_APPLY_POLICY"
+                or e.get("event") == "auto_apply_submission_authorized"
+                for e in audit_events
+            )
+            if not (is_auto or has_auto_audit):
+                continue
+
+            task_status = task.status.value if hasattr(task.status, "value") else str(task.status)
+            if task_status not in ("SUBMISSION_AUTHORIZED", "SUBMISSION_RUNNING", "COMPLETED"):
+                continue
+
+            task_ts = None
+            for e in audit_events:
+                if e.get("authorization_source") == "AUTO_APPLY_POLICY" or e.get("event") == "auto_apply_submission_authorized":
+                    ts_str = e.get("timestamp")
+                    if ts_str:
+                        try:
+                            task_ts = datetime.fromisoformat(ts_str)
+                        except Exception:
+                            pass
+                    break
+            if not task_ts:
+                task_ts = task.completed_at or task.updated_at or task.created_at
+
+            if task_ts:
+                if task_ts.tzinfo is None:
+                    task_ts = task_ts.replace(tzinfo=timezone.utc)
+                if task_ts >= since_time and task.application_id:
+                    submitted_app_ids.add(str(task.application_id))
+    except Exception as e:
+        logger.debug(f"Notice querying BrowserTaskModel for daily cap: {e}")
+
+    # 3. Check Application table
+    try:
+        from job_copilot.models.application import Application
+        app_stmt = select(Application).where(
+            Application.mode == ApplicationMode.AUTO_APPLY,
+            or_(
+                Application.status == ApplicationStatus.APPLIED,
+                Application.submitted_at.isnot(None),
+            ),
+        )
+        for app in db.scalars(app_stmt).all():
+            app_ts = app.submitted_at or app.current_status_at or app.updated_at
+            if app_ts:
+                if app_ts.tzinfo is None:
+                    app_ts = app_ts.replace(tzinfo=timezone.utc)
+                if app_ts >= since_time and app.application_id:
+                    submitted_app_ids.add(str(app.application_id))
+    except Exception as e:
+        logger.debug(f"Notice querying Application for daily cap: {e}")
+
+    if exclude_application_id:
+        submitted_app_ids.discard(str(exclude_application_id))
+
+    return len(submitted_app_ids)
 
 
 def _normalize_name(name: Optional[str]) -> str:
@@ -75,6 +213,7 @@ def evaluate_auto_apply_eligibility(
     session: Optional[Any] = None,
     db: Optional[Session] = None,
     allow_test_fixture: bool = False,
+    max_daily_submissions: Optional[int] = None,
 ) -> AutoApplyEligibilityResult:
     """
     Centralized policy engine evaluating strict eligibility for AUTO_APPLY submission.
@@ -512,6 +651,23 @@ def evaluate_auto_apply_eligibility(
                     blocking_conditions=["M_SAFETY_AND_DOMAIN"],
                 )
 
+    # Condition M (Rate Limiting): Daily AUTO_APPLY submission cap
+    if db is not None:
+        effective_cap = max_daily_submissions if max_daily_submissions is not None else get_configured_daily_limit()
+        if effective_cap is not None and effective_cap >= 0:
+            current_app_id = getattr(application, "application_id", None) or getattr(application, "id", None)
+            current_count = count_daily_auto_apply_submissions(
+                db=db,
+                exclude_application_id=str(current_app_id) if current_app_id else None,
+            )
+            if current_count >= effective_cap:
+                return AutoApplyEligibilityResult(
+                    eligible=False,
+                    reason=f"Daily AUTO_APPLY submission limit reached ({current_count}/{effective_cap} submissions today).",
+                    reason_code="RATE_LIMIT_EXCEEDED",
+                    blocking_conditions=["M_SAFETY_AND_DOMAIN"],
+                )
+
     # --------------------------------------------------------------------------
     # Condition N: NO existing policy/risk blocker prevents automated submission
     # --------------------------------------------------------------------------
@@ -554,11 +710,29 @@ class AutoApplyPolicyService:
     - Actual submission strictly delegates to BrowserTaskExecutor.execute_submission_task().
     """
 
-    def __init__(self, db: Session):
+    DEFAULT_DAILY_SUBMISSION_CAP: int = 10
+
+    def __init__(self, db: Session, max_daily_submissions: Optional[int] = None):
         self.db = db
         self.task_repo = BrowserTaskRepository(db)
         self.app_repo = ApplicationRepository(db)
         self.session_manager = AuthenticatedSessionManager(db)
+        if max_daily_submissions is not None:
+            self.max_daily_submissions = max_daily_submissions
+        else:
+            self.max_daily_submissions = get_configured_daily_limit()
+
+    def count_daily_submissions(
+        self,
+        since_time: Optional[datetime] = None,
+        exclude_application_id: Optional[str] = None,
+    ) -> int:
+        """Count distinct AUTO_APPLY submissions for the current daily window."""
+        return count_daily_auto_apply_submissions(
+            db=self.db,
+            since_time=since_time,
+            exclude_application_id=exclude_application_id,
+        )
 
     def evaluate(
         self,
@@ -566,6 +740,7 @@ class AutoApplyPolicyService:
         task_id: Optional[str] = None,
         session_id: Optional[str] = None,
         allow_test_fixture: bool = False,
+        max_daily_submissions: Optional[int] = None,
     ) -> AutoApplyEligibilityResult:
         """Evaluate AUTO_APPLY eligibility without modifying any task state."""
         app = self.app_repo.get_by_application_id(application_id) or self.app_repo.get_by_job_id_str(application_id)
@@ -602,12 +777,14 @@ class AutoApplyPolicyService:
                 canonical_job_url=app.canonical_job_url or task.target_url,
             )
 
+        effective_cap = max_daily_submissions if max_daily_submissions is not None else self.max_daily_submissions
         return evaluate_auto_apply_eligibility(
             application=app,
             browser_task=task,
             session=session,
             db=self.db,
             allow_test_fixture=allow_test_fixture,
+            max_daily_submissions=effective_cap,
         )
 
     def authorize(
@@ -616,6 +793,7 @@ class AutoApplyPolicyService:
         task_id: Optional[str] = None,
         session_id: Optional[str] = None,
         allow_test_fixture: bool = False,
+        max_daily_submissions: Optional[int] = None,
     ) -> Tuple[BrowserTaskModel, AutoApplyEligibilityResult]:
         """
         Safely authorize an AUTO_APPLY application for downstream execution.
@@ -649,12 +827,14 @@ class AutoApplyPolicyService:
                 canonical_job_url=app.canonical_job_url or task.target_url,
             )
 
+        effective_cap = max_daily_submissions if max_daily_submissions is not None else self.max_daily_submissions
         eligibility = evaluate_auto_apply_eligibility(
             application=app,
             browser_task=task,
             session=session,
             db=self.db,
             allow_test_fixture=allow_test_fixture,
+            max_daily_submissions=effective_cap,
         )
 
         if not eligibility.eligible:

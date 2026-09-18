@@ -19,7 +19,9 @@ from sqlalchemy.orm import sessionmaker
 from job_copilot.browser_worker.auto_apply_policy import (
     AutoApplyEligibilityResult,
     AutoApplyPolicyService,
+    count_daily_auto_apply_submissions,
     evaluate_auto_apply_eligibility,
+    get_configured_daily_limit,
 )
 from job_copilot.browser_worker.browser import BrowserManager
 from job_copilot.browser_worker.exceptions import SubmissionSafetyError
@@ -70,35 +72,35 @@ def mock_candidate_profile():
     )
 
 
-def _build_clean_environment(session):
+def _build_clean_environment(session, suffix: str = "100"):
     """Create a fully valid baseline environment where all 14 conditions would pass."""
     now = datetime.now(timezone.utc)
     job = Job(
-        job_id="job-auto-100",
+        job_id=f"job-auto-{suffix}",
         title="Senior Distributed Systems Engineer",
         company="Acme Corporation",
         description="Engineering role",
         source="greenhouse",
-        url="https://boards.greenhouse.io/acme/jobs/100",
+        url=f"https://boards.greenhouse.io/acme/jobs/{suffix}",
     )
     session.add(job)
     session.flush()
 
     app = Application(
-        application_id="app-auto-100",
-        job_id_str="job-auto-100",
+        application_id=f"app-auto-{suffix}",
+        job_id_str=f"job-auto-{suffix}",
         job_id=job.id,
         company="Acme Corporation",
         role="Senior Distributed Systems Engineer",
         status=ApplicationStatus.READY_TO_APPLY,
         mode=ApplicationMode.AUTO_APPLY,
-        canonical_job_url="https://boards.greenhouse.io/acme/jobs/100",
+        canonical_job_url=f"https://boards.greenhouse.io/acme/jobs/{suffix}",
     )
     session.add(app)
     session.flush()
 
     sess_model = BrowserSessionModel(
-        session_id="sess-auto-100",
+        session_id=f"sess-auto-{suffix}",
         source="greenhouse",
         status=AuthenticatedSessionStatus.ACTIVE,
         expires_at=now + timedelta(days=7),
@@ -111,11 +113,11 @@ def _build_clean_environment(session):
     session.flush()
 
     task = BrowserTaskModel(
-        task_id="task-auto-100",
-        application_id="app-auto-100",
-        job_id="job-auto-100",
+        task_id=f"task-auto-{suffix}",
+        application_id=f"app-auto-{suffix}",
+        job_id=f"job-auto-{suffix}",
         source="greenhouse",
-        target_url="https://boards.greenhouse.io/acme/jobs/100",
+        target_url=f"https://boards.greenhouse.io/acme/jobs/{suffix}",
         status=BrowserTaskStatus.READY_FOR_REVIEW,
         application_mode="AUTO_APPLY",
         review_package_json={
@@ -634,4 +636,163 @@ def test_single_canonical_submission_executor_invariant():
     assert hasattr(BrowserTaskExecutor, "execute_submission_task")
     sig = inspect.signature(BrowserTaskExecutor.execute_submission_task)
     assert "task_id" in sig.parameters
+
+
+# ==============================================================================
+# 6. DETERMINISTIC DAILY AUTO_APPLY SUBMISSION CAP TESTS
+# ==============================================================================
+
+def test_daily_cap_allows_submissions_below_limit(db_session):
+    """
+    Submissions below the configured daily safety limit remain eligible
+    and can be safely authorized.
+    """
+    session, _ = db_session
+    # Configure safety limit = 2
+    policy_service = AutoApplyPolicyService(session, max_daily_submissions=2)
+
+    # Initially 0 submissions today
+    assert policy_service.count_daily_submissions() == 0
+
+    # 1. First application: eligible and authorizes
+    app1, task1, sess1 = _build_clean_environment(session, suffix="cap-1")
+    res1 = policy_service.evaluate(app1.application_id)
+    assert res1.eligible is True
+    assert res1.reason_code == "ELIGIBLE"
+
+    auth_task1, auth_res1 = policy_service.authorize(app1.application_id)
+    assert auth_res1.eligible is True
+    assert auth_task1.status == BrowserTaskStatus.SUBMISSION_AUTHORIZED
+    assert policy_service.count_daily_submissions() == 1
+
+    # 2. Second application: eligible and authorizes (reaches limit of 2)
+    app2, task2, sess2 = _build_clean_environment(session, suffix="cap-2")
+    res2 = policy_service.evaluate(app2.application_id)
+    assert res2.eligible is True
+    assert res2.reason_code == "ELIGIBLE"
+
+    auth_task2, auth_res2 = policy_service.authorize(app2.application_id)
+    assert auth_res2.eligible is True
+    assert auth_task2.status == BrowserTaskStatus.SUBMISSION_AUTHORIZED
+    assert policy_service.count_daily_submissions() == 2
+
+
+def test_daily_cap_blocks_authorization_when_limit_reached(db_session):
+    """
+    When the configured daily safety limit is reached:
+    - evaluate() returns eligible=False with reason_code="RATE_LIMIT_EXCEEDED"
+    - authorize() raises SubmissionSafetyError
+    - Task remains in READY_FOR_REVIEW
+    - Application remains in READY_TO_APPLY
+    - No submission authorization is granted
+    """
+    session, _ = db_session
+    policy_service = AutoApplyPolicyService(session, max_daily_submissions=2)
+
+    # Authorize 2 applications to reach the limit
+    app1, task1, _ = _build_clean_environment(session, suffix="limit-1")
+    policy_service.authorize(app1.application_id)
+
+    app2, task2, _ = _build_clean_environment(session, suffix="limit-2")
+    policy_service.authorize(app2.application_id)
+
+    assert policy_service.count_daily_submissions() == 2
+
+    # 3. Third application: must be blocked by rate limit
+    app3, task3, sess3 = _build_clean_environment(session, suffix="limit-3")
+
+    eval_result = policy_service.evaluate(app3.application_id)
+    assert eval_result.eligible is False
+    assert eval_result.reason_code == "RATE_LIMIT_EXCEEDED"
+    assert "Daily AUTO_APPLY submission limit reached" in eval_result.reason
+    assert "M_SAFETY_AND_DOMAIN" in eval_result.blocking_conditions
+
+    # Direct authorization attempt must fail safely
+    with pytest.raises(SubmissionSafetyError) as exc_info:
+        policy_service.authorize(app3.application_id)
+
+    assert "Daily AUTO_APPLY submission limit reached" in str(exc_info.value)
+
+    # Invariants: Task remains READY_FOR_REVIEW, Application remains READY_TO_APPLY
+    reloaded_task = session.query(BrowserTaskModel).filter_by(task_id=task3.task_id).one()
+    reloaded_app = session.query(Application).filter_by(application_id=app3.application_id).one()
+    assert reloaded_task.status == BrowserTaskStatus.READY_FOR_REVIEW
+    assert reloaded_app.status == ApplicationStatus.READY_TO_APPLY
+    assert reloaded_app.submitted_at is None
+
+    # Verify no auto_apply_submission_authorized audit event was added to task 3
+    audit_events = reloaded_task.audit_events or []
+    assert not any(e.get("event") == "auto_apply_submission_authorized" for e in audit_events)
+
+
+def test_daily_cap_ignores_submissions_from_previous_days(db_session):
+    """
+    Submissions from yesterday or earlier do not count toward today's daily cap.
+    """
+    session, _ = db_session
+    now = datetime.now(timezone.utc)
+    yesterday = now - timedelta(days=2)
+
+    app_repo = ApplicationRepository(session)
+    policy_service = AutoApplyPolicyService(session, max_daily_submissions=1)
+
+    # Record an AUTO_APPLY submission event from 2 days ago
+    app_old, task_old, _ = _build_clean_environment(session, suffix="old-1")
+    app_repo.append_event(
+        application_id=app_old.application_id,
+        job_id=app_old.job_id_str,
+        event_type="SUBMISSION_AUTHORIZED",
+        event_id="evt-old-1",
+        source="AUTO_APPLY_POLICY",
+        notes="Old submission from previous day",
+        timestamp=yesterday,
+    )
+    task_old.status = BrowserTaskStatus.COMPLETED
+    task_old.audit_events = [
+        {
+            "event": "auto_apply_submission_authorized",
+            "authorization_source": "AUTO_APPLY_POLICY",
+            "timestamp": yesterday.isoformat(),
+        }
+    ]
+    task_old.completed_at = yesterday
+    session.commit()
+
+    # Today's count is 0
+    assert policy_service.count_daily_submissions() == 0
+
+    # Today's application is fully eligible despite cap = 1
+    app_today, task_today, sess_today = _build_clean_environment(session, suffix="today-1")
+    eval_result = policy_service.evaluate(app_today.application_id)
+    assert eval_result.eligible is True
+    assert eval_result.reason_code == "ELIGIBLE"
+
+    auth_task, auth_res = policy_service.authorize(app_today.application_id)
+    assert auth_res.eligible is True
+    assert auth_task.status == BrowserTaskStatus.SUBMISSION_AUTHORIZED
+    assert policy_service.count_daily_submissions() == 1
+
+
+def test_configured_safety_limit_default_and_override(db_session):
+    """
+    Verify configured safety limit behavior:
+    - Defaults to configured safety limit (10)
+    - Can be overridden via constructor or method parameters
+    """
+    session, _ = db_session
+    policy_service = AutoApplyPolicyService(session)
+    assert policy_service.max_daily_submissions == get_configured_daily_limit()
+
+    # Create an app
+    app, task, _ = _build_clean_environment(session, suffix="conf-1")
+
+    # Override cap to 0 via evaluate parameter
+    res_blocked = policy_service.evaluate(app.application_id, max_daily_submissions=0)
+    assert res_blocked.eligible is False
+    assert res_blocked.reason_code == "RATE_LIMIT_EXCEEDED"
+
+    # Override cap to 5 via evaluate parameter
+    res_ok = policy_service.evaluate(app.application_id, max_daily_submissions=5)
+    assert res_ok.eligible is True
+    assert res_ok.reason_code == "ELIGIBLE"
 

@@ -50,6 +50,7 @@ class QueueConfig(BaseModel):
     max_active_review: int = 50
     auto_skip_below_priority: float = 20.0
     default_sort: str = "priority_score_desc"
+    max_daily_auto_apply: int = 10
 
 
 class CopilotConfig(BaseModel):
@@ -106,6 +107,7 @@ def load_copilot_config(config_path: Optional[Path] = None) -> CopilotConfig:
             max_active_review=q_data.get("max_active_review", 50),
             auto_skip_below_priority=q_data.get("auto_skip_below_priority", 20.0),
             default_sort=q_data.get("default_sort", "priority_score_desc"),
+            max_daily_auto_apply=q_data.get("max_daily_auto_apply", 10),
         )
 
         return CopilotConfig(
