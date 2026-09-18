@@ -13,8 +13,9 @@ from job_copilot.copilot.models import (
     QueueStatus,
 )
 from job_copilot.domain.browser_worker_enums import AuthenticatedSessionStatus, BrowserTaskStatus
-from job_copilot.domain.enums import ApplicationStatus, EmploymentType, RemoteStatus, ResumeStrategy
+from job_copilot.domain.enums import ApplicationMode, ApplicationStatus, EmploymentType, RemoteStatus, ResumeStrategy
 from job_copilot.matching.models import JobRecommendation, MatchClassification
+
 
 
 def utc_now() -> datetime:
@@ -76,8 +77,10 @@ class DashboardQueueItem(BaseModel):
     major_gaps: List[str] = Field(default_factory=list)
     risk_flags: List[str] = Field(default_factory=list)
     primary_reason: Optional[str] = None
+    mode: str = "ASSISTED"
     selected_strategy: Optional[str] = None
     tracking_application_id: Optional[str] = None
+
     application_status: Optional[str] = None
     discovered_at: datetime = Field(default_factory=utc_now)
 
@@ -278,6 +281,7 @@ class ApplicationDetailResponse(BaseModel):
     match_score: Optional[float] = None
     recommendation: Optional[str] = None
     selected_strategy: str
+    mode: str = "ASSISTED"
     resume_pdf_path: Optional[str] = None
     resume_tex_content: Optional[str] = None
     cover_letter_text: Optional[str] = None
@@ -296,6 +300,12 @@ class ApplicationDetailResponse(BaseModel):
     blocker_instruction: Optional[str] = None
     can_resume: bool = False
     is_external_unverified: bool = False
+
+
+class UpdateApplicationModePayload(BaseModel):
+    """Request payload to switch application execution mode without submitting."""
+    mode: ApplicationMode = Field(..., description="Target execution mode: MANUAL, ASSISTED, AUTO_APPLY")
+
 
 
 

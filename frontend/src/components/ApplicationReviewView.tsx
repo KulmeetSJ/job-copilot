@@ -28,8 +28,9 @@ import {
   GraduationCap,
 } from 'lucide-react';
 import { api } from '../api';
-import { ApplicationDetailResponse } from '../types';
+import { ApplicationDetailResponse, ApplicationMode } from '../types';
 import { SubmissionModal } from './SubmissionModal';
+
 import { formatSource } from '../utils/formatters';
 
 interface ApplicationReviewViewProps {
@@ -101,8 +102,23 @@ export const ApplicationReviewView: React.FC<ApplicationReviewViewProps> = ({
   const [retryAcknowledged, setRetryAcknowledged] = useState(false);
   const [retryNotes, setRetryNotes] = useState('');
   const [retrying, setRetrying] = useState(false);
+  const [updatingMode, setUpdatingMode] = useState(false);
+
+  const handleModeChange = async (newMode: ApplicationMode) => {
+    if (!detail) return;
+    setUpdatingMode(true);
+    try {
+      const updated = await api.updateApplicationMode(detail.application_id, newMode);
+      setDetail(updated);
+    } catch (err) {
+      console.error('Failed to update application mode:', err);
+    } finally {
+      setUpdatingMode(false);
+    }
+  };
 
   const [listLoading, setListLoading] = useState(true);
+
 
   // Authenticated PDF and Screenshot Blob URLs
   const [pdfBlobUrl, setPdfBlobUrl] = useState<string | null>(null);
@@ -561,6 +577,34 @@ export const ApplicationReviewView: React.FC<ApplicationReviewViewProps> = ({
                   <span>Source: <b className="text-slate-300">{formatSource(detail.source)}</b></span>
                   <span className="hidden sm:inline">•</span>
                   <span>Strategy: <code className="font-mono text-emerald-400 uppercase font-semibold">{detail.selected_strategy}</code></span>
+                  <span className="hidden sm:inline">•</span>
+                  <div className="inline-flex items-center space-x-1.5">
+                    <span>Mode:</span>
+                    <div className="inline-flex rounded shadow-sm border border-slate-700 bg-slate-900/80 p-0.5" role="group">
+                      {(['MANUAL', 'ASSISTED', 'AUTO_APPLY'] as ApplicationMode[]).map((m) => {
+                        const isSelected = (detail.mode || 'ASSISTED') === m;
+                        return (
+                          <button
+                            key={m}
+                            type="button"
+                            disabled={updatingMode}
+                            onClick={() => handleModeChange(m)}
+                            className={`px-1.5 py-0.5 text-[10px] font-mono font-semibold rounded transition-colors ${
+                              isSelected
+                                ? m === 'AUTO_APPLY'
+                                  ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                                  : m === 'MANUAL'
+                                  ? 'bg-purple-500/20 text-purple-300 border border-purple-500/40'
+                                  : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                                : 'text-slate-400 hover:text-slate-200 border border-transparent'
+                            }`}
+                          >
+                            {m}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
                   {detail.match_score && (
                     <>
                       <span className="hidden sm:inline">•</span>
@@ -568,6 +612,7 @@ export const ApplicationReviewView: React.FC<ApplicationReviewViewProps> = ({
                     </>
                   )}
                 </div>
+
 
                 {/* Canonical Original Job URL (Task 2) */}
                 <div className="flex flex-wrap items-center gap-2 text-xs pt-1">

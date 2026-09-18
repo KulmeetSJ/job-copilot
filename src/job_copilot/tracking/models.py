@@ -118,7 +118,9 @@ class ApplicationRecord(BaseModel):
     submitted_at: Optional[datetime] = None
     current_status: ApplicationLifecycleStatus = Field(default=ApplicationLifecycleStatus.DISCOVERED)
     current_status_at: datetime = Field(default_factory=utc_now)
+    mode: str = "ASSISTED"
     resume_strategy: Optional[str] = None
+
     match_score: Optional[float] = None
     recommendation: Optional[str] = None
     package_path: Optional[str] = None

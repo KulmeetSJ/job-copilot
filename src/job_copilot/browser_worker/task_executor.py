@@ -680,7 +680,12 @@ class BrowserTaskExecutor:
             raise ValueError(f"Browser task '{task_id}' not found.")
 
         # Check if task was paused during submission or preparation
-        has_auth_event = any(e.get("event") == "human_submission_authorized" for e in (task.audit_events or []))
+        has_auth_event = any(
+            e.get("event") in ("human_submission_authorized", "auto_apply_submission_authorized")
+            or e.get("authorization_source") in ("HUMAN_OPERATOR", "AUTO_APPLY_POLICY")
+            for e in (task.audit_events or [])
+        )
+
         if has_auth_event:
             self.task_repo.update_status(task_id, BrowserTaskStatus.SUBMISSION_AUTHORIZED, pause_reason=None)
             self.task_repo.append_audit_event(

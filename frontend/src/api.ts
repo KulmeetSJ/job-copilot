@@ -1,7 +1,9 @@
 import {
   AnalyzeOpportunityResponse,
   ApplicationDetailResponse,
+  ApplicationMode,
   DashboardOverviewResponse,
+
   DashboardQueueResponse,
   JobDetailResponse,
   PairedDeviceItem,
@@ -86,8 +88,18 @@ export const api = {
     return handleResponse<ApplicationDetailResponse>(res);
   },
 
+  async updateApplicationMode(applicationId: string, mode: ApplicationMode): Promise<ApplicationDetailResponse> {
+    const res = await fetch(`${API_BASE}/applications/${encodeURIComponent(applicationId)}/mode`, {
+      method: 'PATCH',
+      headers: getHeaders(),
+      body: JSON.stringify({ mode }),
+    });
+    return handleResponse<ApplicationDetailResponse>(res);
+  },
+
   // Actions
   async prepareApplication(applicationId: string, strategyOverride?: string): Promise<ApplicationDetailResponse> {
+
     const res = await fetch(`${API_BASE}/applications/${encodeURIComponent(applicationId)}/prepare`, {
       method: 'POST',
       headers: getHeaders(),

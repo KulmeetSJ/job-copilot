@@ -125,13 +125,27 @@ def init_db(custom_engine: Optional[Engine] = None) -> None:
                     conn.execute(text("ALTER TABLE browser_tasks ADD COLUMN execution_mode VARCHAR(50) DEFAULT 'REMOTE_HEADLESS'"))
                 if "assigned_device_id" not in cols:
                     conn.execute(text("ALTER TABLE browser_tasks ADD COLUMN assigned_device_id VARCHAR(100)"))
+                if "application_mode" not in cols:
+                    conn.execute(text("ALTER TABLE browser_tasks ADD COLUMN application_mode VARCHAR(32) DEFAULT 'ASSISTED'"))
+
+                app_cols = [row[1] for row in conn.execute(text("PRAGMA table_info(applications)")).fetchall()]
+                if "mode" not in app_cols:
+                    conn.execute(text("ALTER TABLE applications ADD COLUMN mode VARCHAR(32) DEFAULT 'ASSISTED'"))
+
+                q_cols = [row[1] for row in conn.execute(text("PRAGMA table_info(copilot_queue)")).fetchall()]
+                if "mode" not in q_cols:
+                    conn.execute(text("ALTER TABLE copilot_queue ADD COLUMN mode VARCHAR(32) DEFAULT 'ASSISTED'"))
                 conn.commit()
             else:
                 # PostgreSQL safe column addition
                 conn.execute(text("ALTER TABLE browser_tasks ADD COLUMN IF NOT EXISTS execution_mode VARCHAR(50) DEFAULT 'REMOTE_HEADLESS'"))
                 conn.execute(text("ALTER TABLE browser_tasks ADD COLUMN IF NOT EXISTS assigned_device_id VARCHAR(100)"))
+                conn.execute(text("ALTER TABLE browser_tasks ADD COLUMN IF NOT EXISTS application_mode VARCHAR(32) DEFAULT 'ASSISTED'"))
+                conn.execute(text("ALTER TABLE applications ADD COLUMN IF NOT EXISTS mode VARCHAR(32) DEFAULT 'ASSISTED'"))
+                conn.execute(text("ALTER TABLE copilot_queue ADD COLUMN IF NOT EXISTS mode VARCHAR(32) DEFAULT 'ASSISTED'"))
                 conn.commit()
     except Exception as se:
         logger.warning(f"Notice while verifying table columns in init_db: {se}")
+
 
     logger.info("Database tables initialized successfully.")

@@ -30,7 +30,9 @@ from job_copilot.schemas.dashboard import (
     SourceMonitoringItem,
     SubmissionConfirmPayload,
     SubmissionConfirmResponse,
+    UpdateApplicationModePayload,
 )
+
 from job_copilot.services.dashboard_service import DashboardService
 from job_copilot.tracking.models import ApplicationRecord
 from job_copilot.utils.logging import get_logger
@@ -237,6 +239,26 @@ def confirm_application_submission(
     except Exception as e:
         logger.error(f"Unexpected error during submission confirmation: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+
+@router.patch("/applications/{application_id}/mode", response_model=ApplicationDetailResponse)
+def update_application_mode(
+    application_id: str,
+    payload: UpdateApplicationModePayload,
+    service: DashboardService = Depends(get_dashboard_service),
+) -> ApplicationDetailResponse:
+    """
+    Update application execution mode (MANUAL, ASSISTED, AUTO_APPLY).
+    Changing an application to AUTO_APPLY does NOT submit anything.
+    """
+    try:
+        return service.update_application_mode(application_id=application_id, mode=payload.mode)
+    except ValueError as ve:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(ve))
+    except Exception as e:
+        logger.error(f"Failed to update application mode for '{application_id}': {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
 
 
 @router.post("/applications/{application_id}/resume", response_model=ApplicationDetailResponse)

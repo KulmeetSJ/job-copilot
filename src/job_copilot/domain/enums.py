@@ -18,6 +18,13 @@ class ApplicationStatus(str, Enum):
     WITHDRAWN = "WITHDRAWN"
 
 
+class ApplicationMode(str, Enum):
+    """Execution mode for preparing and submitting a job application."""
+    MANUAL = "MANUAL"
+    ASSISTED = "ASSISTED"
+    AUTO_APPLY = "AUTO_APPLY"
+
+
 class RemoteStatus(str, Enum):
     """Work arrangement options."""
     REMOTE = "REMOTE"

@@ -535,4 +535,39 @@ def test_api_continue_with_valid_session_queues_task_and_never_submits(client_wi
     assert not any(evt["event_type"] == "SUBMITTED" for evt in data["timeline"])
 
 
+def test_update_application_mode_endpoint(client_with_db):
+    """
+    PATCH /api/dashboard/applications/{id}/mode updates mode between MANUAL, ASSISTED, AUTO_APPLY.
+    Changing to AUTO_APPLY does NOT trigger submission.
+    """
+    client, session = client_with_db
+
+    # 1. Default mode is ASSISTED
+    res_get = client.get("/api/dashboard/applications/app-api-test-001")
+    assert res_get.status_code == 200
+    assert res_get.json()["mode"] == "ASSISTED"
+
+    # 2. Update to AUTO_APPLY
+    res_patch = client.patch(
+        "/api/dashboard/applications/app-api-test-001/mode",
+        json={"mode": "AUTO_APPLY"},
+    )
+    assert res_patch.status_code == 200
+    data = res_patch.json()
+    assert data["mode"] == "AUTO_APPLY"
+
+    # Must NOT have submitted
+    assert data["status"] != "SUBMITTED"
+    assert data["submitted_at"] is None
+
+    # 3. Update to MANUAL
+    res_manual = client.patch(
+        "/api/dashboard/applications/app-api-test-001/mode",
+        json={"mode": "MANUAL"},
+    )
+    assert res_manual.status_code == 200
+    assert res_manual.json()["mode"] == "MANUAL"
+
+
+
 

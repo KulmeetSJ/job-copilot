@@ -22,7 +22,7 @@ from job_copilot.copilot.models import (
 from job_copilot.db.database import get_db
 from job_copilot.domain.artifact_enums import ArtifactType
 from job_copilot.domain.browser_worker_enums import BrowserTaskStatus
-from job_copilot.domain.enums import ApplicationStatus, RemoteStatus, ResumeStrategy
+from job_copilot.domain.enums import ApplicationMode, ApplicationStatus, RemoteStatus, ResumeStrategy
 from job_copilot.domain.featured_jobs import CURATED_FEATURED_JOBS
 from job_copilot.ingestion.deduplicator import JobDeduplicator
 from job_copilot.ingestion.normalizer import JobNormalizer
@@ -30,7 +30,9 @@ from job_copilot.ingestion.sources.url import UrlJobSource
 from job_copilot.matching.models import JobAssessment, MatchClassification
 from job_copilot.models.application import Application, ApplicationEventModel
 from job_copilot.models.browser_task import BrowserTaskModel
+from job_copilot.models.copilot import CopilotQueueRecord
 from job_copilot.models.job import Job
+
 from job_copilot.repositories.application_repository import ApplicationRepository
 from job_copilot.repositories.browser_task_repository import BrowserTaskRepository
 from job_copilot.repositories.device_repository import DeviceRepository
@@ -876,7 +878,14 @@ class DashboardService:
 
             selected_strat = ResumeStrategy.normalize(app_model.resume_strategy if app_model and app_model.resume_strategy else (pkg.selected_resume_strategy if pkg else None))
 
+            app_mode_str = "ASSISTED"
+            if app_model and hasattr(app_model, "mode") and app_model.mode:
+                app_mode_str = app_model.mode.value if hasattr(app_model.mode, "value") else str(app_model.mode)
+            elif tracking_app and hasattr(tracking_app, "mode") and tracking_app.mode:
+                app_mode_str = str(tracking_app.mode)
+
             # Hydrate saved user inputs from persistent storage
+
             saved_answers = self.prep_service.load_saved_user_inputs(job_id)
             if not saved_answers and job_id != application_id:
                 saved_answers = self.prep_service.load_saved_user_inputs(application_id)
@@ -1285,7 +1294,9 @@ class DashboardService:
                 match_score=match_score,
                 recommendation=recommendation,
                 selected_strategy=selected_strat,
+                mode=app_mode_str,
                 resume_pdf_path=resume_pdf_path,
+
                 resume_tex_content=resume_tex_content,
                 cover_letter_text=cover_letter_text,
                 cover_letter_subject=cover_letter_subject,
@@ -1309,12 +1320,55 @@ class DashboardService:
                 db.close()
 
 
-    # ==========================================================================
-    # 5. Application Actions (Prepare, Skip, User Input, Confirm)
-    # ==========================================================================
+    def update_application_mode(self, application_id: str, mode: ApplicationMode) -> ApplicationDetailResponse:
+        """
+        Update the execution mode for an application (MANUAL, ASSISTED, AUTO_APPLY).
+        Changing an application to AUTO_APPLY does NOT submit anything.
+        """
+        db, should_close = self._get_db_session()
+        try:
+            app_repo = ApplicationRepository(db)
+            app = app_repo.get_by_application_id(application_id) or app_repo.get_by_job_id_str(application_id)
+            if not app:
+                raise ValueError(f"Application '{application_id}' not found.")
+
+            target_mode = mode if isinstance(mode, ApplicationMode) else ApplicationMode(str(mode).upper())
+            app.mode = target_mode
+
+            # Also sync active browser task application_mode if one exists
+            task_repo = BrowserTaskRepository(db)
+            active_task = task_repo.get_by_application_id(app.application_id) or task_repo.get_by_application_or_job_id(
+                application_id=app.application_id, job_id=app.job_id_str
+            )
+            if active_task:
+
+                active_task.application_mode = target_mode.value
+                task_repo.append_audit_event(
+                    active_task.task_id,
+                    {
+                        "event": "application_mode_updated",
+                        "mode": target_mode.value,
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    },
+                )
+
+            # Sync copilot queue record if one exists
+            queue_item = db.query(CopilotQueueRecord).filter(
+                (CopilotQueueRecord.job_id == app.job_id_str) | (CopilotQueueRecord.job_id == app.application_id)
+            ).first()
+            if queue_item:
+                queue_item.mode = target_mode.value
+
+            db.commit()
+            logger.info(f"Updated application '{application_id}' mode to '{target_mode.value}'")
+            return self.get_application_detail(application_id)
+        finally:
+            if should_close:
+                db.close()
 
     def prepare_application(self, application_id: str, strategy_override: Optional[str] = None) -> ApplicationDetailResponse:
         """Prepare tailored resume, cover letter, and Q&A answers for an application."""
+
         db, should_close = self._get_db_session()
         try:
             self._ensure_curated_job_exists(db, application_id)

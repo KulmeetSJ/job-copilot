@@ -8,6 +8,11 @@ from job_copilot.browser_worker.adapters import (
     NaukriAdapter,
     SourceAdapterRegistry,
 )
+from job_copilot.browser_worker.auto_apply_policy import (
+    AutoApplyEligibilityResult,
+    AutoApplyPolicyService,
+    evaluate_auto_apply_eligibility,
+)
 from job_copilot.browser_worker.browser import BrowserManager, BrowserSessionAdapter
 from job_copilot.browser_worker.confirmation_service import HumanConfirmationService
 from job_copilot.browser_worker.exceptions import (
@@ -50,6 +55,9 @@ __all__ = [
     "InstahyreAdapter",
     "GenericPortalAdapter",
     "HumanConfirmationService",
+    "AutoApplyEligibilityResult",
+    "AutoApplyPolicyService",
+    "evaluate_auto_apply_eligibility",
     "BrowserWorkerError",
     "DomainSecurityError",
     "CaptchaDetectedError",
@@ -66,3 +74,4 @@ __all__ = [
     "is_prohibited_field",
     "validate_target_domain",
 ]
+

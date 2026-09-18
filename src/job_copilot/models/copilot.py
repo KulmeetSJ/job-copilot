@@ -17,6 +17,7 @@ class CopilotQueueRecord(Base, TimestampMixin):
     priority_band: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
     priority_score: Mapped[float] = mapped_column(Float, nullable=False, index=True)
     queue_status: Mapped[str] = mapped_column(String(50), default="PENDING_REVIEW", nullable=False, index=True)
+    mode: Mapped[str] = mapped_column(String(32), default="ASSISTED", server_default="ASSISTED", nullable=False)
     category_scores: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     reasons: Mapped[List[str]] = mapped_column(JSON, default=list, nullable=False)
     user_notes: Mapped[List[str]] = mapped_column(JSON, default=list, nullable=False)

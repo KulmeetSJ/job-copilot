@@ -1,6 +1,8 @@
 export type PriorityBand = 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | 'IGNORE';
 export type QueueStatus = 'NEW' | 'REVIEW' | 'APPROVED' | 'PREPARING' | 'READY_FOR_REVIEW' | 'WAITING_FOR_USER' | 'SUBMITTED' | 'TRACKING' | 'SKIPPED' | 'ARCHIVED';
+export type ApplicationMode = 'MANUAL' | 'ASSISTED' | 'AUTO_APPLY';
 export type MatchClassification = 
+
   | 'MATCH_CONFIRMED'
   | 'MATCH_PROJECT_ONLY'
   | 'MATCH_EXPOSURE_ONLY'
@@ -73,7 +75,9 @@ export interface DashboardQueueItem {
   risk_flags: string[];
   primary_reason?: string;
   selected_strategy?: string;
+  mode?: ApplicationMode;
   tracking_application_id?: string;
+
   application_status?: string;
   discovered_at: string;
 }
@@ -234,7 +238,9 @@ export interface ApplicationDetailResponse {
   match_score?: number;
   recommendation?: string;
   selected_strategy: string;
+  mode?: ApplicationMode;
   resume_pdf_path?: string;
+
   resume_tex_content?: string;
   cover_letter_text?: string;
   cover_letter_subject?: string;

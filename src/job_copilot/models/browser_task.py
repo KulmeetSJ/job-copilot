@@ -32,6 +32,7 @@ class BrowserTaskModel(Base, TimestampMixin):
 
     worker_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     execution_mode: Mapped[str] = mapped_column(String(64), default="LOCAL_INTERACTIVE", nullable=False)
+    application_mode: Mapped[str] = mapped_column(String(32), default="ASSISTED", server_default="ASSISTED", nullable=False)
     assigned_device_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     attempt_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     max_attempts: Mapped[int] = mapped_column(Integer, default=3, nullable=False)

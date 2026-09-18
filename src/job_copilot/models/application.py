@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, List, Optional
 from sqlalchemy import DateTime, Enum, Float, ForeignKey, Integer, JSON, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from job_copilot.domain.enums import ApplicationStatus, ResumeStrategy
+from job_copilot.domain.enums import ApplicationMode, ApplicationStatus, ResumeStrategy
 from job_copilot.models.base import Base, TimestampMixin, utc_now
 
 if TYPE_CHECKING:
@@ -55,6 +55,13 @@ class Application(Base, TimestampMixin):
     status: Mapped[ApplicationStatus] = mapped_column(
         Enum(ApplicationStatus, native_enum=False),
         default=ApplicationStatus.DISCOVERED,
+        nullable=False,
+        index=True,
+    )
+    mode: Mapped[ApplicationMode] = mapped_column(
+        Enum(ApplicationMode, native_enum=False),
+        default=ApplicationMode.ASSISTED,
+        server_default="ASSISTED",
         nullable=False,
         index=True,
     )

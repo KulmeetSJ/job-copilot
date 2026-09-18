@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Optional
 from pydantic import BaseModel, ConfigDict, Field
-from job_copilot.domain.enums import ApplicationStatus, ResumeStrategy
+from job_copilot.domain.enums import ApplicationMode, ApplicationStatus, ResumeStrategy
 from job_copilot.schemas.job import JobRead
 
 
@@ -13,6 +13,10 @@ class ApplicationBase(BaseModel):
     status: ApplicationStatus = Field(
         default=ApplicationStatus.DISCOVERED,
         description="Application status"
+    )
+    mode: ApplicationMode = Field(
+        default=ApplicationMode.ASSISTED,
+        description="Application execution mode (MANUAL, ASSISTED, AUTO_APPLY)"
     )
     strategy_used: Optional[ResumeStrategy] = Field(
         default=ResumeStrategy.BACKEND_JAVA,
@@ -30,9 +34,11 @@ class ApplicationCreate(ApplicationBase):
 class ApplicationUpdate(BaseModel):
     """Schema for updating an application record."""
     status: Optional[ApplicationStatus] = None
+    mode: Optional[ApplicationMode] = None
     strategy_used: Optional[ResumeStrategy] = None
     notes: Optional[str] = None
     applied_at: Optional[datetime] = None
+
 
 
 class ApplicationRead(ApplicationBase):
