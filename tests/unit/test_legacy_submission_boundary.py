@@ -29,6 +29,13 @@ from job_copilot.services.copilot_service import CopilotService
 from job_copilot.services.discovery_service import DiscoveryService
 
 
+@pytest.fixture(autouse=True)
+def _ensure_db_initialized():
+    """Ensure DB schema is initialized for test execution."""
+    from job_copilot.db.database import init_db
+    init_db()
+
+
 @pytest.fixture
 async def test_client():
     transport = ASGITransport(app=app)

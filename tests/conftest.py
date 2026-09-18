@@ -11,9 +11,15 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from job_copilot.api.app import app
+from job_copilot.db.database import init_db
 from job_copilot.models.base import Base
 from job_copilot.repositories.candidate_repository import CandidateRepository
 from job_copilot.schemas.candidate import CandidateProfile
+
+
+def pytest_sessionstart(session):
+    """Ensure database tables and schema are initialized for test suite execution (e.g. fresh CI environments)."""
+    init_db()
 
 
 @pytest.fixture
