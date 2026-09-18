@@ -206,7 +206,23 @@ def test_agent_protocol_api_endpoints(client, in_memory_db):
     assert pkg_resp.status_code == 200
     assert pkg_resp.json()["status"] == "READY_FOR_REVIEW"
 
-    # 9. Local agent reports verified completion via POST /api/agent/tasks/{id}/complete
+    # 9a. State gate check: completing while READY_FOR_REVIEW is rejected with 409
+    rejected_resp = client.post(
+        "/api/agent/tasks/task-test-local-01/complete",
+        headers={"X-Device-Token": device_token},
+        json={
+            "task_id": "task-test-local-01",
+            "employer_confirmation_signal": "Thank you for applying! Confirmation #GH-98765",
+            "submission_reference": "GH-98765",
+            "evidence_notes": "Premature attempt",
+        },
+    )
+    assert rejected_resp.status_code == 409
+
+    # Advance task to SUBMISSION_RUNNING (authorized submission)
+    task_repo.update_status("task-test-local-01", BrowserTaskStatus.SUBMISSION_RUNNING)
+
+    # 9b. Local agent reports verified completion via POST /api/agent/tasks/{id}/complete
     complete_resp = client.post(
         "/api/agent/tasks/task-test-local-01/complete",
         headers={"X-Device-Token": device_token},
@@ -219,6 +235,7 @@ def test_agent_protocol_api_endpoints(client, in_memory_db):
     )
     assert complete_resp.status_code == 200
     assert complete_resp.json()["status"] == "COMPLETED"
+
 
 
 def test_agent_config_security_permissions():

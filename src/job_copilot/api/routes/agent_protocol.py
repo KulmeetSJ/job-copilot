@@ -3,6 +3,7 @@
 import base64
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
+import uuid
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
@@ -312,6 +313,7 @@ def submit_task_complete(
     """
     Record verified employer portal submission completion evidence.
     Transitions task to COMPLETED and Application to APPLIED / SUBMITTED.
+    Strictly gates on task state (SUBMISSION_RUNNING), device ownership, and idempotency.
     """
     task_repo = BrowserTaskRepository(db)
     app_repo = ApplicationRepository(db)
@@ -319,13 +321,52 @@ def submit_task_complete(
     if not task:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Task '{task_id}' not found.")
 
+    # 1. Device / Worker Ownership Gate
+    is_owner = (
+        task.assigned_device_id == device.device_id
+        or task.worker_id == f"device:{device.device_id}"
+        or task.worker_id == device.device_id
+    )
+    if not is_owner:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Task '{task_id}' is not assigned to device '{device.device_id}'.",
+        )
+
+    # 2. Employer confirmation signal verification (must be non-empty)
     if not payload.employer_confirmation_signal:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Employer confirmation signal must be provided to mark task COMPLETED.",
         )
 
-    # 1. Mark BrowserTask COMPLETED
+    # 3. Idempotency Guard: if already COMPLETED, return existing result without re-executing side effects
+    if task.status == BrowserTaskStatus.COMPLETED:
+        device_repo = DeviceRepository(db)
+        device_repo.update_heartbeat(device.device_id, status=DeviceStatus.CONNECTED)
+        existing_ref = payload.submission_reference
+        audit_events = getattr(task, "audit_events", None) or []
+        for e in audit_events:
+            if e.get("event") == "submission_completed_verified" and e.get("submission_reference"):
+                existing_ref = e.get("submission_reference")
+                break
+        logger.info(f"Task '{task_id}' is already COMPLETED. Returning idempotent completion for device '{device.device_id}'.")
+        return {
+            "success": True,
+            "task_id": task_id,
+            "application_id": task.application_id,
+            "status": BrowserTaskStatus.COMPLETED.value,
+            "submission_reference": existing_ref,
+        }
+
+    # 4. State Gate: only tasks in SUBMISSION_RUNNING may be marked COMPLETED
+    if task.status != BrowserTaskStatus.SUBMISSION_RUNNING:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Task '{task_id}' is in status '{task.status.value}', expected '{BrowserTaskStatus.SUBMISSION_RUNNING.value}'.",
+        )
+
+    # 5. Mark BrowserTask COMPLETED
     task_repo.update_status(task_id, BrowserTaskStatus.COMPLETED)
     task_repo.append_audit_event(
         task_id=task_id,
@@ -339,7 +380,7 @@ def submit_task_complete(
         },
     )
 
-    # 2. Mark Application APPLIED and record event
+    # 6. Mark Application APPLIED and record event
     now = datetime.now(timezone.utc)
     if task.application_id:
         app = app_repo.get_by_application_id(task.application_id)
@@ -347,11 +388,19 @@ def submit_task_complete(
             app.status = ApplicationStatus.APPLIED
             app.submitted_at = now
             app.applied_at = now
+            app_repo.append_event(
+                application_id=task.application_id,
+                job_id=task.job_id or task.application_id,
+                event_type="SUBMITTED",
+                event_id=f"evt-{uuid.uuid4().hex[:8]}",
+                source="LOCAL_INTERACTIVE_AGENT",
+                notes=f"Employer confirmation verified via local interactive agent. Ref: {payload.submission_reference or 'N/A'}",
+            )
             db.commit()
 
-        # 3. Update Tracking Service
+        # 7. Update Tracking Service
         try:
-            tracking_svc = TrackingService(db=db)
+            tracking_svc = TrackingService()
             tracking_svc.record_event(
                 application_id=task.application_id,
                 event_type=ApplicationLifecycleStatus.SUBMITTED,
