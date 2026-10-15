@@ -24,6 +24,7 @@ from job_copilot.schemas.candidate import CandidateProfile
 from job_copilot.services.discovery_service import DiscoveryService
 from job_copilot.services.job_intelligence_service import JobIntelligenceService
 from job_copilot.services.resume_service import ResumeService
+from job_copilot.config import settings
 from job_copilot.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -69,7 +70,7 @@ class ApplicationPrepService:
         resume_service: Optional[ResumeService] = None,
         artifact_service: Optional[Any] = None,
     ):
-        self.master_profile_path = master_profile_path or Path("data/candidate/master_profile.yaml")
+        self.master_profile_path = master_profile_path or settings.candidate_profile_path
         self.applications_data_dir = applications_data_dir or Path("data/applications")
         self.jobs_data_dir = jobs_data_dir or Path("data/jobs")
         self.artifact_service = artifact_service

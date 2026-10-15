@@ -167,7 +167,7 @@ def test_dynamic_port_configuration():
 
 
 def test_dockerignore_and_dockerfile_data_isolation():
-    """Verify that .dockerignore excludes ephemeral runtime artifacts while Dockerfile includes candidate truth."""
+    """Verify private candidate truth is supplied at runtime, never baked into an image."""
     root = Path.cwd()
     dockerignore = root / ".dockerignore"
     assert dockerignore.exists(), ".dockerignore must exist"
@@ -182,8 +182,14 @@ def test_dockerignore_and_dockerfile_data_isolation():
     dockerfile = root / "Dockerfile"
     assert dockerfile.exists(), "Dockerfile must exist"
     df_content = dockerfile.read_text(encoding="utf-8")
-    assert "COPY data/candidate/ ./data/candidate/" in df_content
+    assert "COPY data/candidate/ ./data/candidate/" not in df_content
+    assert "data/candidate/" in di_content
     assert "COPY data/resume_strategies/ ./data/resume_strategies/" in df_content
+
+    render = (root / "render.yaml").read_text(encoding="utf-8")
+    assert "key: DASHBOARD_API_KEY" in render
+    assert "generateValue: true" in render
+    assert "value: /etc/secrets" in render
 
 
 def test_candidate_truth_not_accessible_via_web_routes(client):

@@ -22,6 +22,9 @@ htmlcov/
 .env.*
 !.env.example
 
+# Private candidate truth must be mounted/provided at runtime, never baked into an image.
+data/candidate/
+
 # Dynamic Runtime Stores & Ephemeral Artifacts
 data/jobs/
 data/applications/

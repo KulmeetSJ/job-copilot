@@ -6,6 +6,7 @@ from typing import Any
 
 import yaml
 
+from job_copilot.config import settings
 from job_copilot.resume.llm.models import LLMResumeDraft
 from job_copilot.schemas.candidate import CandidateProfile, Project
 
@@ -244,7 +245,7 @@ class GroundingValidator:
     """
 
     def __init__(self, evidence_path: Path | None = None):
-        self.evidence_path = evidence_path or Path("data/candidate/evidence.yaml")
+        self.evidence_path = evidence_path or (settings.candidate_data_dir / "evidence.yaml")
         self._evidence_facts: dict[str, dict[str, Any]] = {}
         self._load_evidence_facts()
 

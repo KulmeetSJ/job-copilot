@@ -50,6 +50,10 @@ python -m job_copilot --init-db
 
 ---
 
+## Private Candidate Data and Deployment
+
+Candidate truth YAML files are private runtime data. Keep real candidate files out of Git and Docker images. For local setup, retain your own files under `data/candidate/`; for Render, upload them as Secret Files under `/etc/secrets`. See [`docs/deployment-security.md`](docs/deployment-security.md) for exact setup and one-time Git untracking instructions. The production dashboard requires `DASHBOARD_API_KEY`.
+
 ## Running the Services
 
 ### Running the FastAPI Web Server

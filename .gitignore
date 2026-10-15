@@ -90,9 +90,10 @@ data/artifacts/
 data/browser_sessions/
 data/extracted_raw_resumes.json
 
-# Explicitly track safe repository configurations, candidate truth fixtures, and strategies
-!data/candidate/
-!data/candidate/*.yaml
+# Candidate truth contains private personal data. Keep it local and supply it at runtime.
+data/candidate/*
+!data/candidate/*.example.yaml
+!data/candidate/.gitkeep
 !data/config/
 !data/config/*.yaml
 !data/resume_strategies/

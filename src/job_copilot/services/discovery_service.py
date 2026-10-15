@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 import yaml
 
+from job_copilot.config import settings
 from job_copilot.ingestion.deduplicator import JobDeduplicator
 from job_copilot.ingestion.models import (
     CanonicalJob,
@@ -45,7 +46,7 @@ class DiscoveryService:
         job_intelligence_service: Optional[JobIntelligenceService] = None,
     ):
         self.jobs_data_dir = jobs_data_dir or Path("data/jobs")
-        self.preferences_path = preferences_path or Path("data/candidate/preferences.yaml")
+        self.preferences_path = preferences_path or (settings.candidate_data_dir / "preferences.yaml")
         
         self.store = JobStore(base_dir=self.jobs_data_dir)
         self.normalizer = JobNormalizer()

@@ -23,6 +23,12 @@ services:
         value: json
       - key: HUMAN_CONFIRMATION_REQUIRED
         value: "true"
+      - key: DASHBOARD_API_KEY
+        generateValue: true
+      - key: CANDIDATE_DATA_DIR
+        value: /etc/secrets
+      - key: CANDIDATE_PROFILE_PATH
+        value: /etc/secrets/master_profile.yaml
       - key: PORT
         value: "8000"
       - key: DATABASE_URL

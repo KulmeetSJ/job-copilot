@@ -3,6 +3,7 @@ from typing import Any, List
 
 import yaml
 
+from job_copilot.config import settings
 from job_copilot.resume.analyzer import derive_dominant_themes
 from job_copilot.resume.models import JobAnalysis
 from job_copilot.schemas.candidate import CandidateProfile
@@ -130,7 +131,7 @@ def build_resume_system_prompt(
     """Dynamically generate system prompt containing verified candidate invariants, metrics, technologies, and projects."""
     if profile is None:
         try:
-            prof_path = Path("data/candidate/master_profile.yaml")
+            prof_path = settings.candidate_profile_path
             if prof_path.exists():
                 with open(prof_path, "r", encoding="utf-8") as f:
                     data = yaml.safe_load(f)
@@ -141,7 +142,7 @@ def build_resume_system_prompt(
 
     if evidence_facts is None:
         try:
-            ev_path = Path("data/candidate/evidence.yaml")
+            ev_path = settings.candidate_data_dir / "evidence.yaml"
             if ev_path.exists():
                 with open(ev_path, "r", encoding="utf-8") as f:
                     ev_data = yaml.safe_load(f)

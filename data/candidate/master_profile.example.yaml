@@ -1,0 +1,20 @@
+# Synthetic example only. Copy to master_profile.yaml locally and replace with verified data.
+# Never commit real candidate profile, evidence, preferences, or review-required files.
+version: "1.0.0"
+personal_info:
+  full_name: Example Candidate
+  email: candidate@example.com
+  phone: null
+  location: Example City
+  headline: null
+  summary: Replace with a factual, evidence-backed professional summary.
+  links: []
+  evidence_ids: []
+work_authorization: {}
+education: []
+employment: []
+projects: []
+skills: []
+certifications: []
+awards: []
+domain_experience: []

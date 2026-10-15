@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 import yaml
 
+from job_copilot.config import settings
 from job_copilot.resume.analyzer import JobDescriptionAnalyzer
 from job_copilot.resume.matcher import CandidateJobMatcher
 from job_copilot.resume.llm import LLMResumeWriter
@@ -39,7 +40,7 @@ class ResumeService:
         generated_output_dir: Optional[Path] = None,
         llm_writer: Optional[LLMResumeWriter] = None,
     ):
-        self.master_profile_path = master_profile_path or Path("data/candidate/master_profile.yaml")
+        self.master_profile_path = master_profile_path or settings.candidate_profile_path
         self.strategies_dir = strategies_dir or Path("data/resume_strategies")
         self.generated_output_dir = generated_output_dir or Path("data/generated")
 

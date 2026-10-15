@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Optional
 import yaml
 
+from job_copilot.config import settings
 from job_copilot.matching.analyzer import JobAnalyzer
 from job_copilot.matching.config import MatchingConfig, default_matching_config
 from job_copilot.matching.matcher import CandidateMatcher
@@ -33,7 +34,7 @@ class JobIntelligenceService:
         jobs_data_dir: Optional[Path] = None,
         matching_config: Optional[MatchingConfig] = None,
     ):
-        self.master_profile_path = master_profile_path or Path("data/candidate/master_profile.yaml")
+        self.master_profile_path = master_profile_path or settings.candidate_profile_path
         self.jobs_data_dir = jobs_data_dir or Path("data/jobs")
         self.config = matching_config or default_matching_config
 

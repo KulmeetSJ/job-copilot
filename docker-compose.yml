@@ -13,7 +13,9 @@ services:
       - LOG_FORMAT=json
       - API_HOST=0.0.0.0
       - API_PORT=8000
-      - DATABASE_URL=postgresql+psycopg://copilot_user:copilot_password@postgres:5432/job_copilot
+      - CANDIDATE_DATA_DIR=/app/data/candidate
+      - DASHBOARD_API_KEY=${DASHBOARD_API_KEY:?Set DASHBOARD_API_KEY in your .env file}
+      - DATABASE_URL=${DATABASE_URL:?Set DATABASE_URL in your .env file}
     depends_on:
       postgres:
         condition: service_healthy
@@ -36,7 +38,7 @@ services:
     environment:
       - POSTGRES_DB=job_copilot
       - POSTGRES_USER=copilot_user
-      - POSTGRES_PASSWORD=copilot_password
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in your .env file}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -57,7 +59,9 @@ services:
     environment:
       - APP_ENV=production
       - LOG_LEVEL=INFO
-      - DATABASE_URL=postgresql+psycopg://copilot_user:copilot_password@postgres:5432/job_copilot
+      - CANDIDATE_DATA_DIR=/app/data/candidate
+      - DASHBOARD_API_KEY=${DASHBOARD_API_KEY:?Set DASHBOARD_API_KEY in your .env file}
+      - DATABASE_URL=${DATABASE_URL:?Set DATABASE_URL in your .env file}
     volumes:
       - ./data:/app/data
     command: ["python", "-m", "job_copilot", "copilot-discover"]

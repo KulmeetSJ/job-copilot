@@ -2,7 +2,7 @@
 
 from pathlib import Path
 from typing import Optional
-from pydantic import AliasChoices, Field
+from pydantic import AliasChoices, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -26,11 +26,23 @@ class Settings(BaseSettings):
         alias="DATABASE_URL",
     )
 
-    # Candidate Profile
+    # Candidate truth is loaded from a private runtime directory. In cloud deployments,
+    # mount secret files there (for example Render's /etc/secrets directory).
+    candidate_data_dir: Path = Field(
+        default=Path("./data/candidate"),
+        alias="CANDIDATE_DATA_DIR",
+    )
     candidate_profile_path: Path = Field(
         default=Path("./data/candidate/master_profile.yaml"),
         alias="CANDIDATE_PROFILE_PATH",
     )
+
+    @model_validator(mode="after")
+    def resolve_candidate_profile_path(self):
+        """Honor CANDIDATE_DATA_DIR unless an explicit profile path was supplied."""
+        if "candidate_profile_path" not in self.model_fields_set:
+            self.candidate_profile_path = self.candidate_data_dir / "master_profile.yaml"
+        return self
 
     # MCP Server
     mcp_server_name: str = Field(
