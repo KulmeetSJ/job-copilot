@@ -163,56 +163,11 @@ class ApplicationPrepService:
             except Exception:
                 db_job = None
 
-            if not db_job:
-                try:
-                    from job_copilot.domain.featured_jobs import CURATED_FEATURED_JOBS
-                    matching_key = None
-                    if job_id_or_text in CURATED_FEATURED_JOBS:
-                        matching_key = job_id_or_text
-                    else:
-                        for k, v in CURATED_FEATURED_JOBS.items():
-                            if v.get("tracking_app_id") == job_id_or_text or k in job_id_or_text or job_id_or_text in k:
-                                matching_key = k
-                                break
-                    if matching_key:
-                        job_def = CURATED_FEATURED_JOBS[matching_key]
-                        active_db = db_session
-                        should_close_active = False
-                        if active_db is None:
-                            from job_copilot.db.database import get_db
-                            active_db = next(get_db())
-                            should_close_active = True
-                        try:
-                            from job_copilot.models.job import Job
-                            j_repo = JobRepository(active_db)
-                            db_job = j_repo.get_by_job_id(matching_key)
-                            if not db_job:
-                                db_job = Job(
-                                    job_id=matching_key,
-                                    company=job_def["company"],
-                                    title=job_def["title"],
-                                    location=job_def["location"],
-                                    remote_status=job_def["remote_status"],
-                                    source=job_def["source"],
-                                    canonical_url=job_def["canonical_url"],
-                                    url=job_def["canonical_url"],
-                                    description=job_def["description"],
-                                    requirements=job_def["requirements"],
-                                    preferred_qualifications=job_def["preferred_qualifications"],
-                                    technologies=job_def["technologies"],
-                                    years_experience=job_def["years_experience"],
-                                    lifecycle_status="DISCOVERED",
-                                )
-                                active_db.add(db_job)
-                                active_db.commit()
-                                active_db.refresh(db_job)
-                        finally:
-                            if should_close_active and active_db:
-                                active_db.close()
-                except Exception as seed_err:
-                    logger.debug(f"Featured job seed fallback error: {seed_err}")
-
             if db_job:
+                # Fail-closed: Never generate a tailored application for a job explicitly known to be closed or expired
+                if getattr(db_job, "lifecycle_status", "") in ("EXPIRED", "ARCHIVED"):
+                    raise ValueError(f"Cannot prepare application: Job '{db_job.job_id}' is closed or expired.")
+
                 assessment = self.intelligence_service.evaluate_job(
                     raw_text=db_job.description,
                     company_override=db_job.company,

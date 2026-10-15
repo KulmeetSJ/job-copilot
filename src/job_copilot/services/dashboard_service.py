@@ -23,7 +23,11 @@ from job_copilot.db.database import get_db
 from job_copilot.domain.artifact_enums import ArtifactType
 from job_copilot.domain.browser_worker_enums import BrowserTaskStatus
 from job_copilot.domain.enums import ApplicationMode, ApplicationStatus, RemoteStatus, ResumeStrategy
-from job_copilot.domain.featured_jobs import CURATED_FEATURED_JOBS
+from job_copilot.services.job_verification_service import (
+    JobVerificationResult,
+    JobVerificationService,
+    JobVerificationStatus,
+)
 from job_copilot.ingestion.deduplicator import JobDeduplicator
 from job_copilot.ingestion.normalizer import JobNormalizer
 from job_copilot.ingestion.sources.url import UrlJobSource
@@ -172,6 +176,7 @@ class DashboardService:
         prep_service: Optional[ApplicationPrepService] = None,
         intelligence_service: Optional[JobIntelligenceService] = None,
         artifact_service: Optional[ArtifactService] = None,
+        verification_service: Optional[JobVerificationService] = None,
     ):
         self._db = db
         disc_service = getattr(prep_service, "discovery_service", None) if prep_service else None
@@ -186,6 +191,7 @@ class DashboardService:
         self.prep_service = prep_service or (getattr(orchestrator, "prep_service", None) if orchestrator else None) or ApplicationPrepService()
         self.intelligence_service = intelligence_service or (getattr(orchestrator, "intelligence_service", None) if orchestrator else None) or JobIntelligenceService()
         self.artifact_service = artifact_service or ArtifactService(db=db)
+        self.verification_service = verification_service or JobVerificationService()
 
     def _get_db_session(self) -> Tuple[Session, bool]:
         """Resolve database session and ownership flag."""
@@ -195,101 +201,11 @@ class DashboardService:
         return next(gen), True
 
     def _ensure_curated_job_exists(self, db: Session, identifier: str) -> Optional[Job]:
-        """Ensure a curated featured job exists in the DB jobs table and application tracking."""
-        if not identifier:
-            return None
-
-        target_job_id = identifier
-        app_repo = ApplicationRepository(db)
-        existing_app = app_repo.get_by_application_id(identifier)
-        if existing_app and existing_app.job_id_str:
-            target_job_id = existing_app.job_id_str
-
-        curated_key = None
-        if target_job_id in CURATED_FEATURED_JOBS:
-            curated_key = target_job_id
-        else:
-            for k, v in CURATED_FEATURED_JOBS.items():
-                if v.get("tracking_app_id") == target_job_id or k in target_job_id or target_job_id in k:
-                    curated_key = k
-                    break
-
-        if not curated_key:
-            return None
-
-        job_repo = JobRepository(db)
-        db_job = job_repo.get_by_job_id(curated_key)
-        job_def = CURATED_FEATURED_JOBS[curated_key]
-
-        if not db_job:
-            db_job = Job(
-                job_id=curated_key,
-                company=job_def["company"],
-                title=job_def["title"],
-                location=job_def["location"],
-                remote_status=job_def["remote_status"],
-                source=job_def["source"],
-                canonical_url=job_def["canonical_url"],
-                url=job_def["canonical_url"],
-                description=job_def["description"],
-                requirements=job_def["requirements"],
-                preferred_qualifications=job_def["preferred_qualifications"],
-                technologies=job_def["technologies"],
-                years_experience=job_def["years_experience"],
-                lifecycle_status="DISCOVERED",
-            )
-            db.add(db_job)
-            db.commit()
-            db.refresh(db_job)
-
-        # Ensure canonical job is in discovery store if available
-        try:
-            if hasattr(self, "copilot_service") and self.copilot_service and hasattr(self.copilot_service, "orchestrator"):
-                orch = self.copilot_service.orchestrator
-                if hasattr(orch, "discovery_service") and hasattr(orch.discovery_service, "store"):
-                    d_store = orch.discovery_service.store
-                    if not d_store.get_canonical_job(curated_key):
-                        from job_copilot.ingestion.models import CanonicalJob
-                        c_job = CanonicalJob(
-                            job_id=curated_key,
-                            title=job_def["title"],
-                            company=job_def["company"],
-                            location=job_def["location"],
-                            remote_status=job_def["remote_status"],
-                            canonical_url=job_def["canonical_url"],
-                            source_url=job_def["canonical_url"],
-                            source=job_def["source"],
-                            raw_description=job_def["description"],
-                            requirements=job_def["requirements"],
-                            preferred_qualifications=job_def["preferred_qualifications"],
-                            technologies=job_def["technologies"],
-                            years_experience=job_def["years_experience"],
-                        )
-                        d_store.save(c_job)
-        except Exception:
-            pass
-
-        # Ensure Application record exists
-        target_app_id = job_def.get("tracking_app_id") or f"app-{curated_key[:16]}"
-        app = app_repo.get_by_job_id_str(curated_key) or app_repo.get_by_application_id(target_app_id)
-        if not app:
-            app = Application(
-                application_id=target_app_id,
-                job_id=db_job.id,
-                job_id_str=curated_key,
-                company=job_def["company"],
-                role=job_def["title"],
-                canonical_job_url=job_def["canonical_url"],
-                source=job_def["source"],
-                status=ApplicationStatus.DISCOVERED,
-                match_score=job_def["match_score"],
-                resume_strategy=job_def["strategy"],
-            )
-            db.add(app)
-            db.commit()
-            db.refresh(app)
-
-        return db_job
+        """
+        Deprecated no-op: Curated demo fixtures are disabled to prevent synthetic
+        jobs, manufactured tracking IDs, and fictional vacancy seeding.
+        """
+        return None
 
     # ==========================================================================
     # 1. Overview & Metrics
@@ -428,7 +344,7 @@ class DashboardService:
             if should_close:
                 db.close()
 
-    def _to_dashboard_queue_item(self, j: Any) -> DashboardQueueItem:
+    def _to_dashboard_queue_item(self, j: Any, db: Optional[Session] = None) -> DashboardQueueItem:
         """Convert a CopilotJob or existing DashboardQueueItem to a DashboardQueueItem."""
         if isinstance(j, DashboardQueueItem):
             return j
@@ -449,10 +365,32 @@ class DashboardService:
             raw_gaps = j.explanation.why_not_apply or []
             risk_set = set(j.risk_flags or [])
             major_gaps = [g for g in raw_gaps if g not in risk_set and not any(r in g for r in risk_set)][:3]
+            if j.explanation.why_apply:
+                primary_reason = j.explanation.why_apply[0]
 
         app_status = None
         if hasattr(j, "current_application_status") and j.current_application_status:
             app_status = getattr(j.current_application_status, "value", str(j.current_application_status))
+
+        # Canonical tracking application ID resolution without manufactured fallbacks
+        raw_tracking_app_id = getattr(j, "tracking_application_id", None)
+        tracking_app_id = raw_tracking_app_id if isinstance(raw_tracking_app_id, str) else None
+        lookup_db = db or self._db
+        if not tracking_app_id and lookup_db is not None:
+            try:
+                app_repo = ApplicationRepository(lookup_db)
+                existing_app = app_repo.get_by_job_id_str(j.job_id)
+                if existing_app and isinstance(existing_app.application_id, str):
+                    tracking_app_id = existing_app.application_id
+            except Exception:
+                pass
+        if not tracking_app_id and hasattr(self, "tracking_service") and self.tracking_service:
+            try:
+                t_app = self.tracking_service.get_application_by_job_id(j.job_id)
+                if t_app and isinstance(getattr(t_app, "application_id", None), str):
+                    tracking_app_id = t_app.application_id
+            except Exception:
+                pass
 
         return DashboardQueueItem(
             job_id=j.job_id,
@@ -472,106 +410,44 @@ class DashboardService:
             risk_flags=j.risk_flags,
             primary_reason=primary_reason,
             selected_strategy=j.selected_strategy,
-            tracking_application_id=j.tracking_application_id,
+            tracking_application_id=tracking_app_id,
             application_status=app_status,
             discovered_at=j.discovered_at,
         )
 
     def _get_featured_openings(self, db: Session, queue_jobs: List[Any]) -> List[DashboardQueueItem]:
-        """Return curated high-match job openings ready for 1-tap tailoring on mobile and desktop."""
-        curated_defaults = [
-            DashboardQueueItem(
-                job_id="barclays-software-engineer-infrastructure-ce0266",
-                company="Barclays",
-                title="Software Engineer – Infrastructure & Cloud",
-                location="Pune, India (Hybrid)",
-                remote_status=RemoteStatus.HYBRID,
-                source="Barclays Careers",
-                canonical_url="https://search.jobs.barclays/job/-/-/13015/9",
-                match_score=94.0,
-                recommendation="APPLY_IMMEDIATELY",
-                priority_band=PriorityBand.CRITICAL,
-                priority_score=95.0,
-                queue_status=QueueStatus.NEW,
-                freshness_days=1,
-                key_matched_skills=["Google Cloud Platform (GCP)", "Terraform", "CI/CD", "Docker", "Python"],
-                primary_reason="Direct alignment with 2,000+ GCP resources & Terraform experience at HSBC.",
-                selected_strategy="cloud_devops",
-                tracking_application_id="app-barclays-ce0266",
-            ),
-            DashboardQueueItem(
-                job_id="hsbc-fintech-senior-software-engineer-backend-0da84f",
-                company="HSBC FinTech",
-                title="Senior Software Engineer — Payments Data Platform",
-                location="Pune, India (Hybrid)",
-                remote_status=RemoteStatus.HYBRID,
-                source="HSBC Careers",
-                canonical_url="https://mycareer.hsbc.com",
-                match_score=96.0,
-                recommendation="APPLY_IMMEDIATELY",
-                priority_band=PriorityBand.CRITICAL,
-                priority_score=98.0,
-                queue_status=QueueStatus.NEW,
-                freshness_days=2,
-                key_matched_skills=["Apache Beam", "GCP Dataflow", "BigQuery", "Java", "Spring Boot"],
-                primary_reason="Direct match for 10M+ daily payment transaction ingestion pipelines.",
-                selected_strategy="cloud_devops",
-                tracking_application_id="app-hsbc-fintech-0da84f",
-            ),
-            DashboardQueueItem(
-                job_id="mastercard-software-engineer-backend-java-b5bb2c",
-                company="Mastercard",
-                title="Software Engineer II — Backend & Payment Systems",
-                location="Pune, India / Remote Friendly",
-                remote_status=RemoteStatus.HYBRID,
-                source="Mastercard Careers",
-                canonical_url="https://mastercard.wd1.myworkdayjobs.com",
-                match_score=91.0,
-                recommendation="APPLY",
-                priority_band=PriorityBand.HIGH,
-                priority_score=90.0,
-                queue_status=QueueStatus.NEW,
-                freshness_days=2,
-                key_matched_skills=["Java", "Spring Boot", "Microservices", "REST APIs", "PostgreSQL"],
-                primary_reason="Strong match for Java backend and electronic payment platform experience.",
-                selected_strategy="backend_java",
-                tracking_application_id="app-mastercard-b5bb2c",
-            ),
-            DashboardQueueItem(
-                job_id="stripe-staff-backend-engineer-payments-platform-8eadc9",
-                company="Stripe",
-                title="Backend Software Engineer — Payments Infrastructure",
-                location="Remote (Global)",
-                remote_status=RemoteStatus.REMOTE,
-                source="Stripe Careers",
-                canonical_url="https://stripe.com/jobs",
-                match_score=89.0,
-                recommendation="APPLY",
-                priority_band=PriorityBand.HIGH,
-                priority_score=88.0,
-                queue_status=QueueStatus.NEW,
-                freshness_days=3,
-                key_matched_skills=["Distributed Systems", "GCP", "High Throughput", "Reliability", "Python"],
-                primary_reason="Enterprise fintech scale and high-reliability data pipeline alignment.",
-                selected_strategy="cloud_devops",
-                tracking_application_id="app-stripe-8eadc9",
-            ),
+        """
+        Return featured genuine job openings from the active queue.
+        Populated exclusively from genuine ingested job records without fabricated
+        job descriptions, synthetic tracking IDs, or hardcoded match scores.
+        """
+        # Filter genuine queue jobs that are active (not archived or skipped)
+        active_jobs = [
+            j for j in queue_jobs
+            if getattr(j, "queue_status", None) not in (QueueStatus.ARCHIVED, QueueStatus.SKIPPED)
         ]
-        for item in curated_defaults:
-            try:
-                self._ensure_curated_job_exists(db, item.job_id)
-            except Exception as e:
-                logger.debug(f"Curated opening auto-seed notice: {e}")
 
-        converted = [self._to_dashboard_queue_item(j) for j in queue_jobs]
-        high_matches = [j for j in converted if (j.match_score or 0) >= 75]
+        # Prioritize higher match score and priority score
+        sorted_jobs = sorted(
+            active_jobs,
+            key=lambda j: (
+                getattr(j, "match_score", 0.0) or 0.0,
+                getattr(j, "priority_score", 0.0) or 0.0,
+            ),
+            reverse=True,
+        )
+
+        converted: List[DashboardQueueItem] = []
         seen = set()
-        combined = []
-        for item in high_matches + curated_defaults:
-            if item.job_id not in seen:
-                seen.add(item.job_id)
-                combined.append(item)
-        return combined[:6]
+        for j in sorted_jobs:
+            if j.job_id in seen:
+                continue
+            seen.add(j.job_id)
+            converted.append(self._to_dashboard_queue_item(j, db=db))
+            if len(converted) >= 6:
+                break
+
+        return converted
 
     # ==========================================================================
     # 2. Priority Queue
@@ -628,7 +504,6 @@ class DashboardService:
         """
         db, should_close = self._get_db_session()
         try:
-            self._ensure_curated_job_exists(db, job_id)
             job_repo = JobRepository(db)
             job_model = job_repo.get_by_job_id(job_id)
             copilot_job = self.copilot_service.get_job(job_id)
@@ -789,7 +664,6 @@ class DashboardService:
         """
         db, should_close = self._get_db_session()
         try:
-            self._ensure_curated_job_exists(db, application_id)
             app_repo = ApplicationRepository(db)
             app_model = app_repo.get_by_application_id(application_id)
             if not app_model:
@@ -820,10 +694,14 @@ class DashboardService:
                 db_job = job_repo.get_by_job_id(application_id)
 
             canonical = None
-            if resolved_job_id:
-                canonical = self.copilot_service.orchestrator.discovery_service.store.get_canonical_job(resolved_job_id)
-            if not canonical and application_id and resolved_job_id != application_id:
-                canonical = self.copilot_service.orchestrator.discovery_service.store.get_canonical_job(application_id)
+            orchestrator = getattr(self.copilot_service, "orchestrator", None)
+            disc_service = getattr(orchestrator, "discovery_service", None) if orchestrator else None
+            disc_store = getattr(disc_service, "store", None) if disc_service else None
+            if disc_store:
+                if resolved_job_id:
+                    canonical = disc_store.get_canonical_job(resolved_job_id)
+                if not canonical and application_id and resolved_job_id != application_id:
+                    canonical = disc_store.get_canonical_job(application_id)
 
             job_id = resolved_job_id or (canonical.job_id if canonical else (db_job.job_id if db_job else application_id))
             
@@ -1366,15 +1244,112 @@ class DashboardService:
             if should_close:
                 db.close()
 
-    def prepare_application(self, application_id: str, strategy_override: Optional[str] = None) -> ApplicationDetailResponse:
-        """Prepare tailored resume, cover letter, and Q&A answers for an application."""
-
+    def prepare_application(
+        self,
+        application_id: str,
+        strategy_override: Optional[str] = None,
+        manual_verification_confirmed: bool = False,
+    ) -> ApplicationDetailResponse:
+        """
+        Prepare tailored resume, cover letter, and Q&A answers for an application.
+        Enforces fail-closed verification of canonical job posting availability.
+        """
         db, should_close = self._get_db_session()
         try:
-            self._ensure_curated_job_exists(db, application_id)
             app_repo = ApplicationRepository(db)
             app = app_repo.get_by_application_id(application_id) or app_repo.get_by_job_id_str(application_id)
             job_id = app.job_id_str if app and app.job_id_str else application_id
+
+            job_repo = JobRepository(db)
+            db_job = job_repo.get_by_job_id(job_id)
+            canonical_meta = None
+            if hasattr(self, "copilot_service") and self.copilot_service and hasattr(self.copilot_service, "orchestrator"):
+                orch = self.copilot_service.orchestrator
+                if hasattr(orch, "discovery_service") and hasattr(orch.discovery_service, "store"):
+                    canonical_meta = orch.discovery_service.store.get_canonical_job(job_id)
+
+            tracking_app = (
+                self.tracking_service.get_application_by_job_id(job_id)
+                or self.tracking_service.get_application(application_id)
+                if hasattr(self, "tracking_service") and self.tracking_service
+                else None
+            )
+            copilot_job = (
+                self.copilot_service.get_job(job_id)
+                if hasattr(self, "copilot_service") and self.copilot_service
+                else None
+            )
+
+            resolved_company = (
+                app.company if app and app.company
+                else (db_job.company if db_job and db_job.company
+                else (canonical_meta.company if canonical_meta and canonical_meta.company
+                else (tracking_app.company if tracking_app and tracking_app.company
+                else (copilot_job.company if copilot_job and copilot_job.company else None))))
+            )
+            resolved_role = (
+                app.role if app and app.role
+                else (db_job.title if db_job and db_job.title
+                else (canonical_meta.title if canonical_meta and canonical_meta.title
+                else (tracking_app.role if tracking_app and tracking_app.role
+                else (copilot_job.title if copilot_job and copilot_job.title else None))))
+            )
+            resolved_source = (
+                app.source if app and app.source
+                else (db_job.source if db_job and db_job.source
+                else (canonical_meta.source if canonical_meta and canonical_meta.source
+                else (tracking_app.source if tracking_app and tracking_app.source
+                else (copilot_job.source if copilot_job and copilot_job.source else "direct"))))
+            )
+            resolved_url = (
+                app.canonical_job_url if app and app.canonical_job_url
+                else (db_job.canonical_url or db_job.url if db_job
+                else (canonical_meta.canonical_url or canonical_meta.source_url if canonical_meta
+                else (tracking_app.canonical_job_url if tracking_app and tracking_app.canonical_job_url
+                else (copilot_job.canonical_url if copilot_job and copilot_job.canonical_url else None))))
+            )
+
+            if not db_job and not app and not canonical_meta and not tracking_app and not copilot_job:
+                raise KeyError(f"Job or application '{application_id}' not found. Cannot prepare application.")
+
+            invalid_placeholders = {"company unavailable", "unknown company", "target company", "general_swe", "role unavailable", "unknown role", "source unavailable"}
+            if (
+                not resolved_company or resolved_company.lower() in invalid_placeholders
+                or not resolved_role or resolved_role.lower() in invalid_placeholders
+            ):
+                raise ValueError(f"Could not resolve canonical job identity for '{application_id}'. Cannot prepare application.")
+
+            # Fail-closed job verification step
+            verification = self.verification_service.verify_job(
+                job_id=job_id,
+                job_url=resolved_url,
+                db_job=db_job,
+                canonical_job=canonical_meta,
+            )
+
+            if verification.status == JobVerificationStatus.INVALID_GENERIC_URL:
+                raise ValueError(
+                    f"Job verification failed: URL '{resolved_url}' is a generic company careers homepage or directory, "
+                    f"not a specific job posting. Manual verification is required."
+                )
+
+            if verification.status == JobVerificationStatus.UNAVAILABLE_CLOSED:
+                if db_job:
+                    db_job.lifecycle_status = "EXPIRED"
+                    db.commit()
+                if app:
+                    app.status = ApplicationStatus.WITHDRAWN
+                    db.commit()
+                raise ValueError(
+                    f"Cannot prepare application: Job is closed or expired. {verification.reason}"
+                )
+
+            if verification.status == JobVerificationStatus.UNVERIFIED:
+                if not manual_verification_confirmed:
+                    raise ValueError(
+                        f"Job verification inconclusive: {verification.reason} "
+                        f"Unverified jobs require manual review before application preparation."
+                    )
 
             # Trigger preparation
             pkg = self.prep_service.prepare_application(
@@ -1385,51 +1360,13 @@ class DashboardService:
 
             # Update application record if existing or create if missing
             if not app:
-                app = app_repo.get_by_application_id(application_id) or app_repo.get_by_job_id_str(job_id)
-
-            job_repo = JobRepository(db)
-            db_job = job_repo.get_by_job_id(job_id)
-            canonical_meta = self.copilot_service.orchestrator.discovery_service.store.get_canonical_job(job_id)
-            tracking_app = self.tracking_service.get_application_by_job_id(job_id) or self.tracking_service.get_application(application_id)
-
-            resolved_company = (
-                app.company if app and app.company
-                else (db_job.company if db_job and db_job.company
-                else (canonical_meta.company if canonical_meta and canonical_meta.company
-                else (tracking_app.company if tracking_app and tracking_app.company
-                else (pkg.company if pkg and pkg.company else None))))
-            )
-            resolved_role = (
-                app.role if app and app.role
-                else (db_job.title if db_job and db_job.title
-                else (canonical_meta.title if canonical_meta and canonical_meta.title
-                else (tracking_app.role if tracking_app and tracking_app.role
-                else (pkg.job_title if pkg and pkg.job_title else None))))
-            )
-            resolved_source = (
-                app.source if app and app.source
-                else (db_job.source if db_job and db_job.source
-                else (canonical_meta.source if canonical_meta and canonical_meta.source
-                else (tracking_app.source if tracking_app and tracking_app.source else "direct")))
-            )
-            resolved_url = (
-                app.canonical_job_url if app and app.canonical_job_url
-                else (db_job.canonical_url or db_job.url if db_job
-                else (canonical_meta.canonical_url or canonical_meta.source_url if canonical_meta
-                else (tracking_app.canonical_job_url if tracking_app and tracking_app.canonical_job_url else None)))
-            )
-
-            invalid_placeholders = {"company unavailable", "unknown company", "target company", "general_swe", "role unavailable", "unknown role", "source unavailable"}
-            if (
-                not resolved_company or resolved_company.lower() in invalid_placeholders
-                or not resolved_role or resolved_role.lower() in invalid_placeholders
-            ):
-                raise ValueError(f"Could not resolve canonical job identity for '{application_id}'. Cannot prepare application.")
-
-            if not app:
-                app_id = f"app-{job_id[:16]}"
+                canonical_app_id = (
+                    tracking_app.application_id
+                    if tracking_app and isinstance(getattr(tracking_app, "application_id", None), str)
+                    else f"app-{uuid.uuid4().hex[:8]}"
+                )
                 app = Application(
-                    application_id=app_id,
+                    application_id=canonical_app_id,
                     job_id=db_job.id if db_job else None,
                     job_id_str=job_id,
                     company=resolved_company,
@@ -2197,7 +2134,6 @@ class DashboardService:
         """Fetch binary PDF for an application resume for inline viewing or download with canonical filename."""
         db, should_close = self._get_db_session()
         try:
-            self._ensure_curated_job_exists(db, application_id)
             app_repo = ApplicationRepository(db)
             app = app_repo.get_by_application_id(application_id) or app_repo.get_by_job_id_str(application_id)
             job_id = app.job_id_str if app and app.job_id_str else application_id

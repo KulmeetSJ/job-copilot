@@ -185,7 +185,12 @@ def prepare_application(
     """Prepare tailored resume, cover letter, and Q&A answers for an application."""
     try:
         strat = payload.strategy_override if payload else None
-        return service.prepare_application(application_id=application_id, strategy_override=strat)
+        manual_confirmed = payload.manual_verification_confirmed if payload else False
+        return service.prepare_application(
+            application_id=application_id,
+            strategy_override=strat,
+            manual_verification_confirmed=manual_confirmed,
+        )
     except Exception as e:
         logger.error(f"Application preparation failed for '{application_id}': {e}")
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))

@@ -56,6 +56,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [analysisResult, setAnalysisResult] = useState<AnalyzeOpportunityResponse | null>(null);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
+  const [featuredError, setFeaturedError] = useState<string | null>(null);
   const [isDownloading, setIsDownloading] = useState(false);
 
   const handleDownloadResume = async () => {
@@ -116,6 +117,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
 
   const handleApplyFeatured = async (job: DashboardQueueItem) => {
     try {
+      setFeaturedError(null);
       setPreparingJobId(job.job_id);
       const targetId = job.tracking_application_id || job.job_id;
       const res = await api.prepareApplication(targetId);
@@ -123,7 +125,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
       if (onSelectJob) onSelectJob(chosenId);
       onNavigateTab('applications');
     } catch (err: any) {
-      alert(err.message || 'Failed to prepare application');
+      setFeaturedError(err.message || 'Failed to prepare application');
     } finally {
       setPreparingJobId(null);
     }
@@ -473,12 +475,12 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
                 <Sparkles className="w-5 h-5 text-amber-400" />
                 <span>Featured Tech Openings (Ready to Tailor & Apply)</span>
               </span>
-              <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 font-semibold uppercase">
-                Curated
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-300 border border-blue-500/20 font-semibold uppercase">
+                Active Queue
               </span>
             </div>
             <p className="text-xs text-slate-400 mt-1">
-              Top verified software engineering and cloud roles matching your background. 1-tap generates your tailored ATS resume.
+              Verified opportunities from your active ingestion queue matching your background. 1-tap generates your tailored ATS resume.
             </p>
           </div>
 
@@ -494,88 +496,117 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
           </div>
         </div>
 
-        {/* Openings Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5 pt-1">
-          {(overview.featured_openings || []).map((job) => {
-            const isPreparing = preparingJobId === job.job_id;
-            return (
-              <div
-                key={job.job_id}
-                className="p-4 rounded-xl bg-slate-950/80 border border-slate-800 hover:border-blue-500/40 transition-all flex flex-col justify-between space-y-3 group shadow-md"
-              >
-                <div className="space-y-2">
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <span className="text-xs font-bold text-blue-400 uppercase tracking-wider block">
-                        {job.company}
-                      </span>
-                      <h4 className="text-sm font-semibold text-white group-hover:text-blue-200 transition-colors leading-snug">
-                        {job.title}
-                      </h4>
-                    </div>
-                    {job.match_score !== undefined && (
-                      <span className={`px-2 py-0.5 rounded-lg text-xs font-mono font-bold border shrink-0 ${
-                        job.match_score >= 90
-                          ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
-                          : 'bg-blue-500/15 text-blue-300 border-blue-500/30'
-                      }`}>
-                        {Math.round(job.match_score)}%
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="text-[11px] text-slate-400 flex flex-wrap items-center gap-x-2 gap-y-1">
-                    <span>{job.location || 'Remote'}</span>
-                    <span>•</span>
-                    <span className="text-slate-300">{job.source}</span>
-                  </div>
-
-                  {job.key_matched_skills && job.key_matched_skills.length > 0 && (
-                    <div className="flex flex-wrap gap-1 pt-1">
-                      {job.key_matched_skills.slice(0, 3).map((sk) => (
-                        <span key={sk} className="text-[10px] px-1.5 py-0.5 rounded bg-slate-900 border border-slate-800 text-slate-300">
-                          {sk}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                <div className="flex items-center space-x-2 pt-2 border-t border-slate-900">
-                  <button
-                    onClick={() => handleApplyFeatured(job)}
-                    disabled={isPreparing}
-                    className="flex-1 py-2 px-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 disabled:opacity-50 text-white font-semibold text-xs rounded-lg shadow-sm flex items-center justify-center space-x-1.5 transition-all cursor-pointer"
-                  >
-                    {isPreparing ? (
-                      <>
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        <span>Tailoring...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Zap className="w-3.5 h-3.5 text-amber-300" />
-                        <span>Tailor & Apply</span>
-                      </>
-                    )}
-                  </button>
-
-                  {job.canonical_url && (
-                    <a
-                      href={job.canonical_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="p-2 bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-800 rounded-lg transition-colors shrink-0"
-                      title="Open job posting"
-                    >
-                      <ExternalLink className="w-3.5 h-3.5" />
-                    </a>
-                  )}
-                </div>
+        {/* Featured Error Alert */}
+        {featuredError && (
+          <div className="p-3.5 rounded-xl bg-rose-950/40 border border-rose-500/30 flex items-start justify-between gap-2.5 text-xs text-rose-200 animate-in fade-in">
+            <div className="flex items-start space-x-2.5">
+              <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+              <div>
+                <span className="font-semibold block text-rose-300">Application Preparation Blocked</span>
+                <span>{featuredError}</span>
               </div>
-            );
-          })}
-        </div>
+            </div>
+            <button
+              onClick={() => setFeaturedError(null)}
+              className="text-rose-400 hover:text-rose-200 font-semibold px-2 py-0.5 text-xs bg-rose-900/30 rounded border border-rose-800/40 shrink-0 cursor-pointer"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
+
+        {/* Openings Grid / Honest Empty State */}
+        {(!overview.featured_openings || overview.featured_openings.length === 0) ? (
+          <div className="p-8 rounded-xl bg-slate-950/40 border border-slate-800/80 text-center flex flex-col items-center justify-center space-y-2">
+            <Sparkles className="w-8 h-8 text-slate-600 mb-1" />
+            <p className="text-sm font-semibold text-slate-300">No Featured Openings in Queue</p>
+            <p className="text-xs text-slate-500 max-w-md">
+              Active opportunities will appear here once ingested and verified from supported career sources or user-submitted job postings.
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5 pt-1">
+            {overview.featured_openings.map((job) => {
+              const isPreparing = preparingJobId === job.job_id;
+              return (
+                <div
+                  key={job.job_id}
+                  className="p-4 rounded-xl bg-slate-950/80 border border-slate-800 hover:border-blue-500/40 transition-all flex flex-col justify-between space-y-3 group shadow-md"
+                >
+                  <div className="space-y-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <span className="text-xs font-bold text-blue-400 uppercase tracking-wider block">
+                          {job.company}
+                        </span>
+                        <h4 className="text-sm font-semibold text-white group-hover:text-blue-200 transition-colors leading-snug">
+                          {job.title}
+                        </h4>
+                      </div>
+                      {job.match_score !== undefined && (
+                        <span className={`px-2 py-0.5 rounded-lg text-xs font-mono font-bold border shrink-0 ${
+                          job.match_score >= 90
+                            ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                            : 'bg-blue-500/15 text-blue-300 border-blue-500/30'
+                        }`}>
+                          {Math.round(job.match_score)}%
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="text-[11px] text-slate-400 flex flex-wrap items-center gap-x-2 gap-y-1">
+                      <span>{job.location || 'Remote'}</span>
+                      <span>•</span>
+                      <span className="text-slate-300">{job.source}</span>
+                    </div>
+
+                    {job.key_matched_skills && job.key_matched_skills.length > 0 && (
+                      <div className="flex flex-wrap gap-1 pt-1">
+                        {job.key_matched_skills.slice(0, 3).map((sk) => (
+                          <span key={sk} className="text-[10px] px-1.5 py-0.5 rounded bg-slate-900 border border-slate-800 text-slate-300">
+                            {sk}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex items-center space-x-2 pt-2 border-t border-slate-900">
+                    <button
+                      onClick={() => handleApplyFeatured(job)}
+                      disabled={isPreparing}
+                      className="flex-1 py-2 px-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 disabled:opacity-50 text-white font-semibold text-xs rounded-lg shadow-sm flex items-center justify-center space-x-1.5 transition-all cursor-pointer"
+                    >
+                      {isPreparing ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          <span>Tailoring...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Zap className="w-3.5 h-3.5 text-amber-300" />
+                          <span>Tailor & Apply</span>
+                        </>
+                      )}
+                    </button>
+
+                    {job.canonical_url && (
+                      <a
+                        href={job.canonical_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="p-2 bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-800 rounded-lg transition-colors shrink-0"
+                        title="Open job posting"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                      </a>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
 
         {/* Mobile-Friendly Helper Tip */}
         <div className="p-3.5 rounded-xl bg-blue-950/20 border border-blue-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs text-slate-300">

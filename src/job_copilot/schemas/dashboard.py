@@ -326,8 +326,12 @@ class HumanInputSubmitRequest(BaseModel):
 
 
 class PrepareApplicationPayload(BaseModel):
-    """Request to prepare an application with an optional strategy override."""
+    """Request to prepare an application with an optional strategy override and verification confirmation."""
     strategy_override: Optional[str] = None
+    manual_verification_confirmed: bool = Field(
+        default=False,
+        description="Explicit human confirmation that an unverified job has been manually checked",
+    )
 
 
 class SkipApplicationPayload(BaseModel):
